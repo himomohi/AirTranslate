@@ -210,6 +210,134 @@ enum AppText {
         english: "The stored OpenAI API key could not be read.",
         korean: "저장된 OpenAI API 키를 읽을 수 없습니다."
     )
+    static let openAIProvider = localized(
+        english: "Provider",
+        korean: "공급자",
+        japanese: "プロバイダー",
+        chineseSimplified: "服务商"
+    )
+    static let openAIProviderOpenAITitle = "OpenAI"
+    static let openAIProviderAzureTitle = "Azure OpenAI"
+    static let azureOpenAIEndpoint = localized(
+        english: "Azure Resource Endpoint",
+        korean: "Azure 리소스 엔드포인트",
+        japanese: "Azureリソースエンドポイント",
+        chineseSimplified: "Azure 资源终结点"
+    )
+    static let azureOpenAIEndpointPlaceholder = localized(
+        english: "https://<resource>.cognitiveservices.azure.com/",
+        korean: "https://<리소스>.cognitiveservices.azure.com/",
+        japanese: "https://<リソース>.cognitiveservices.azure.com/",
+        chineseSimplified: "https://<资源名>.cognitiveservices.azure.com/"
+    )
+    static let azureOpenAIEndpointFormatHint = localized(
+        english: "Use the Azure resource endpoint only. Do not include wss:// or /openai/v1/realtime.",
+        korean: "Azure 리소스 엔드포인트만 입력하세요. wss:// 또는 /openai/v1/realtime은 포함하지 마세요.",
+        japanese: "Azureリソースエンドポイントのみ入力してください。wss:// や /openai/v1/realtime は含めないでください。",
+        chineseSimplified: "只填写 Azure 资源终结点。不要包含 wss:// 或 /openai/v1/realtime。"
+    )
+    static let azureOpenAIAPIKey = localized(
+        english: "Azure API Key",
+        korean: "Azure API 키",
+        japanese: "Azure APIキー",
+        chineseSimplified: "Azure API key"
+    )
+    static let azureOpenAIAPIKeyPlaceholder = localized(
+        english: "Paste Azure resource key",
+        korean: "Azure 리소스 키 붙여넣기",
+        japanese: "Azureリソースキーを貼り付け",
+        chineseSimplified: "粘贴 Azure 资源 key"
+    )
+    static let saveAzureOpenAIConfig = localized(
+        english: "Save Azure Config",
+        korean: "Azure 설정 저장",
+        japanese: "Azure設定を保存",
+        chineseSimplified: "保存 Azure 配置"
+    )
+    static let removeAzureOpenAIConfig = localized(
+        english: "Remove Azure Config",
+        korean: "Azure 설정 삭제",
+        japanese: "Azure設定を削除",
+        chineseSimplified: "删除 Azure 配置"
+    )
+    static let azureOpenAIConfigSaved = localized(
+        english: "Azure OpenAI configuration saved.",
+        korean: "Azure OpenAI 설정이 저장되었습니다.",
+        japanese: "Azure OpenAI設定を保存しました。",
+        chineseSimplified: "已保存 Azure OpenAI 配置。"
+    )
+    static let azureOpenAIConfigSavedTitle = localized(
+        english: "Saved",
+        korean: "저장됨",
+        japanese: "保存しました",
+        chineseSimplified: "已保存"
+    )
+    static let azureOpenAIConfigSaveFailedTitle = localized(
+        english: "Save Failed",
+        korean: "저장 실패",
+        japanese: "保存に失敗しました",
+        chineseSimplified: "保存失败"
+    )
+    static let azureOpenAIConfigRemoved = localized(
+        english: "Azure OpenAI configuration removed.",
+        korean: "Azure OpenAI 설정이 삭제되었습니다.",
+        japanese: "Azure OpenAI設定を削除しました。",
+        chineseSimplified: "已删除 Azure OpenAI 配置。"
+    )
+    static let azureOpenAIConfigConfigured = localized(
+        english: "Azure config saved",
+        korean: "Azure 설정 저장됨",
+        japanese: "Azure設定保存済み",
+        chineseSimplified: "Azure 配置已保存"
+    )
+    static let azureOpenAIConfigNotConfigured = localized(
+        english: "Azure config required",
+        korean: "Azure 설정 필요",
+        japanese: "Azure設定が必要",
+        chineseSimplified: "需要 Azure 配置"
+    )
+    static let azureOpenAIConfigRequiredForGPTMode = localized(
+        english: "Enter the Azure endpoint and key to use GPT mode.",
+        korean: "GPT 모드를 사용하려면 Azure 엔드포인트와 키를 입력하세요.",
+        japanese: "GPTモードを使うにはAzureエンドポイントとキーを入力してください。",
+        chineseSimplified: "要使用 GPT 模式，请输入 Azure 终结点和密钥。"
+    )
+    static let azureOpenAIEndpointInvalid = localized(
+        english: "The Azure resource endpoint must be a URL such as https://<resource>.cognitiveservices.azure.com/.",
+        korean: "Azure 리소스 엔드포인트는 https://<리소스>.cognitiveservices.azure.com/ 같은 URL이어야 합니다.",
+        japanese: "Azureリソースエンドポイントは https://<リソース>.cognitiveservices.azure.com/ の形式のURLを入力してください。",
+        chineseSimplified: "Azure 资源终结点必须是类似 https://<资源名>.cognitiveservices.azure.com/ 的 URL。"
+    )
+    static let azureOpenAIEndpointMissing = localized(
+        english: "Add an Azure resource endpoint in Settings before using Azure OpenAI.",
+        korean: "Azure OpenAI를 사용하기 전에 설정에서 Azure 리소스 엔드포인트를 입력하세요.",
+        japanese: "Azure OpenAIを使う前に設定でAzureリソースエンドポイントを入力してください。",
+        chineseSimplified: "使用 Azure OpenAI 前请先在设置中输入 Azure 资源终结点。"
+    )
+    static let azureOpenAIAPIKeyMissing = localized(
+        english: "Add an Azure OpenAI API key in Settings before using Azure OpenAI.",
+        korean: "Azure OpenAI를 사용하기 전에 설정에서 Azure OpenAI API 키를 입력하세요.",
+        japanese: "Azure OpenAIを使う前に設定でAzure OpenAI APIキーを入力してください。",
+        chineseSimplified: "使用 Azure OpenAI 前请先在设置中输入 Azure OpenAI API key。"
+    )
+    static let azureOpenAITranscriptionUnsupported = localized(
+        english: "Azure OpenAI only supports realtime translation. Switch to a translation model or use the OpenAI provider for transcription.",
+        korean: "Azure OpenAI는 실시간 번역만 지원합니다. 번역 모델로 전환하거나 전사를 위해 OpenAI 공급자를 사용하세요.",
+        japanese: "Azure OpenAIはリアルタイム翻訳のみサポートします。翻訳モデルに切り替えるか、文字起こしにはOpenAIプロバイダーを使ってください。",
+        chineseSimplified: "Azure OpenAI 仅支持实时翻译。请切换到翻译模型，或转写时改用 OpenAI 服务商。"
+    )
+    static let azureOpenAIPlatformPrompt = localized(
+        english: "Need Azure OpenAI access?",
+        korean: "Azure OpenAI 액세스가 필요하신가요?",
+        japanese: "Azure OpenAIのアクセスが必要ですか？",
+        chineseSimplified: "需要 Azure OpenAI 访问权限？"
+    )
+    static let azureOpenAIPlatformLink = localized(
+        english: "Open Azure AI Foundry",
+        korean: "Azure AI Foundry 열기",
+        japanese: "Azure AI Foundryを開く",
+        chineseSimplified: "打开 Azure AI Foundry"
+    )
     static let appleProcessingMode = localized(english: "Apple Mode", korean: "Apple 기본 모드", japanese: "Apple標準モード", chineseSimplified: "Apple 默认模式")
     static let appleProcessingModeDescription = localized(
         english: "The default local workflow. Keep this as the base, then add OpenAI Realtime below only when needed.",
@@ -222,6 +350,18 @@ enum AppText {
         japanese: "文字起こし",
         chineseSimplified: "转写"
     )
+    static let gptTranscriptionLockedByRealtimeTitle = localized(
+        english: "Transcription handled by realtime translation",
+        korean: "전사는 실시간 번역이 처리합니다",
+        japanese: "文字起こしはリアルタイム翻訳が担当します",
+        chineseSimplified: "转写由实时翻译模型负责"
+    )
+    static let gptTranscriptionLockedByRealtimeDetail = localized(
+        english: "gpt-realtime-translate works directly on audio, so a separate transcription model is not used.",
+        korean: "gpt-realtime-translate는 오디오를 직접 처리하므로 별도의 전사 모델은 사용되지 않습니다.",
+        japanese: "gpt-realtime-translateは音声を直接処理するため、別途の文字起こしモデルは使用しません。",
+        chineseSimplified: "gpt-realtime-translate 直接基于音频翻译,因此不再使用单独的转写模型。"
+    )
     static let gptTranslationModel = localized(
         english: "Auto Translation",
         korean: "자동번역",
@@ -231,6 +371,30 @@ enum AppText {
     static let gptModelsDescription = localized(
         english: "GPT mode uses OpenAI Realtime directly for the translated stream and bypasses local transcript cleanup.",
         korean: "GPT 모드는 OpenAI Realtime의 번역 스트림을 직접 사용하며 로컬 기록 다듬기를 건너뜁니다."
+    )
+    static let advancedSection = localized(
+        english: "Advanced",
+        korean: "고급",
+        japanese: "詳細",
+        chineseSimplified: "高级"
+    )
+    static let customTranscriptionModelName = localized(
+        english: "Transcription model name",
+        korean: "전사 모델 이름",
+        japanese: "文字起こしモデル名",
+        chineseSimplified: "转写模型名称"
+    )
+    static let customTranslationModelName = localized(
+        english: "Translation model name",
+        korean: "번역 모델 이름",
+        japanese: "翻訳モデル名",
+        chineseSimplified: "翻译模型名称"
+    )
+    static let customModelNameFootnote = localized(
+        english: "Leave empty to use the default.",
+        korean: "기본값을 사용하려면 비워두세요.",
+        japanese: "デフォルトを使う場合は空のままにします。",
+        chineseSimplified: "留空则使用默认值。"
     )
     static let openAINativeOutput = localized(
         english: "OpenAI native output",
@@ -306,7 +470,7 @@ enum AppText {
     static let liveOutput = localized(english: "Live Output", korean: "실시간 출력", japanese: "リアルタイム出力", chineseSimplified: "实时输出")
     static let library = localized(english: "Library", korean: "저장소", japanese: "ライブラリ", chineseSimplified: "资料库")
     static let dubbing = localized(english: "Dubbing", korean: "더빙", japanese: "音声出力", chineseSimplified: "配音")
-    static let voiceOutput = localized(english: "Voice Output", korean: "음성 출력", japanese: "音声出力", chineseSimplified: "语音输出")
+    static let voiceOutput = localized(english: "System translated voice", korean: "시스템 번역 음성", japanese: "システム翻訳音声", chineseSimplified: "系统翻译语音")
     static let menuBarTitle = localized(english: "Captions", korean: "자막")
     static let menuBarRunningTitle = localized(english: "Live", korean: "기록 중")
     static let menuBarPausedTitle = localized(english: "Paused", korean: "일시정지")
@@ -318,12 +482,38 @@ enum AppText {
     static let hideFloatingCaptions = localized(english: "Hide Floating Captions", korean: "플로팅 자막 숨기기")
     static let openMainWindow = localized(english: "Open Main Window", korean: "메인 창 열기")
     static let floatingDisplay = localized(english: "Floating Display", korean: "플로팅 표시")
-    static let floatingDisplayDescription = localized(
-        english: "Choose what appears in the detachable floating caption window.",
-        korean: "따로 띄우는 플로팅 자막 창에 표시할 내용을 선택합니다."
+    static let floatingTextAlignment = localized(
+        english: "Floating Text Alignment",
+        korean: "플로팅 텍스트 정렬",
+        japanese: "フローティングテキスト配置",
+        chineseSimplified: "浮动字幕对齐"
+    )
+    static let textAlignmentLeading = localized(
+        english: "Left",
+        korean: "왼쪽",
+        japanese: "左",
+        chineseSimplified: "左对齐"
+    )
+    static let textAlignmentCenter = localized(
+        english: "Center",
+        korean: "가운데",
+        japanese: "中央",
+        chineseSimplified: "居中"
     )
     static let floatingTextSize = localized(english: "Floating Text Size", korean: "플로팅 글자 크기")
     static let floatingLineCount = localized(english: "Floating Lines", korean: "플로팅 표시 줄 수")
+    static let floatingImmediateDisplay = localized(
+        english: "Show Updates Immediately",
+        korean: "업데이트 즉시 표시",
+        japanese: "更新をすぐ表示",
+        chineseSimplified: "立即显示更新"
+    )
+    static let floatingImmediateDisplayDescription = localized(
+        english: "Shows new caption text as soon as it arrives. It feels more realtime, but recognition revisions can make the floating window flicker.",
+        korean: "새 자막 텍스트가 도착하는 즉시 표시합니다. 더 실시간처럼 느껴지지만 인식 수정 때문에 플로팅 창이 깜박일 수 있습니다.",
+        japanese: "新しい字幕テキストを到着次第表示します。よりリアルタイムになりますが、認識の修正でフローティングウィンドウがちらつくことがあります。",
+        chineseSimplified: "新字幕到达后立即显示。实时性更好，但识别结果修订时浮动窗口可能会闪动。"
+    )
     static let originalOnly = localized(english: "Original", korean: "원문", japanese: "原文", chineseSimplified: "原文")
     static let originalAndTranslation = localized(english: "Original + Translation", korean: "원문 + 번역", japanese: "原文 + 翻訳", chineseSimplified: "原文 + 译文")
     static let translationOnly = localized(english: "Translation", korean: "번역", japanese: "翻訳", chineseSimplified: "译文")

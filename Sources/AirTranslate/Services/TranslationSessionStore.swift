@@ -15,12 +15,17 @@ private enum SettingsKey {
     static let floatingCaptionDisplayMode = "floatingCaptionDisplayMode"
     static let floatingCaptionTextSize = "floatingCaptionTextSize"
     static let floatingCaptionLineCount = "floatingCaptionLineCount"
+    static let floatingCaptionTextAlignment = "floatingCaptionTextAlignment"
+    static let isFloatingCaptionImmediateDisplayEnabled = "isFloatingCaptionImmediateDisplayEnabled"
     static let paragraphBreakSilenceInterval = "paragraphBreakSilenceInterval"
     static let savedTranscriptContentMode = "savedTranscriptContentMode"
     static let sessionDurationMode = "sessionDurationMode"
     static let audioInputSource = "audioInputSource"
     static let selectedMicrophoneInputDeviceID = "selectedMicrophoneInputDeviceID"
     static let isAppleSourceAutoDetectionEnabled = "isAppleSourceAutoDetectionEnabled"
+    static let openAIProvider = "openAIProvider"
+    static let customAzureTranscriptionModelName = "customAzureTranscriptionModelName"
+    static let customAzureTranslationModelName = "customAzureTranslationModelName"
 }
 
 private struct TranslationRequest {
@@ -79,10 +84,6 @@ final class TranslationSessionStore {
     private static let largeTranscriptPresentationInterval: TimeInterval = 0.35
     private static let largeTranscriptTranslationCharacterLimit = 4_000
     private static let veryLargeTranscriptTranslationCharacterLimit = 10_000
-    private static let floatingCaptionEarlyRevisionWindow = 0.45
-    private static let floatingCaptionImmediateExtensionCharacterLimit = 28
-    private static let minimumFloatingCaptionDwell = 1.4
-    private static let maximumFloatingCaptionDwell = 3.6
     private static let appleAutoDetectionMinimumConfidence = 0.35
     private static let appleAutoDetectionLanguageSwitchMinimumConfidence = 0.72
     private static let isAppleSourceAutoDetectionTemporarilyDisabled = true
@@ -130,6 +131,20 @@ final class TranslationSessionStore {
         }
     }
     var hasOpenAIAPIKey = OpenAIAPIKeyStore.hasAPIKey()
+    var hasAzureOpenAIConfig = AzureOpenAIConfigStore.hasConfig()
+    var azureOpenAIEndpoint: String = AzureOpenAIConfigStore.readEndpoint() ?? ""
+    var openAIProvider: OpenAIProvider = .openAI {
+        didSet {
+            persistSelectedSettings()
+            refreshModelAvailability()
+        }
+    }
+    var customAzureTranscriptionModelName: String = "" {
+        didSet { persistSelectedSettings() }
+    }
+    var customAzureTranslationModelName: String = "" {
+        didSet { persistSelectedSettings() }
+    }
     var openAITranscriptionModel = OpenAIRealtimeTranscriptionModel.off {
         didSet {
             if openAITranscriptionModel.isEnabled {
@@ -162,6 +177,17 @@ final class TranslationSessionStore {
     }
     var floatingCaptionLineCount = FloatingCaptionLineCount.three {
         didSet { persistSelectedSettings() }
+    }
+    var floatingCaptionTextAlignment = FloatingCaptionTextAlignment.center {
+        didSet { persistSelectedSettings() }
+    }
+    var isFloatingCaptionImmediateDisplayEnabled = false {
+        didSet {
+            persistSelectedSettings()
+            if isFloatingCaptionImmediateDisplayEnabled {
+                promoteQueuedFloatingPresentationIfReady()
+            }
+        }
     }
     var paragraphBreakSilenceInterval = 5.0 {
         didSet { persistSelectedSettings() }
@@ -308,6 +334,7 @@ final class TranslationSessionStore {
 
         let now = Date()
         hasOpenAIAPIKey = false
+        hasAzureOpenAIConfig = false
         lines = [
             CaptionLine(
                 sourceText: "The speaker is explaining how the product roadmap changes when customers need live translation during meetings.",
@@ -509,14 +536,17 @@ final class TranslationSessionStore {
         }
     }
 
-    func saveOpenAIAPIKey(_ key: String) {
+    @discardableResult
+    func saveOpenAIAPIKey(_ key: String) -> Bool {
         do {
             try OpenAIAPIKeyStore.saveAPIKey(key)
             hasOpenAIAPIKey = true
             statusMessage = AppText.openAIAPIKeySaved
             refreshModelAvailability()
+            return true
         } catch {
             statusMessage = error.localizedDescription
+            return false
         }
     }
 
@@ -529,6 +559,73 @@ final class TranslationSessionStore {
         } catch {
             statusMessage = error.localizedDescription
         }
+    }
+
+    @discardableResult
+    func saveAzureOpenAIConfig(endpoint: String, apiKey: String) -> Bool {
+        do {
+            try AzureOpenAIConfigStore.saveConfig(endpoint: endpoint, apiKey: apiKey)
+            hasAzureOpenAIConfig = AzureOpenAIConfigStore.hasConfig()
+            azureOpenAIEndpoint = AzureOpenAIConfigStore.readEndpoint() ?? ""
+            statusMessage = AppText.azureOpenAIConfigSaved
+            refreshModelAvailability()
+            return true
+        } catch {
+            statusMessage = error.localizedDescription
+            return false
+        }
+    }
+
+    func removeAzureOpenAIConfig() {
+        do {
+            try AzureOpenAIConfigStore.deleteConfig()
+            hasAzureOpenAIConfig = false
+            azureOpenAIEndpoint = ""
+            statusMessage = AppText.azureOpenAIConfigRemoved
+            refreshModelAvailability()
+        } catch {
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    var hasOpenAIRealtimeCredentials: Bool {
+        switch openAIProvider {
+        case .openAI: hasOpenAIAPIKey
+        case .azure: hasAzureOpenAIConfig
+        }
+    }
+
+    private func resolveOpenAIRealtimeProviderConfig() throws -> OpenAIRealtimeProviderConfig {
+        switch openAIProvider {
+        case .openAI:
+            guard let key = try OpenAIAPIKeyStore.readAPIKey(), !key.isEmpty else {
+                throw OpenAITranslationError.missingAPIKey
+            }
+            return .openAI(apiKey: key)
+        case .azure:
+            guard let endpoint = AzureOpenAIConfigStore.readEndpoint(),
+                  let host = AzureOpenAIEndpoint.host(from: endpoint) else {
+                throw OpenAITranslationError.missingAzureEndpoint
+            }
+            guard let key = try AzureOpenAIConfigStore.readAPIKey(), !key.isEmpty else {
+                throw OpenAITranslationError.missingAzureAPIKey
+            }
+            return .azure(host: host, apiKey: key)
+        }
+    }
+
+    private func resolvedCustomTranscriptionModelName() -> String? {
+        guard openAIProvider == .azure else { return nil }
+        let value = customAzureTranscriptionModelName
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+    private func resolvedCustomTranslationModelName() -> String? {
+        guard openAIProvider == .azure else { return nil }
+        let value = customAzureTranslationModelName
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
     }
 
     func openTranscriptsFolder() {
@@ -797,13 +894,25 @@ final class TranslationSessionStore {
         openAITranscriber = OpenAIRealtimeTranscriber()
         openAITranscriber.delegate = self
 
+        let customTranscription = resolvedCustomTranscriptionModelName()
+        let customTranslation = resolvedCustomTranslationModelName()
+
         if openAITranslationModel.usesRealtimeAudioTranslation {
+            let providerConfig = try resolveOpenAIRealtimeProviderConfig()
             try await openAITranscriber.startRealtimeTranslationOnly(
                 language: targetLanguage,
-                model: openAITranslationModel
+                model: openAITranslationModel,
+                modelIDOverride: customTranslation,
+                providerConfig: providerConfig
             )
         } else if openAITranscriptionModel.isEnabled {
-            try await openAITranscriber.start(language: sourceLanguage, model: openAITranscriptionModel)
+            let providerConfig = try resolveOpenAIRealtimeProviderConfig()
+            try await openAITranscriber.start(
+                language: sourceLanguage,
+                model: openAITranscriptionModel,
+                modelIDOverride: customTranscription,
+                providerConfig: providerConfig
+            )
         } else {
             try await transcriber.start(languages: await appleSpeechLanguagesForCurrentMode())
         }
@@ -981,6 +1090,15 @@ final class TranslationSessionStore {
            let lineCount = FloatingCaptionLineCount(rawValue: rawValue) {
             floatingCaptionLineCount = lineCount
         }
+        if let alignmentID = defaults.string(forKey: SettingsKey.floatingCaptionTextAlignment),
+           let alignment = FloatingCaptionTextAlignment(rawValue: alignmentID) {
+            floatingCaptionTextAlignment = alignment
+        }
+        if defaults.object(forKey: SettingsKey.isFloatingCaptionImmediateDisplayEnabled) != nil {
+            isFloatingCaptionImmediateDisplayEnabled = defaults.bool(
+                forKey: SettingsKey.isFloatingCaptionImmediateDisplayEnabled
+            )
+        }
         if defaults.object(forKey: SettingsKey.paragraphBreakSilenceInterval) != nil {
             paragraphBreakSilenceInterval = min(
                 max(defaults.double(forKey: SettingsKey.paragraphBreakSilenceInterval), 1),
@@ -1004,6 +1122,16 @@ final class TranslationSessionStore {
         }
         isAppleSourceAutoDetectionEnabled = isAppleSourceAutoDetectionAvailable
             && defaults.bool(forKey: SettingsKey.isAppleSourceAutoDetectionEnabled)
+        if let providerID = defaults.string(forKey: SettingsKey.openAIProvider),
+           let provider = OpenAIProvider(rawValue: providerID) {
+            openAIProvider = provider
+        }
+        if let value = defaults.string(forKey: SettingsKey.customAzureTranscriptionModelName) {
+            customAzureTranscriptionModelName = value
+        }
+        if let value = defaults.string(forKey: SettingsKey.customAzureTranslationModelName) {
+            customAzureTranslationModelName = value
+        }
         refreshMicrophoneInputDevices()
     }
 
@@ -1021,12 +1149,20 @@ final class TranslationSessionStore {
         defaults.set(floatingCaptionDisplayMode.id, forKey: SettingsKey.floatingCaptionDisplayMode)
         defaults.set(floatingCaptionTextSize.id, forKey: SettingsKey.floatingCaptionTextSize)
         defaults.set(floatingCaptionLineCount.id, forKey: SettingsKey.floatingCaptionLineCount)
+        defaults.set(floatingCaptionTextAlignment.id, forKey: SettingsKey.floatingCaptionTextAlignment)
+        defaults.set(
+            isFloatingCaptionImmediateDisplayEnabled,
+            forKey: SettingsKey.isFloatingCaptionImmediateDisplayEnabled
+        )
         defaults.set(paragraphBreakSilenceInterval, forKey: SettingsKey.paragraphBreakSilenceInterval)
         defaults.set(savedTranscriptContentMode.id, forKey: SettingsKey.savedTranscriptContentMode)
         defaults.set(sessionDurationMode.id, forKey: SettingsKey.sessionDurationMode)
         defaults.set(audioInputSource.id, forKey: SettingsKey.audioInputSource)
         defaults.set(selectedMicrophoneInputDeviceID, forKey: SettingsKey.selectedMicrophoneInputDeviceID)
         defaults.set(isAppleSourceAutoDetectionEnabled, forKey: SettingsKey.isAppleSourceAutoDetectionEnabled)
+        defaults.set(openAIProvider.rawValue, forKey: SettingsKey.openAIProvider)
+        defaults.set(customAzureTranscriptionModelName, forKey: SettingsKey.customAzureTranscriptionModelName)
+        defaults.set(customAzureTranslationModelName, forKey: SettingsKey.customAzureTranslationModelName)
     }
 
     private func stopCapture() async {
@@ -1855,13 +1991,13 @@ final class TranslationSessionStore {
             return
         }
 
-        let normalizedCandidate = normalizedTranscriptForComparison(candidate)
-        let normalizedPresented = normalizedTranscriptForComparison(floatingPresentedSourceText)
-        guard normalizedCandidate != normalizedPresented else { return }
-
-        let now = Date()
-        if canUpdateFloatingPresentationImmediately(to: candidate, now: now)
-            || canAdvanceFloatingPresentation(now: now) {
+        if FloatingCaptionPresentationPolicy.canPresentUpdate(
+            isImmediateDisplayEnabled: isFloatingCaptionImmediateDisplayEnabled,
+            presentedText: floatingPresentedSourceText,
+            translatedText: floatingDisplayTranslationText,
+            candidateText: candidate,
+            presentedAt: floatingPresentedAt
+        ) {
             presentFloatingSourceText(candidate)
             return
         }
@@ -1870,31 +2006,20 @@ final class TranslationSessionStore {
         scheduleFloatingPresentationAdvance()
     }
 
-    private func canUpdateFloatingPresentationImmediately(to candidate: String, now: Date) -> Bool {
-        let elapsed = now.timeIntervalSince(floatingPresentedAt)
-        if elapsed <= Self.floatingCaptionEarlyRevisionWindow {
-            return true
-        }
-
-        let normalizedPresented = normalizedTranscriptForComparison(floatingPresentedSourceText)
-        let normalizedCandidate = normalizedTranscriptForComparison(candidate)
-        return normalizedPresented.count < Self.floatingCaptionImmediateExtensionCharacterLimit
-            && isWholeTextPrefix(normalizedPresented, of: normalizedCandidate)
-    }
-
     private func canAdvanceFloatingPresentation(now: Date = Date()) -> Bool {
-        guard !floatingPresentedSourceText.isEmpty else { return true }
-        return now.timeIntervalSince(floatingPresentedAt) >= floatingCaptionDwellDuration()
+        FloatingCaptionPresentationPolicy.canAdvance(
+            isImmediateDisplayEnabled: isFloatingCaptionImmediateDisplayEnabled,
+            presentedText: floatingPresentedSourceText,
+            translatedText: floatingDisplayTranslationText,
+            presentedAt: floatingPresentedAt,
+            now: now
+        )
     }
 
     private func floatingCaptionDwellDuration() -> TimeInterval {
-        let sourceLength = normalizedTranscriptForComparison(floatingPresentedSourceText).count
-        let translationLength = normalizedTranscriptForComparison(floatingDisplayTranslationText).count
-        let readableLength = max(sourceLength, translationLength)
-        let dwell = 1.1 + Double(readableLength) / 32.0
-        return min(
-            max(Self.minimumFloatingCaptionDwell, dwell),
-            Self.maximumFloatingCaptionDwell
+        FloatingCaptionPresentationPolicy.dwellDuration(
+            presentedText: floatingPresentedSourceText,
+            translatedText: floatingDisplayTranslationText
         )
     }
 

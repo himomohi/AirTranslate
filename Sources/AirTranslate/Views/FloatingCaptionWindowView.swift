@@ -7,7 +7,7 @@ struct FloatingCaptionWindowView: View {
         ZStack {
             Color.clear
 
-            VStack(spacing: 8) {
+            VStack(alignment: session.floatingCaptionTextAlignment.horizontalAlignment, spacing: 8) {
                 content
             }
             .padding(.horizontal, 28)
@@ -85,12 +85,12 @@ struct FloatingCaptionWindowView: View {
             foregroundColor: .white,
             isTextSelectionEnabled: false,
             lineLimit: lineLimit,
-            textAlignment: .center,
-            frameAlignment: .center,
+            textAlignment: session.floatingCaptionTextAlignment.textAlignment,
+            frameAlignment: session.floatingCaptionTextAlignment.frameAlignment,
             truncationMode: .tail
         )
-        .multilineTextAlignment(.center)
-        .frame(maxWidth: .infinity, alignment: .center)
+        .multilineTextAlignment(session.floatingCaptionTextAlignment.textAlignment)
+        .frame(maxWidth: .infinity, alignment: session.floatingCaptionTextAlignment.frameAlignment)
         .lineSpacing(5)
         .shadow(color: .black.opacity(0.95), radius: 3, x: 0, y: 1)
         .shadow(color: .black.opacity(0.65), radius: 8, x: 0, y: 2)
