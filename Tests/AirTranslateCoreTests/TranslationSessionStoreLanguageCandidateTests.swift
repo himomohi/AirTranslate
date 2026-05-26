@@ -167,12 +167,29 @@ struct TranslationSessionStoreLanguageCandidateTests {
 
     @Test
     @MainActor
-    func differentLanguagePairRestoresTranslationModeFromTranscribeOnly() {
+    func manualTranscribeOnlyModePersistsAcrossLanguageChanges() {
         let session = TranslationSessionStore()
 
         session.sourceLanguage = LanguageOption.english
+        session.targetLanguage = LanguageOption.korean
         session.useTranscribeOnlyMode()
-        session.targetLanguage = LanguageOption.supported[2]
+        session.sourceLanguage = LanguageOption.supported[2]
+
+        #expect(session.liveOutputMode == .transcription)
+        #expect(!session.shouldShowTranslationPane)
+    }
+
+    @Test
+    @MainActor
+    func sameLanguageAutoTranscribeOnlyRestoresTranslationWhenPairDiffers() {
+        let session = TranslationSessionStore()
+
+        session.sourceLanguage = LanguageOption.english
+        session.targetLanguage = LanguageOption.english
+
+        #expect(session.liveOutputMode == .transcription)
+
+        session.targetLanguage = LanguageOption.korean
 
         #expect(session.liveOutputMode == .translation)
         #expect(session.shouldShowTranslationPane)

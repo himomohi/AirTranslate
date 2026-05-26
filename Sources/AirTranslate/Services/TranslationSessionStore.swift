@@ -264,6 +264,7 @@ final class TranslationSessionStore {
     private var spokenTranslationUnitKeyOrder: [String] = []
     private var hasShownTranscribeOnlyNoticeForCurrentActivation = false
     private var floatingCaptionDisplayModeBeforeTranscribeOnly: FloatingCaptionDisplayMode?
+    private var isUsingSameLanguageAutoTranscribeOnly = false
 
     private enum SavedTranscriptPart {
         case original
@@ -590,6 +591,7 @@ final class TranslationSessionStore {
     }
 
     func useAppleDefaultMode() {
+        isUsingSameLanguageAutoTranscribeOnly = false
         clearTranscribeOnlyNotice(resetActivation: true)
         selectedModel = .appleSystem
         openAITranscriptionModel = .off
@@ -597,6 +599,7 @@ final class TranslationSessionStore {
     }
 
     func useGPTRealtimeMode() {
+        isUsingSameLanguageAutoTranscribeOnly = false
         clearTranscribeOnlyNotice(resetActivation: true)
         selectedModel = .appleSystem
         isTranscriptLintEnabled = false
@@ -619,6 +622,7 @@ final class TranslationSessionStore {
     }
 
     func useTranslationMode() {
+        isUsingSameLanguageAutoTranscribeOnly = false
         clearTranscribeOnlyNotice(resetActivation: true)
         if selectedModel == .appleSpeechOnly {
             selectedModel = .appleSystem
@@ -627,6 +631,15 @@ final class TranslationSessionStore {
     }
 
     func useTranscribeOnlyMode() {
+        setTranscribeOnlyMode(automaticallySelectedForSameLanguagePair: false)
+    }
+
+    private func useSameLanguageAutoTranscribeOnlyMode() {
+        setTranscribeOnlyMode(automaticallySelectedForSameLanguagePair: true)
+    }
+
+    private func setTranscribeOnlyMode(automaticallySelectedForSameLanguagePair: Bool) {
+        isUsingSameLanguageAutoTranscribeOnly = automaticallySelectedForSameLanguagePair
         if floatingCaptionDisplayModeBeforeTranscribeOnly == nil {
             floatingCaptionDisplayModeBeforeTranscribeOnly = floatingCaptionDisplayMode
         }
@@ -642,8 +655,10 @@ final class TranslationSessionStore {
         guard !isRestoringSelectedSettings, !isRunning, !isUsingOpenAIRealtime else { return }
 
         if sourceLanguage == targetLanguage {
-            useTranscribeOnlyMode()
-        } else if selectedModel == .appleSpeechOnly {
+            if !isTranscribeOnlyMode {
+                useSameLanguageAutoTranscribeOnlyMode()
+            }
+        } else if isUsingSameLanguageAutoTranscribeOnly {
             useTranslationMode()
         }
     }
