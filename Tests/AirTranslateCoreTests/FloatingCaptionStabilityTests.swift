@@ -63,6 +63,41 @@ struct FloatingCaptionStabilityTests {
     }
 
     @Test
+    @MainActor
+    func presentationQualityPresetUsesAudienceReadableCaptionsAndPersists() {
+        let suiteName = "FloatingCaptionStabilityTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let first = TranslationSessionStore(
+            modelAvailabilityProvider: { _, _ in [:] },
+            settingsDefaults: defaults
+        )
+        first.presentationContext = "AI workshop for ecommerce sellers"
+        first.presentationGlossary = "Gary Hong = ゲイリー・ウォン"
+        first.isPresentationQualityModeEnabled = true
+
+        #expect(first.floatingCaptionDisplayMode == .translation)
+        #expect(first.floatingCaptionTextSize == .large)
+        #expect(first.floatingCaptionLineCount == .two)
+        #expect(first.floatingCaptionStability == .steady)
+        #expect(first.floatingCaptionTextAlignment == .leading)
+
+        let second = TranslationSessionStore(
+            modelAvailabilityProvider: { _, _ in [:] },
+            settingsDefaults: defaults
+        )
+        #expect(second.isPresentationQualityModeEnabled)
+        #expect(second.presentationContext == "AI workshop for ecommerce sellers")
+        #expect(second.presentationGlossary == "Gary Hong = ゲイリー・ウォン")
+        #expect(second.floatingCaptionDisplayMode == .translation)
+        #expect(second.floatingCaptionTextSize == .large)
+        #expect(second.floatingCaptionLineCount == .two)
+        #expect(second.floatingCaptionStability == .steady)
+        #expect(second.floatingCaptionTextAlignment == .leading)
+    }
+
+    @Test
     func unknownPersistedStabilityFallsBackToDefault() {
         #expect(FloatingCaptionStability(rawValue: "turbo") == nil)
         #expect(FloatingCaptionTextAlignment(rawValue: "justify") == nil)

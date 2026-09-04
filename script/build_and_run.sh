@@ -17,19 +17,29 @@ INFO_PLIST="$APP_CONTENTS/Info.plist"
 ENTITLEMENTS_PATH="$ROOT_DIR/Resources/AirTranslate.entitlements"
 DEBUG_ENTITLEMENTS_PATH="$ROOT_DIR/Resources/AirTranslate.debug.entitlements"
 CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY:-}"
+BUILD_CONFIGURATION="debug"
 
 case "$MODE" in
   --debug|debug)
     ENTITLEMENTS_PATH="$DEBUG_ENTITLEMENTS_PATH"
     ;;
+  --build-only|build-only)
+    BUILD_CONFIGURATION="release"
+    ;;
 esac
 
 cd "$ROOT_DIR"
 
-pkill -x "$APP_NAME" >/dev/null 2>&1 || true
+case "$MODE" in
+  --build-only|build-only)
+    ;;
+  *)
+    pkill -x "$APP_NAME" >/dev/null 2>&1 || true
+    ;;
+esac
 
-swift build
-BUILD_BINARY="$(swift build --show-bin-path)/$APP_NAME"
+swift build --configuration "$BUILD_CONFIGURATION"
+BUILD_BINARY="$(swift build --configuration "$BUILD_CONFIGURATION" --show-bin-path)/$APP_NAME"
 
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_MACOS"
@@ -78,6 +88,9 @@ verify_running_app() {
 }
 
 case "$MODE" in
+  --build-only|build-only)
+    echo "Built $APP_BUNDLE"
+    ;;
   --reset-permissions|reset-permissions)
     /usr/bin/defaults delete "$BUNDLE_ID" "AirTranslate.screenRecordingAccessRequestAttempted" >/dev/null 2>&1 || true
     /usr/bin/tccutil reset ScreenCapture "$BUNDLE_ID" || true
@@ -106,7 +119,7 @@ case "$MODE" in
     verify_running_app
     ;;
   *)
-    echo "usage: $0 [run|--debug|--logs|--telemetry|--verify|--reset-permissions]" >&2
+    echo "usage: $0 [run|--build-only|--debug|--logs|--telemetry|--verify|--reset-permissions]" >&2
     exit 2
     ;;
 esac

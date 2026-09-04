@@ -61,6 +61,7 @@ Release/product/AirTranslate-<version>.dmg.sha256
 ## 1.7.1 Floating Caption Stability Notes
 
 - Public docs must describe Caption Stability (Responsive / Balanced / Steady) and Caption Alignment (Center / Left) as Settings and menu-bar controls for the floating overlay.
+- Public docs must describe Presentation Quality mode, talk context, and the terminology glossary as optional audience-caption controls.
 - Floating translations hold the previous translation until a replacement is ready; do not describe the overlay as clearing to a blank line on every rewrite.
 - Floating captions reserve a fixed caption height so the source line does not jump when the translation appears or wraps.
 
@@ -97,5 +98,5 @@ git diff -- . ':(exclude).build/**' ':(exclude)Release/product/**' | \
 - Confirm Gemini Live mode still requires a user-provided key at runtime and does not bundle one.
 - Confirm Meta Scribe mode still requires a user-provided key at runtime and does not bundle one.
 - Confirm `Release/product/` remains ignored.
-- Confirm all four public READMEs and `GITHUB-RELEASE-1.7.1.md` describe all three public themes with equivalent meaning: steadier floating translations that hold the previous line, reserved caption height, and Caption Stability plus Caption Alignment controls.
+- Confirm all four public READMEs and `GITHUB-RELEASE-1.7.1.md` describe all four public themes with equivalent meaning: steadier floating translations that hold the previous line, reserved caption height, Caption Stability plus Caption Alignment controls, and Presentation Quality mode with terminology guidance.
 - Publish the new GitHub Release without deleting previous release versions or tags.

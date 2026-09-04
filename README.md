@@ -52,6 +52,7 @@ The default workflow uses Apple frameworks. GPT Realtime, Gemini Live Translate,
 - **Steadier floating translations:** The overlay holds the previous translation until a new one is ready, so live captions no longer rewrite or flicker on every recognizer revision.
 - **Reserved caption height:** Floating captions keep a fixed block height and fade replacements in one piece, so the source line does not jump or re-center as text grows.
 - **Caption Stability and alignment:** Settings and the menu bar now offer Caption Stability (Responsive / Balanced / Steady) and Caption Alignment (Center / Left). Left-aligned captions stay anchored as the line grows.
+- **Presentation Quality mode:** One switch configures a translation-only, two-line audience overlay with steadier clause timing. Add talk context and a terminology glossary to protect names, brands, acronyms, and preferred Japanese wording.
 
 See the complete [AirTranslate 1.7.1 release notes](https://github.com/himomohi/AirTranslate/releases/tag/v1.7.1).
 
@@ -247,6 +248,32 @@ Developer ID signing and notarization are planned for a later distribution step.
 - Optional: a Meta API key for Meta Scribe mode
 
 ## Build From Source
+
+### Install the privacy-fixed custom build on another Mac
+
+On an Apple Silicon Mac running macOS 26 or later, paste this block into Terminal. It downloads an immutable installer revision and verifies its SHA-256 digest before execution:
+
+```bash
+INSTALLER_COMMIT="2cffcdde08e7d9d4cb7408aa1c34e08df8a753a2"
+INSTALLER_SHA256="49ea3e8b1b6fcd2df4adf8e649af12ef634baf471facf611d746c2866e4469f7"
+INSTALLER_PATH="$(mktemp "${TMPDIR:-/tmp}/airtranslate-installer.XXXXXX")"
+curl -fL "https://raw.githubusercontent.com/gary8020/AirTranslate/$INSTALLER_COMMIT/script/install_on_this_mac.sh" -o "$INSTALLER_PATH"
+printf '%s  %s\n' "$INSTALLER_SHA256" "$INSTALLER_PATH" | shasum -a 256 -c -
+AIRTRANSLATE_SOURCE_REVISION="$INSTALLER_COMMIT" /bin/bash "$INSTALLER_PATH" install
+rm -f "$INSTALLER_PATH"
+```
+
+The installer downloads the pinned source commit, creates a release build locally, checks
+the app bundle's code-signature integrity, installs it to
+`~/Applications/AirTranslate.app`, and opens it. It does not copy API keys,
+transcripts, or settings from another Mac. Each Mac must grant its own
+Microphone and Speech Recognition permissions and download any required Apple
+language assets. macOS may ask for those permissions again after an update if
+the Mac does not have a persistent code-signing identity.
+
+Running a newer verified installer block updates the source and preserves one previous app at
+`~/Library/Application Support/AirTranslate Custom Build/backups/AirTranslate-previous.app`
+before installing the new build.
 
 Run the app bundle:
 

@@ -20,6 +20,7 @@ actor OpenAITranslationService {
         source: LanguageOption,
         target: LanguageOption,
         model selectedModel: OpenAIRealtimeTranslationModel,
+        qualityContext: TranslationQualityContext? = nil,
         progress: (@MainActor @Sendable (String) -> Void)? = nil
     ) async throws -> String {
         guard !text.isEmpty else { return text }
@@ -35,6 +36,7 @@ actor OpenAITranslationService {
                 source: source,
                 target: target,
                 model: selectedModel,
+                qualityContext: qualityContext,
                 streaming: true
             )
             if let streamedText = try await streamTranslation(streamingRequest, progress: progress) {
@@ -48,6 +50,7 @@ actor OpenAITranslationService {
             source: source,
             target: target,
             model: selectedModel,
+            qualityContext: qualityContext,
             streaming: false
         )
         let (data, httpResponse) = try await send(request)
@@ -72,19 +75,25 @@ actor OpenAITranslationService {
         source: LanguageOption,
         target: LanguageOption,
         model: OpenAIRealtimeTranslationModel,
+        qualityContext: TranslationQualityContext?,
         streaming: Bool
     ) throws -> URLRequest {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        let baseInstructions = AppText.openAITranslationInstructions(
+            source: source.localizedTitle,
+            target: target.localizedTitle
+        )
+        let instructions = qualityContext?.enhancing(
+            instructions: baseInstructions,
+            target: target
+        ) ?? baseInstructions
         request.httpBody = try JSONEncoder().encode(
             OpenAIResponseRequest(
                 model: model.apiModelID,
-                instructions: AppText.openAITranslationInstructions(
-                    source: source.localizedTitle,
-                    target: target.localizedTitle
-                ),
+                instructions: instructions,
                 input: text,
                 store: false,
                 stream: streaming ? true : nil

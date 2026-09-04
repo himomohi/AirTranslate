@@ -1,12 +1,13 @@
 # AirTranslate 1.7.1
 
-AirTranslate 1.7.1 steadies the floating caption overlay so live translations stop jumping, flickering, and rewriting mid-sentence, and adds Caption Stability and Caption Alignment controls.
+AirTranslate 1.7.1 steadies the floating caption overlay so live translations stop jumping, flickering, and rewriting mid-sentence, adds Caption Stability and Caption Alignment controls, and introduces a Presentation Quality mode for audience-facing interpretation.
 
 AirTranslate is an independent open-source project and is not affiliated with Apple, OpenAI, Google, or Meta.
 
 ## Added
 
 - **Caption Stability** (Responsive / Balanced / Steady) and **Caption Alignment** (Center / Left) are available in Settings and the menu bar. Steady holds each rewrite longer; Left keeps the start of each line fixed as text grows.
+- **Presentation Quality mode** switches to a translation-only, two-line audience overlay with steadier clause timing. Optional talk context improves GPT text translation, while the terminology glossary protects names, brands, acronyms, and preferred translations across caption engines.
 
 ## Changed
 

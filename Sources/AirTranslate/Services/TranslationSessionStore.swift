@@ -84,6 +84,9 @@ private enum SettingsKey {
     static let keepsFloatingCaptionAboveOtherWindows = "keepsFloatingCaptionAboveOtherWindows"
     static let floatingCaptionStability = "floatingCaptionStability"
     static let floatingCaptionTextAlignment = "floatingCaptionTextAlignment"
+    static let isPresentationQualityModeEnabled = "isPresentationQualityModeEnabled"
+    static let presentationContext = "presentationContext"
+    static let presentationGlossary = "presentationGlossary"
     static let paragraphBreakSilenceInterval = "paragraphBreakSilenceInterval"
     static let savedTranscriptContentMode = "savedTranscriptContentMode"
     static let sessionDurationMode = "sessionDurationMode"
@@ -592,6 +595,27 @@ final class TranslationSessionStore {
     var floatingCaptionTextAlignment = FloatingCaptionTextAlignment.center {
         didSet { persistSelectedSettings() }
     }
+    var isPresentationQualityModeEnabled = false {
+        didSet {
+            refreshTranslationQualityContext()
+            if isPresentationQualityModeEnabled, !isRestoringSelectedSettings {
+                applyPresentationQualityPreset()
+            }
+            persistSelectedSettings()
+        }
+    }
+    var presentationContext = "" {
+        didSet {
+            refreshTranslationQualityContext()
+            persistSelectedSettings()
+        }
+    }
+    var presentationGlossary = "" {
+        didSet {
+            refreshTranslationQualityContext()
+            persistSelectedSettings()
+        }
+    }
     /// Text width the floating window currently offers, reported by the view so
     /// captions wrap to the real width instead of a per-size estimate. `0` means
     /// unknown and falls back to the estimate.
@@ -665,6 +689,7 @@ final class TranslationSessionStore {
     )?
     private let transcriptsDirectoryOverride: URL?
     private let settingsDefaults: UserDefaults
+    @ObservationIgnored private var activeTranslationQualityContext: TranslationQualityContext?
     private var audioSampleCount = 0
     private var lastRecognizedText = ""
     private var lastRecognizedWasFinal = false
@@ -752,6 +777,17 @@ final class TranslationSessionStore {
 
     private var usesLongSessionMode: Bool {
         sessionDurationMode == .thirtyMinutesOrMore
+    }
+
+    private func applyPresentationQualityPreset() {
+        if !isTranscribeOnlyMode {
+            floatingCaptionDisplayMode = .translation
+        }
+        floatingCaptionTextSize = .large
+        floatingCaptionLineCount = .two
+        floatingCaptionStability = .steady
+        floatingCaptionTextAlignment = .leading
+        keepsFloatingCaptionAboveOtherWindows = true
     }
 
     var shouldCoalesceTranscriptAutoScroll: Bool {
@@ -2195,7 +2231,7 @@ final class TranslationSessionStore {
                 languageBias: configuration.usesAppleSourceAutoDetection
                     ? nil
                     : configuration.sourceLanguage.metaLanguageBiasName.map { [$0] },
-                keywords: []
+                keywords: activeTranslationQualityContext?.sourceTerms ?? []
             )
             scheduleMetaSessionRefresh(
                 service: metaVoiceTranscriber,
@@ -2458,7 +2494,7 @@ final class TranslationSessionStore {
             languageBias: configuration.usesAppleSourceAutoDetection
                 ? nil
                 : configuration.sourceLanguage.metaLanguageBiasName.map { [$0] },
-            keywords: []
+            keywords: activeTranslationQualityContext?.sourceTerms ?? []
         )
     }
 
@@ -2771,6 +2807,17 @@ final class TranslationSessionStore {
            let alignment = FloatingCaptionTextAlignment(rawValue: alignmentID) {
             floatingCaptionTextAlignment = alignment
         }
+        if let context = defaults.string(forKey: SettingsKey.presentationContext) {
+            presentationContext = context
+        }
+        if let glossary = defaults.string(forKey: SettingsKey.presentationGlossary) {
+            presentationGlossary = glossary
+        }
+        if defaults.object(forKey: SettingsKey.isPresentationQualityModeEnabled) != nil {
+            isPresentationQualityModeEnabled = defaults.bool(
+                forKey: SettingsKey.isPresentationQualityModeEnabled
+            )
+        }
         if defaults.object(forKey: SettingsKey.paragraphBreakSilenceInterval) != nil {
             paragraphBreakSilenceInterval = min(
                 max(defaults.double(forKey: SettingsKey.paragraphBreakSilenceInterval), 1),
@@ -2836,6 +2883,9 @@ final class TranslationSessionStore {
         } else {
             applyRestoredVoiceOutputPreference()
         }
+        if isPresentationQualityModeEnabled {
+            applyPresentationQualityPreset()
+        }
     }
 
     private func persistSelectedSettings() {
@@ -2866,6 +2916,12 @@ final class TranslationSessionStore {
         defaults.set(keepsFloatingCaptionAboveOtherWindows, forKey: SettingsKey.keepsFloatingCaptionAboveOtherWindows)
         defaults.set(floatingCaptionStability.id, forKey: SettingsKey.floatingCaptionStability)
         defaults.set(floatingCaptionTextAlignment.id, forKey: SettingsKey.floatingCaptionTextAlignment)
+        defaults.set(
+            isPresentationQualityModeEnabled,
+            forKey: SettingsKey.isPresentationQualityModeEnabled
+        )
+        defaults.set(presentationContext, forKey: SettingsKey.presentationContext)
+        defaults.set(presentationGlossary, forKey: SettingsKey.presentationGlossary)
         defaults.set(paragraphBreakSilenceInterval, forKey: SettingsKey.paragraphBreakSilenceInterval)
         defaults.set(savedTranscriptContentMode.id, forKey: SettingsKey.savedTranscriptContentMode)
         defaults.set(sessionDurationMode.id, forKey: SettingsKey.sessionDurationMode)
@@ -4513,6 +4569,7 @@ final class TranslationSessionStore {
         target: LanguageOption,
         progress: @escaping @MainActor @Sendable (String) -> Void = { _ in }
     ) async throws -> String {
+        let qualityContext = activeTranslationQualityContext
         let paragraphSegments = try await Task.detached(priority: .userInitiated) {
             try Task.checkCancellation()
             return Self.translationSegmentGroups(from: text)
@@ -4548,8 +4605,12 @@ final class TranslationSessionStore {
                         source: source,
                         target: target,
                         model: openAITranslationModel,
+                        qualityContext: qualityContext,
                         progress: { partialSegment in
-                            let partialText = (completedParagraphs + [(completedSegments + [partialSegment]).joined(separator: "\n")])
+                            let adjustedPartialSegment = qualityContext?.applyingTerminology(
+                                to: partialSegment
+                            ) ?? partialSegment
+                            let partialText = (completedParagraphs + [(completedSegments + [adjustedPartialSegment]).joined(separator: "\n")])
                                 .joined(separator: "\n\n")
                                 .trimmingCharacters(in: .whitespacesAndNewlines)
                             guard !partialText.isEmpty else { return }
@@ -4557,15 +4618,19 @@ final class TranslationSessionStore {
                         }
                     )
                 } else {
+                    let translationInput = qualityContext?.applyingTerminology(to: segment) ?? segment
                     translatedSegment = try await translator.translate(
-                        segment,
+                        translationInput,
                         source: source,
                         target: target,
                         model: selectedModel
                     )
                 }
                 try Task.checkCancellation()
-                let organizedSegment = organizeTranscript(translatedSegment, language: target)
+                let qualityAdjustedSegment = qualityContext?.applyingTerminology(
+                    to: translatedSegment
+                ) ?? translatedSegment
+                let organizedSegment = organizeTranscript(qualityAdjustedSegment, language: target)
                 cacheTranslatedSegment(organizedSegment, forKey: cacheKey)
                 translatedSegments.append(organizedSegment)
 
@@ -4645,6 +4710,16 @@ final class TranslationSessionStore {
         translationSegmentCache.removeAll()
     }
 
+    private func refreshTranslationQualityContext() {
+        activeTranslationQualityContext = isPresentationQualityModeEnabled
+            ? TranslationQualityContext(
+                presentationContext: presentationContext,
+                glossaryText: presentationGlossary
+            )
+            : nil
+        resetTranslationCache()
+    }
+
     private func updateRealtimeTranslationSourceTranscript(_ text: String) {
         guard isRunning, !isPaused else { return }
         guard isUsingOpenAIRealtimeTranslation else { return }
@@ -4676,6 +4751,7 @@ final class TranslationSessionStore {
     private func refreshOpenAIRealtimeTranslationLine() {
         let inputText = realtimeTranslationSourceText.trimmingCharacters(in: .whitespacesAndNewlines)
         let translatedText = realtimeTranslationOnlyText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let qualityTranslatedText = qualityAdjustedTranslation(translatedText)
         guard !inputText.isEmpty || !translatedText.isEmpty else { return }
 
         lastRecognizedText = inputText.isEmpty ? translatedText : inputText
@@ -4683,7 +4759,7 @@ final class TranslationSessionStore {
         transcriptCleanupTask?.cancel()
 
         let sourceText = inputText.isEmpty ? AppText.openAIRealtimeTranslationOnlySource : inputText
-        let visibleTranslatedText = translatedText.isEmpty ? AppText.translating : translatedText
+        let visibleTranslatedText = translatedText.isEmpty ? AppText.translating : qualityTranslatedText
 
         if let currentLineID,
            let index = lines.firstIndex(where: { $0.id == currentLineID }) {
@@ -4716,9 +4792,9 @@ final class TranslationSessionStore {
             presentFloatingSourceText(inputText)
         }
         if !translatedText.isEmpty {
-            stageTranscriptForSave(sourceText, translatedText: translatedText)
-            updateFloatingTranslationPresentation(translatedText, sourceText: sourceText)
-            speakTranslatedDeltaIfNeeded(translatedText)
+            stageTranscriptForSave(sourceText, translatedText: qualityTranslatedText)
+            updateFloatingTranslationPresentation(qualityTranslatedText, sourceText: sourceText)
+            speakTranslatedDeltaIfNeeded(qualityTranslatedText)
         }
     }
 
@@ -4928,6 +5004,7 @@ final class TranslationSessionStore {
     private func refreshGeminiLiveCaptionLine() {
         let inputText = geminiLiveInputTranscriptText.trimmingCharacters(in: .whitespacesAndNewlines)
         let outputText = geminiLiveOutputTranscriptText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let qualityOutputText = qualityAdjustedTranslation(outputText)
         guard !inputText.isEmpty || !outputText.isEmpty else { return }
 
         lastRecognizedText = inputText.isEmpty ? outputText : inputText
@@ -4935,7 +5012,7 @@ final class TranslationSessionStore {
         transcriptCleanupTask?.cancel()
 
         let sourceText = inputText.isEmpty ? AppText.geminiLiveTranslationSource : inputText
-        let translatedText = outputText.isEmpty ? AppText.translating : outputText
+        let translatedText = outputText.isEmpty ? AppText.translating : qualityOutputText
 
         if let currentLineID,
            let index = lines.firstIndex(where: { $0.id == currentLineID }) {
@@ -4967,12 +5044,12 @@ final class TranslationSessionStore {
         }
 
         if !inputText.isEmpty {
-            stageTranscriptForSave(inputText, translatedText: outputText)
+            stageTranscriptForSave(inputText, translatedText: qualityOutputText)
             presentFloatingSourceText(inputText)
         }
         if !outputText.isEmpty {
-            updateFloatingTranslationPresentation(outputText, sourceText: sourceText)
-            speakTranslatedDeltaIfNeeded(outputText)
+            updateFloatingTranslationPresentation(qualityOutputText, sourceText: sourceText)
+            speakTranslatedDeltaIfNeeded(qualityOutputText)
         }
     }
 
@@ -5037,7 +5114,7 @@ final class TranslationSessionStore {
         while !Task.isCancelled, let request = nextTranslationRequest() {
 
             do {
-                let delay = translationDebounceDelay(for: request.sourceText)
+                let delay = translationDebounceDelay(for: request)
                 if delay > 0 {
                     try await Task.sleep(for: .milliseconds(delay))
                 }
@@ -5141,9 +5218,17 @@ final class TranslationSessionStore {
         return organizedSourceText
     }
 
-    private func translationDebounceDelay(for sourceText: String) -> Int {
+    private func translationDebounceDelay(for request: TranslationRequest) -> Int {
+        if let presentationDelay = TranslationQualityPolicy.debounceDelay(
+            isEnabled: isPresentationQualityModeEnabled,
+            isFinal: request.line.isFinal,
+            sourceText: request.sourceText
+        ) {
+            return presentationDelay
+        }
+
         if usesLongSessionMode {
-            let sourceLength = sourceText.utf16.count
+            let sourceLength = request.sourceText.utf16.count
             if sourceLength >= Self.veryLargeTranscriptTranslationCharacterLimit {
                 return 900
             }
@@ -5297,6 +5382,10 @@ final class TranslationSessionStore {
             floatingQueuedTranslationSourceText = displaySourceText
             scheduleFloatingPresentationAdvance()
         }
+    }
+
+    private func qualityAdjustedTranslation(_ text: String) -> String {
+        activeTranslationQualityContext?.applyingTerminology(to: text) ?? text
     }
 
     /// Decides whether a translation for the currently presented source may

@@ -632,6 +632,60 @@ struct SettingsView: View {
                 alignment: session.floatingCaptionTextAlignment
             )
 
+            SettingsGroup(title: SettingsCopy.presentationQuality) {
+                if isSessionConfigurationLocked {
+                    SettingsNoticeRow(text: SettingsCopy.captureRunningDisabledReason, systemImage: "pause.circle")
+                }
+
+                SettingsToggleRow(
+                    title: SettingsCopy.presentationQualityMode,
+                    detail: SettingsCopy.presentationQualityModeDetail,
+                    systemImage: "person.crop.rectangle.badge.checkmark",
+                    isOn: lockedSessionConfigurationBinding($session.isPresentationQualityModeEnabled)
+                )
+                .disabled(isSessionConfigurationLocked)
+
+                if session.isPresentationQualityModeEnabled {
+                    SettingsControlRow(
+                        title: SettingsCopy.presentationContext,
+                        detail: SettingsCopy.presentationContextDetail,
+                        systemImage: "text.book.closed"
+                    ) {
+                        TextField(
+                            SettingsCopy.presentationContextPlaceholder,
+                            text: lockedSessionConfigurationBinding($session.presentationContext),
+                            axis: .vertical
+                        )
+                        .lineLimit(2...4)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(minWidth: 260, maxWidth: 360)
+                        .disabled(isSessionConfigurationLocked)
+                    }
+
+                    SettingsControlRow(
+                        title: SettingsCopy.presentationGlossary,
+                        detail: SettingsCopy.presentationGlossaryDetail,
+                        systemImage: "character.book.closed"
+                    ) {
+                        TextField(
+                            SettingsCopy.presentationGlossaryPlaceholder,
+                            text: lockedSessionConfigurationBinding($session.presentationGlossary),
+                            axis: .vertical
+                        )
+                        .lineLimit(4...8)
+                        .font(.callout.monospaced())
+                        .textFieldStyle(.roundedBorder)
+                        .frame(minWidth: 260, maxWidth: 360)
+                        .disabled(isSessionConfigurationLocked)
+                    }
+
+                    SettingsNoticeRow(
+                        text: SettingsCopy.presentationQualityNotice,
+                        systemImage: "checkmark.seal"
+                    )
+                }
+            }
+
             SettingsGroup(title: SettingsCopy.displaySettings) {
                 SettingsControlRow(
                     title: SettingsCopy.displayContent,
@@ -1484,6 +1538,66 @@ private enum SettingsCopy {
         korean: "로컬 우선 동작과 개인정보 안내를 확인합니다."
     )
     static let modeSettings = AppText.localized(english: "Mode Settings", korean: "모드 설정")
+    static let presentationQuality = AppText.localized(
+        english: "Presentation Quality",
+        korean: "프레젠테이션 품질",
+        japanese: "プレゼンテーション品質",
+        chineseSimplified: "演示质量"
+    )
+    static let presentationQualityMode = AppText.localized(
+        english: "Presentation Quality Mode",
+        korean: "프레젠테이션 품질 모드",
+        japanese: "プレゼンテーション品質モード",
+        chineseSimplified: "演示质量模式"
+    )
+    static let presentationQualityModeDetail = AppText.localized(
+        english: "Starts with audience defaults: translation only, two large steady lines, left aligned, with smarter clause timing.",
+        korean: "번역만 표시되는 크고 안정적인 두 줄, 왼쪽 정렬, 더 자연스러운 구절 타이밍을 청중용 기본값으로 적용합니다.",
+        japanese: "翻訳のみ・大きな2行・安定表示・左揃え・自然な節のタイミングを観客向け初期設定として適用します。",
+        chineseSimplified: "以观众字幕默认设置开始：仅译文、两行大字、稳定左对齐，并采用更自然的分句时机。"
+    )
+    static let presentationContext = AppText.localized(
+        english: "Talk Context",
+        korean: "발표 맥락",
+        japanese: "講演の背景",
+        chineseSimplified: "演讲背景"
+    )
+    static let presentationContextDetail = AppText.localized(
+        english: "Describe the audience and topic in up to 1,000 characters. GPT text translation sends this to OpenAI to choose meaning and tone.",
+        korean: "청중과 주제를 1,000자 이내로 설명하세요. GPT 텍스트 번역은 의미와 어조를 선택하기 위해 이 내용을 OpenAI로 전송합니다.",
+        japanese: "聴衆とテーマを1,000文字以内で説明します。GPTテキスト翻訳では意味と語調を選ぶため、この内容をOpenAIへ送信します。",
+        chineseSimplified: "用不超过 1,000 个字符描述听众和主题。GPT 文本翻译会将其发送至 OpenAI，以选择合适的语义和语气。"
+    )
+    static let presentationContextPlaceholder = AppText.localized(
+        english: "Example: Practical AI workshop for Japanese ecommerce business owners",
+        korean: "예: 일본 이커머스 사업자를 위한 실전 AI 워크숍",
+        japanese: "例：日本のEC事業者向け実践AIワークショップ",
+        chineseSimplified: "例如：面向日本电商经营者的实用 AI 工作坊"
+    )
+    static let presentationGlossary = AppText.localized(
+        english: "Terminology Glossary",
+        korean: "용어집",
+        japanese: "用語集",
+        chineseSimplified: "术语表"
+    )
+    static let presentationGlossaryDetail = AppText.localized(
+        english: "Up to 50 lines; 120 characters per term. Add likely speech-recognition mistakes as separate aliases.",
+        korean: "최대 50줄, 용어당 120자까지 입력할 수 있습니다. 예상되는 음성 인식 오류는 별칭으로 따로 추가하세요.",
+        japanese: "最大50行、各用語120文字までです。想定される音声認識ミスは別名として追加してください。",
+        chineseSimplified: "最多 50 行，每个术语不超过 120 个字符。可能的语音识别错误请另加一行作为别名。"
+    )
+    static let presentationGlossaryPlaceholder = AppText.localized(
+        english: "Gary Hong = ゲイリー・ウォン\nAI for Business = ビジネス向けAI",
+        korean: "Gary Hong = 게리 웡\nAI for Business = 비즈니스용 AI",
+        japanese: "Gary Hong = ゲイリー・ウォン\nAI for Business = ビジネス向けAI",
+        chineseSimplified: "Gary Hong = Gary Wong\nAI for Business = 商业 AI"
+    )
+    static let presentationQualityNotice = AppText.localized(
+        english: "Cloud note: GPT text translation sends the context and glossary to OpenAI. Meta Scribe receives glossary source terms as recognition hints. Apple processing stays on this Mac.",
+        korean: "클라우드 안내: GPT 텍스트 번역은 맥락과 용어집을 OpenAI로 전송합니다. Meta Scribe는 원문 용어를 인식 힌트로 받습니다. Apple 처리는 이 Mac에서만 실행됩니다.",
+        japanese: "クラウド利用について：GPTテキスト翻訳では背景と用語集をOpenAIへ送信します。Meta Scribeには原語を認識ヒントとして渡します。Apple処理はこのMac内で行われます。",
+        chineseSimplified: "云端说明：GPT 文本翻译会将背景和术语表发送至 OpenAI；Meta Scribe 会接收原词作为识别提示；Apple 处理仅在本机进行。"
+    )
     static let processingEngine = AppText.localized(english: "Processing Mode", korean: "처리 방식")
     static let processingEngineDetail = AppText.localized(
         english: "Choose exactly one active engine: local Apple mode, GPT Realtime, GPT Transcription, Gemini Live, or Meta Scribe.",
