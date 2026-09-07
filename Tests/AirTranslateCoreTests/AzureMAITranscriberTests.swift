@@ -98,11 +98,23 @@ struct AzureMAITranscriberTests {
     @Test @MainActor func optionalModeRestoresAndSwitchesWithoutChangingDefault() throws {
         let suite = "AzureMAITests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let store = TranslationSessionStore(modelAvailabilityProvider: { _, _ in [:] }, settingsDefaults: defaults)
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(suite, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        let store = TranslationSessionStore(
+            modelAvailabilityProvider: { _, _ in [:] },
+            settingsDefaults: defaults,
+            transcriptsDirectoryURL: directory
+        )
         #expect(!store.isUsingAzureMAI)
         #expect(store.selectedModel == .appleSystem)
         store.useGPTRealtimeMode()
+        store.sourceLanguage = .english
+        store.targetLanguage = .korean
         store.useAzureMAIMode()
         #expect(store.isUsingAzureMAI)
         #expect(!store.isUsingOpenAIRealtime)
@@ -110,7 +122,13 @@ struct AzureMAITranscriberTests {
         store.hasAzureSpeechAPIKey = false
         #expect(store.startReadinessAssessment().issue == .azureConfigurationMissing)
         store.azureSpeechEndpoint = "https://example.cognitiveservices.azure.com"
-        let restored = TranslationSessionStore(modelAvailabilityProvider: { _, _ in [:] }, settingsDefaults: defaults)
+        #expect(defaults.bool(forKey: "azureMAIEnabled"))
+        let restoredDefaults = try #require(UserDefaults(suiteName: suite))
+        let restored = TranslationSessionStore(
+            modelAvailabilityProvider: { _, _ in [:] },
+            settingsDefaults: restoredDefaults,
+            transcriptsDirectoryURL: directory
+        )
         #expect(restored.isUsingAzureMAI)
         #expect(restored.azureSpeechEndpoint == store.azureSpeechEndpoint)
         restored.useGeminiMode(.gemini35LiveTranslate)
