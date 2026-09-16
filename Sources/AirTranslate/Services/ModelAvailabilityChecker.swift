@@ -37,18 +37,20 @@ enum ModelAvailabilityChecker {
         ]
     }
 
+    @MainActor
     static func downloadAssets(
         for model: IntelligenceModel,
         source: LanguageOption,
-        target: LanguageOption
+        target: LanguageOption,
+        translationDownloader: @MainActor @Sendable (LanguageOption, LanguageOption) async throws -> Void
     ) async throws {
         switch model {
         case .appleSystem:
             async let speechDownload: Void = downloadSpeechAssets(for: source)
-            async let translationDownload: Void = downloadTranslationAssets(source: source, target: target)
+            async let translationDownload: Void = translationDownloader(source, target)
             _ = try await (speechDownload, translationDownload)
         case .appleOnDevice:
-            try await downloadTranslationAssets(source: source, target: target)
+            try await translationDownloader(source, target)
         case .appleSpeechOnly:
             try await downloadSpeechAssets(for: source)
         }
@@ -152,17 +154,6 @@ enum ModelAvailabilityChecker {
                 status: state.title
             )
         )
-    }
-
-    private static func downloadTranslationAssets(
-        source: LanguageOption,
-        target: LanguageOption
-    ) async throws {
-        let session = TranslationSession(
-            installedSource: Locale.Language(identifier: source.id),
-            target: Locale.Language(identifier: target.id)
-        )
-        try await session.prepareTranslation()
     }
 
     private static func availabilityState(

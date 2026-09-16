@@ -146,3 +146,18 @@ Azure 리소스의 지원 지역·권한·과금 및 실제 음성 정확도는 
 | 종료·재개·저장 | 중지/일시정지/재개 | `finishNariCapture`, `pauseNariCapture`, `resumeNariCapture`, `receiveNariTranscript` | 마지막 commit drain, 새 연결 세대, 기존 번역 FIFO와 선택형 파일 저장 | `NariSessionTests`, `NariRealtimeTranscriberTests` |
 
 사용 방법·제한·공식 계약은 [Nari STT 안내](../docs/nari-stt.md)에 있다.
+
+## Apple 번역 언어팩 다운로드
+
+| 기능 | 진입점 | 핵심 파일·심볼 | 데이터·외부 의존성 | 검증 |
+| --- | --- | --- | --- | --- |
+| 언어팩 다운로드·재시도 | 설정 → Assets → 번역 언어팩, 자산 누락 상태의 시작 | `TranslationSessionStore.beginModelAssetDownload`, `ModelAvailabilityChecker.downloadAssets` | 시작 시점 언어쌍·설정과 요청 ID, 다운로드 뒤 실제 `LanguageAvailability` 재확인 | `swift test --filter TranslationAssetDownloadTests` |
+| 시스템 다운로드 승인 | `TranslationAssetDownloader.download` → 요청 전용 창 | `TranslationAssetDownloadWindowController`, `TranslationAssetDownloadView.translationTask` | SwiftUI가 제공한 `TranslationSession.prepareTranslation`; `installedSource` 세션은 다운로드용으로 사용하지 않음 | 실제 미설치 언어쌍 승인·취소·같은 쌍 재시도·완료 상태 확인 필요 |
+| 취소·오래된 완료 차단 | 언어·시작 설정 변경, 중지, 앱 종료, 다운로드 창 닫기 | `cancelModelAssetDownload`, `TranslationAssetDownloader.cancel` | 요청당 새 창/세션, 승인 action 안에서만 세션 사용, 이전 요청의 늦은 성공·오류 무시 | `TranslationAssetDownloadTests`, `PipelineLifecycleTests` |
+
+설정/메인 창 또는 메뉴 막대 팝오버가 닫혀도 승인 UI를 호스팅할 수 있도록
+요청 동안만 전용 SwiftUI 창을 유지한다. `prepareTranslation`이 이미 진행 중인
+다운로드 때문에 일찍 반환해도 `LanguageAvailability`가 설치 완료를 확인할 때까지
+500ms 간격의 취소 가능한 상태 확인을 유지한다. 음성인식팩은 기존 Speech
+`AssetInventory` 설치 경로를 사용한다. 테스트의 주입된 다운로드/창 경계는
+수명과 상태 전이를 검증하며, 실제 macOS 언어팩 설치 성공의 증거는 아니다.

@@ -796,7 +796,8 @@ final class TranslationSessionStore {
     private let spellChecker = NSSpellChecker.shared
     private let spellDocumentTag = NSSpellChecker.uniqueSpellDocumentTag()
     private let modelAvailabilityProvider: (LanguageOption, LanguageOption) async -> [String: ModelAvailability]
-    private let modelAssetDownloader: (IntelligenceModel, LanguageOption, LanguageOption) async throws -> Void
+    private let modelAssetDownloader: ((IntelligenceModel, LanguageOption, LanguageOption) async throws -> Void)?
+    private let translationAssetDownloader = TranslationAssetDownloader()
     private let translationSessionPreparer: (
         @Sendable (LanguageOption, LanguageOption, IntelligenceModel) async throws -> Void
     )?
@@ -892,7 +893,21 @@ final class TranslationSessionStore {
     private var isRestoringSelectedSettings = false
     private var isUpdatingLanguagePair = false
     private var modelAvailabilityTask: Task<Void, Never>?
-    private var autoStartAfterModelAssetDownloadTask: Task<Void, Never>?
+    private var modelAssetDownloadTask: Task<Void, Never>?
+    private var modelAssetDownloadRequest: ModelAssetDownloadRequest?
+
+    private struct ModelAssetDownloadRequest {
+        let id = UUID()
+        let model: IntelligenceModel
+        let configuration: StartConfiguration
+        let startsAfterDownload: Bool
+
+        var affectedModels: [IntelligenceModel] {
+            model == .appleSystem ? [.appleSystem, .appleSpeechOnly, .appleOnDevice] : [model, .appleSystem]
+        }
+    }
+
+    var isDownloadingModelAssets: Bool { modelAssetDownloadRequest != nil }
     private var toastDismissTask: Task<Void, Never>?
     private var transcribeOnlyNoticeDismissTask: Task<Void, Never>?
     private var captureStartTask: Task<Void, Never>?
@@ -997,9 +1012,7 @@ final class TranslationSessionStore {
         modelAvailabilityProvider: @escaping (LanguageOption, LanguageOption) async -> [String: ModelAvailability] = { source, target in
             await ModelAvailabilityChecker.availability(source: source, target: target)
         },
-        modelAssetDownloader: @escaping (IntelligenceModel, LanguageOption, LanguageOption) async throws -> Void = { model, source, target in
-            try await ModelAvailabilityChecker.downloadAssets(for: model, source: source, target: target)
-        },
+        modelAssetDownloader: ((IntelligenceModel, LanguageOption, LanguageOption) async throws -> Void)? = nil,
         translationSessionPreparer: (
             @Sendable (LanguageOption, LanguageOption, IntelligenceModel) async throws -> Void
         )? = nil,
@@ -1224,8 +1237,9 @@ final class TranslationSessionStore {
         isFinishingAzureMAI = false
         invalidateCaptureStartAttempt()
         cancelTranslationSessionWarmup()
-        autoStartAfterModelAssetDownloadTask?.cancel()
-        autoStartAfterModelAssetDownloadTask = nil
+        if cancelModelAssetDownload() {
+            refreshModelAvailability()
+        }
         transcriptCheckpointTask?.cancel()
         transcriptCheckpointTask = nil
         openAITranscriber.stop()
@@ -1593,7 +1607,7 @@ final class TranslationSessionStore {
     }
 
     func prepareForTermination() {
-        autoStartAfterModelAssetDownloadTask?.cancel()
+        cancelModelAssetDownload()
         cancelTranslationSessionWarmup()
         transcriptCheckpointTask?.cancel()
         transcriptCheckpointTask = nil
@@ -2065,100 +2079,120 @@ final class TranslationSessionStore {
     }
 
     func downloadModelAssets(for model: IntelligenceModel) {
-        guard modelAvailability(for: model).state.canDownload else { return }
+        beginModelAssetDownload(model, startsAfterDownload: false)
+    }
 
-        let sourceLanguage = sourceLanguage
-        let targetLanguage = targetLanguage
-        modelAvailabilityByModelID[model.id] = ModelAvailability(
-            state: .downloading,
-            detail: model.detail
+    private func downloadRequiredModelAssetsThenStart(_ model: IntelligenceModel) {
+        beginModelAssetDownload(model, startsAfterDownload: true)
+    }
+
+    private func beginModelAssetDownload(_ model: IntelligenceModel, startsAfterDownload: Bool) {
+        guard modelAssetDownloadRequest == nil,
+              modelAvailability(for: model).state.canDownload else { return }
+
+        let request = ModelAssetDownloadRequest(
+            model: model, configuration: currentStartConfiguration(), startsAfterDownload: startsAfterDownload
         )
+        modelAvailabilityTask?.cancel()
+        modelAssetDownloadRequest = request
+        markModelAssetsDownloading(request)
+        if startsAfterDownload {
+            isPaused = false
+            setCaptionersPaused(false)
+            isStarting = true
+            statusMessage = "\(AppText.modelStatusDownloading): \(model.title)"
+        }
 
-        Task { @MainActor in
+        modelAssetDownloadTask = Task { @MainActor [weak self] in
+            guard let self else { return }
             do {
-                try await modelAssetDownloader(model, sourceLanguage, targetLanguage)
-                refreshModelAvailability()
+                try Task.checkCancellation()
+                let source = request.configuration.sourceLanguage
+                let target = request.configuration.targetLanguage
+                if let modelAssetDownloader {
+                    try await modelAssetDownloader(model, source, target)
+                } else {
+                    try await ModelAvailabilityChecker.downloadAssets(
+                        for: model, source: source, target: target,
+                        translationDownloader: { [translationAssetDownloader] source, target in
+                            try await translationAssetDownloader.download(source: source, target: target)
+                        }
+                    )
+                }
+                try Task.checkCancellation()
+                let availability = await modelAvailabilityProvider(source, target)
+                try Task.checkCancellation()
+                guard isCurrentModelAssetDownload(request) else { return }
+                modelAvailabilityTask?.cancel()
+                modelAssetDownloadRequest = nil
+                modelAssetDownloadTask = nil
+                modelAvailabilityByModelID = availability
+                guard startsAfterDownload else { return }
+                isStarting = false
+                let readiness = startReadinessAssessment()
+                guard readiness.canStart else {
+                    presentCaptureStartFailure(statusMessage(for: readiness), recoveryAction: recoveryAction(for: readiness))
+                    return
+                }
+                start()
             } catch {
-                modelAvailabilityByModelID[model.id] = ModelAvailability(
-                    state: .failed,
-                    detail: error.localizedDescription
-                )
+                guard isCurrentModelAssetDownload(request) else { return }
+                if error is CancellationError || Task.isCancelled {
+                    modelAssetDownloadRequest = nil
+                    modelAssetDownloadTask = nil
+                    if startsAfterDownload { isStarting = false }
+                    if startsAfterDownload { statusMessage = AppText.ready }
+                    refreshModelAvailability()
+                } else {
+                    // 다른 자산 행도 다운로드 중 표시에서 벗어나도록 현재 상태를 다시 읽는다.
+                    let availability = await modelAvailabilityProvider(
+                        request.configuration.sourceLanguage, request.configuration.targetLanguage
+                    )
+                    guard !Task.isCancelled, isCurrentModelAssetDownload(request) else { return }
+                    modelAvailabilityTask?.cancel()
+                    modelAssetDownloadRequest = nil
+                    modelAssetDownloadTask = nil
+                    if startsAfterDownload { isStarting = false }
+                    modelAvailabilityByModelID = availability
+                    modelAvailabilityByModelID[model.id] = ModelAvailability(
+                        state: .failed, detail: error.localizedDescription
+                    )
+                    if startsAfterDownload {
+                        presentCaptureStartFailure(AppText.startFailed(error.localizedDescription), recoveryAction: .retry)
+                    }
+                }
             }
         }
     }
 
-    private func downloadRequiredModelAssetsThenStart(_ model: IntelligenceModel) {
-        guard modelAvailability(for: model).state.canDownload else {
-            statusMessage = statusMessage(for: startReadinessAssessment())
-            return
+    private func isCurrentModelAssetDownload(_ request: ModelAssetDownloadRequest) -> Bool {
+        guard modelAssetDownloadRequest?.id == request.id else { return false }
+        guard request.configuration == currentStartConfiguration() else {
+            cancelModelAssetDownload()
+            refreshModelAvailability()
+            return false
         }
+        return true
+    }
 
-        let sourceLanguage = sourceLanguage
-        let targetLanguage = targetLanguage
-        isPaused = false
-        setCaptionersPaused(false)
-        isStarting = true
-        statusMessage = "\(AppText.modelStatusDownloading): \(model.title)"
-        modelAvailabilityByModelID[model.id] = ModelAvailability(
-            state: .downloading,
-            detail: model.detail
-        )
-
-        autoStartAfterModelAssetDownloadTask?.cancel()
-        autoStartAfterModelAssetDownloadTask = Task { [weak self, model, sourceLanguage, targetLanguage] in
-            do {
-                try await self?.modelAssetDownloader(model, sourceLanguage, targetLanguage)
-                guard !Task.isCancelled else { return }
-                let availabilityByModelID = await self?.modelAvailabilityProvider(sourceLanguage, targetLanguage) ?? [:]
-                guard !Task.isCancelled else { return }
-
-                await MainActor.run {
-                    guard let self else { return }
-                    self.modelAvailabilityByModelID = availabilityByModelID
-                    guard self.isStarting else { return }
-
-                    guard sourceLanguage == self.sourceLanguage,
-                          targetLanguage == self.targetLanguage,
-                          model == self.requiredLocalModelForStart
-                    else {
-                        self.isStarting = false
-                        self.statusMessage = AppText.ready
-                        self.refreshModelAvailability()
-                        return
-                    }
-
-                    let readiness = self.startReadinessAssessment()
-                    guard readiness.canStart else {
-                        self.isStarting = false
-                        self.presentCaptureStartFailure(
-                            self.statusMessage(for: readiness),
-                            recoveryAction: self.recoveryAction(for: readiness)
-                        )
-                        return
-                    }
-
-                    self.isStarting = false
-                    self.autoStartAfterModelAssetDownloadTask = nil
-                    self.start()
-                }
-            } catch is CancellationError {
-                return
-            } catch {
-                await MainActor.run {
-                    guard let self else { return }
-                    self.isStarting = false
-                    self.autoStartAfterModelAssetDownloadTask = nil
-                    self.modelAvailabilityByModelID[model.id] = ModelAvailability(
-                        state: .failed,
-                        detail: error.localizedDescription
-                    )
-                    self.presentCaptureStartFailure(
-                        AppText.startFailed(error.localizedDescription),
-                        recoveryAction: .retry
-                    )
-                }
-            }
+    private func markModelAssetsDownloading(_ request: ModelAssetDownloadRequest) {
+        for model in request.affectedModels {
+            modelAvailabilityByModelID[model.id] = ModelAvailability(state: .downloading, detail: model.detail)
         }
+    }
+
+    @discardableResult
+    private func cancelModelAssetDownload() -> Bool {
+        guard let request = modelAssetDownloadRequest else { return false }
+        modelAssetDownloadRequest = nil
+        modelAssetDownloadTask?.cancel()
+        modelAssetDownloadTask = nil
+        translationAssetDownloader.cancel()
+        if request.startsAfterDownload {
+            isStarting = false
+            statusMessage = AppText.ready
+        }
+        return true
     }
 
     var floatingSourceText: String {
@@ -3216,6 +3250,10 @@ final class TranslationSessionStore {
     }
 
     func refreshModelAvailability() {
+        if let request = modelAssetDownloadRequest,
+           request.configuration != currentStartConfiguration() {
+            cancelModelAssetDownload()
+        }
         let sourceLanguage = sourceLanguage
         let targetLanguage = targetLanguage
 
@@ -3225,14 +3263,14 @@ final class TranslationSessionStore {
                 ($0.id, ModelAvailability.checking(for: $0))
             }
         )
+        if let request = modelAssetDownloadRequest { markModelAssetsDownloading(request) }
 
-        modelAvailabilityTask = Task { [weak self, sourceLanguage, targetLanguage] in
+        modelAvailabilityTask = Task { @MainActor [weak self, sourceLanguage, targetLanguage] in
             let availabilityByModelID = await self?.modelAvailabilityProvider(sourceLanguage, targetLanguage) ?? [:]
-            guard !Task.isCancelled else { return }
-
-            await MainActor.run {
-                self?.modelAvailabilityByModelID = availabilityByModelID
-            }
+            guard !Task.isCancelled, let self,
+                  sourceLanguage == self.sourceLanguage, targetLanguage == self.targetLanguage else { return }
+            self.modelAvailabilityByModelID = availabilityByModelID
+            if let request = self.modelAssetDownloadRequest { self.markModelAssetsDownloading(request) }
         }
     }
 
@@ -3428,6 +3466,12 @@ final class TranslationSessionStore {
 
     private func persistSelectedSettings() {
         guard !isRestoringSelectedSettings else { return }
+
+        if let request = modelAssetDownloadRequest,
+           request.configuration != currentStartConfiguration() {
+            cancelModelAssetDownload()
+            refreshModelAvailability()
+        }
 
         let defaults = settingsDefaults
         defaults.set(sourceLanguage.id, forKey: SettingsKey.sourceLanguageID)

@@ -727,6 +727,7 @@ struct SettingsView: View {
                     session.downloadModelAssets(for: .appleOnDevice)
                 }
             }
+            .disabled(session.isDownloadingModelAssets)
 
             Label(SettingsCopy.assetDownloadNotice, systemImage: "internaldrive")
                 .font(.caption)
