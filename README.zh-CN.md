@@ -23,16 +23,20 @@
 
 AirTranslate 会捕获 Mac 正在播放的音频，实时转写；当你选择翻译流程时，它会进行翻译，并可将字幕悬浮在其他应用上方。Apple Mode 仍然是默认的本地优先流程。云端引擎为可选项，配置对应提供方密钥后即可使用。
 
-AirTranslate **1.9.1/build191** 为悬浮字幕新增双向调整大小、hover 移动和缩放提示、自定义字号、文本颜色、背景颜色和背景透明度、偏好保存和重置。
+AirTranslate **1.9.2/build192** 修复了**设置 > 资源**中的翻译语言包下载，通过 Apple 的应用内下载授权界面完成请求。
+
+下载完成后会刷新资源状态。取消或失败后可以重试，更改语言后旧请求不会启动错误的会话。
+
+悬浮字幕支持双向调整大小、hover 移动和缩放提示、自定义字号、文本颜色、背景颜色和背景透明度、偏好保存和重置。
 
 文字和背景颜色也可通过直接输入 **#RRGGBB 颜色代码** 并使用键盘应用。
 
 ## 下载
 
-当前公开最新版：**v1.9.1**。
+当前公开最新版：**v1.9.2**。
 
 - [下载 AirTranslate.dmg](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [下载 AirTranslate-1.9.1.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.9.1/AirTranslate-1.9.1.zip)
+- [下载 AirTranslate-1.9.2.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.9.2/AirTranslate-1.9.2.zip)
 - [下载 AirTranslate.dmg.sha256](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [查看版本历史](Release/VERSION-HISTORY.md)
 

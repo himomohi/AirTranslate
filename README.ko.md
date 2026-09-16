@@ -23,16 +23,20 @@
 
 AirTranslate는 Mac에서 재생되는 소리를 캡처해 실시간으로 전사하고, 번역 흐름을 선택하면 번역하며, 필요하면 다른 앱 위에 플로팅 자막을 유지합니다. Apple 기본 모드는 계속 로컬 우선 기본 경로입니다. 클라우드 엔진은 선택형이며 해당 제공자 키를 설정하면 사용할 수 있습니다.
 
-AirTranslate **1.9.1/build191**은 플로팅 자막에 양방향 크기 조절, hover 이동·리사이즈 표시, 사용자 지정 글자 크기, 텍스트 색상, 배경 색상과 배경 투명도, 설정 저장과 초기화를 추가합니다.
+AirTranslate **1.9.2/build192**는 **설정 > 자산**에서 Apple의 앱 내 다운로드 승인 창을 통해 번역 언어팩을 다운로드하도록 수정합니다.
+
+다운로드가 끝나면 자산 상태를 새로 확인합니다. 취소하거나 실패한 요청은 다시 시도할 수 있으며, 언어를 바꾸면 이전 요청이 잘못된 세션을 시작하지 않도록 처리합니다.
+
+플로팅 자막은 양방향 크기 조절, hover 이동·리사이즈 표시, 사용자 지정 글자 크기, 텍스트 색상, 배경 색상과 배경 투명도, 설정 저장과 초기화를 지원합니다.
 
 글자색과 배경색은 **#RRGGBB 색상 코드**를 직접 입력하고 키보드로 적용할 수도 있습니다.
 
 ## 다운로드
 
-현재 공개 최신 릴리즈: **v1.9.1**.
+현재 공개 최신 릴리즈: **v1.9.2**.
 
 - [AirTranslate.dmg 다운로드](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [AirTranslate-1.9.1.zip 다운로드](https://github.com/himomohi/AirTranslate/releases/download/v1.9.1/AirTranslate-1.9.1.zip)
+- [AirTranslate-1.9.2.zip 다운로드](https://github.com/himomohi/AirTranslate/releases/download/v1.9.2/AirTranslate-1.9.2.zip)
 - [AirTranslate.dmg.sha256 다운로드](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [버전 이력 보기](Release/VERSION-HISTORY.md)
 

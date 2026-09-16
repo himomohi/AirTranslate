@@ -23,16 +23,20 @@
 
 AirTranslateはMacで再生中の音声を取り込み、ライブで文字起こしし、翻訳ワークフローを選んだ場合は翻訳し、必要に応じて他のアプリの上にフローティング字幕を表示します。Apple Modeは引き続きローカル優先の標準ワークフローです。クラウドエンジンは任意で、対応するプロバイダーキーを設定すると利用できます。
 
-AirTranslate **1.9.1/build191** では、フローティング字幕に双方向リサイズ、hover時の移動・リサイズ表示、カスタム文字サイズ、テキスト色、背景色と背景の不透明度、設定保存とリセットを追加しました。
+AirTranslate **1.9.2/build192** は、**設定 > アセット**からAppleのアプリ内ダウンロード承認画面を使って翻訳言語パックをダウンロードするよう修正しました。
+
+ダウンロード後はアセットの状態を更新します。キャンセルや失敗後は再試行でき、言語を変更した場合は以前のリクエストが誤ったセッションを開始しないようにします。
+
+フローティング字幕は双方向リサイズ、hover時の移動・リサイズ表示、カスタム文字サイズ、テキスト色、背景色と背景の不透明度、設定保存とリセットに対応しています。
 
 文字色と背景色は **#RRGGBB カラーコード** を直接入力し、キーボードで適用することもできます。
 
 ## ダウンロード
 
-現在の公開最新版: **v1.9.1**。
+現在の公開最新版: **v1.9.2**。
 
 - [AirTranslate.dmgをダウンロード](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [AirTranslate-1.9.1.zipをダウンロード](https://github.com/himomohi/AirTranslate/releases/download/v1.9.1/AirTranslate-1.9.1.zip)
+- [AirTranslate-1.9.2.zipをダウンロード](https://github.com/himomohi/AirTranslate/releases/download/v1.9.2/AirTranslate-1.9.2.zip)
 - [AirTranslate.dmg.sha256をダウンロード](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [バージョン履歴を見る](Release/VERSION-HISTORY.md)
 

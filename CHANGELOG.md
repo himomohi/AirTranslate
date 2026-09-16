@@ -4,6 +4,14 @@ All notable changes to AirTranslate are documented in this file.
 
 ## [Unreleased]
 
+## 1.9.2 - 2026-09-16
+
+### Fixed
+
+- Fixed translation language-pack downloads in Settings > Assets by using Apple's in-app language download approval flow instead of a session restricted to already-installed languages (Issue #14).
+- Refresh asset availability after downloads and allow retry after cancellation or failure.
+- Keep download completion tied to the requested language pair so an outdated request cannot start capture with a different selection.
+
 ## 1.9.1 - 2026-09-16
 
 ### Added

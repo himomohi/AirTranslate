@@ -23,16 +23,20 @@ Live Mac audio captions and translation for meetings, videos, lectures, intervie
 
 AirTranslate captures audio playing on your Mac, transcribes it live, translates it when you choose a translation workflow, and can keep captions floating above other apps. Apple Mode remains the default local-first workflow. Cloud engines are optional and become available after you configure the matching provider key.
 
-AirTranslate **1.9.1/build191** improves floating captions with two-axis resizing, visible hover controls, custom font sizing, text color, background color and opacity, persistent preferences, and reset.
+AirTranslate **1.9.2/build192** fixes translation language-pack downloads from **Settings > Assets** using Apple’s in-app download approval flow.
+
+After a download completes, asset availability is refreshed. Cancelled or failed requests can be retried, and changing languages prevents an old request from starting the wrong session.
+
+Floating captions support two-axis resizing, visible hover controls, custom font sizing, text color, background color and opacity, persistent preferences, and reset.
 
 Text and background colors can also be entered precisely as **#RRGGBB color codes** and applied from the keyboard.
 
 ## Download
 
-Latest public release: **v1.9.1**.
+Latest public release: **v1.9.2**.
 
 - [Download AirTranslate.dmg](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [Download AirTranslate-1.9.1.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.9.1/AirTranslate-1.9.1.zip)
+- [Download AirTranslate-1.9.2.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.9.2/AirTranslate-1.9.2.zip)
 - [Download AirTranslate.dmg.sha256](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [View release history](Release/VERSION-HISTORY.md)
 

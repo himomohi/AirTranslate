@@ -41,6 +41,12 @@ When troubleshooting permissions, check which app copy is running. Older or diff
 
 Provider keys are managed in **Settings > API Keys**. A configured key means AirTranslate has local provider settings; it does not prove provider account authorization until a session starts.
 
+## Download Local Language Assets
+
+Choose the source and target languages first, then open **Settings > Assets**. The speech recognition pack and translation language pack are separate. Use **Download** or **Retry** on the translation pack and approve the language download in the macOS prompt. AirTranslate refreshes the status when the download finishes; a cancelled or failed request can be retried.
+
+If a system download cannot finish, check your connection and use **System Settings > General > Language & Region > Translation Languages** to manage the language packs. Download both languages in your selected pair. See [Apple's language download guide](https://support.apple.com/en-euro/guide/mac-help/-mchldd8b3c15/mac).
+
 ## Floating Captions
 
 Open floating captions from the main window or menu bar while a session is running. The floating caption window can be resized in both width and height and shows hover affordances for moving and resizing.
