@@ -4,6 +4,9 @@ enum StartReadinessIssue: Equatable {
     case openAIAPIKeyMissing
     case geminiAPIKeyMissing
     case azureConfigurationMissing
+    case nariAPIKeyMissing
+    case nariLanguageUnsupported
+    case nariLegacyFreeModelSelected
     case metaAPIKeyMissing
     case localAssetsChecking
     case localAssetsDownloadRequired
@@ -26,6 +29,8 @@ enum StartReadinessPolicy {
         hasGeminiAPIKey: Bool = false,
         requiresMetaAPIKey: Bool = false,
         hasMetaAPIKey: Bool = false,
+        requiresNariAPIKey: Bool = false,
+        hasNariAPIKey: Bool = false,
         requiredLocalModelAvailability: ModelAvailability?
     ) -> StartReadinessAssessment {
         if requiresOpenAIAPIKey, !hasOpenAIAPIKey {
@@ -36,6 +41,9 @@ enum StartReadinessPolicy {
         }
         if requiresMetaAPIKey, !hasMetaAPIKey {
             return StartReadinessAssessment(issue: .metaAPIKeyMissing)
+        }
+        if requiresNariAPIKey, !hasNariAPIKey {
+            return StartReadinessAssessment(issue: .nariAPIKeyMissing)
         }
 
         guard let requiredLocalModelAvailability else {

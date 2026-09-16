@@ -31,6 +31,25 @@ struct APIKeyStorePresenceTests {
         )
     }
 
+    @Test
+    func nariPresenceCheckDoesNotReadSecretDataOrAllowAuthenticationUI() {
+        verifyPresenceQuery(
+            NariAPIKeyStore.presenceQuery(),
+            service: "AirTranslate.Nari",
+            account: "NARI_API_KEY"
+        )
+    }
+
+    @Test
+    func nariKeyValidationRejectsBlankAndEmbeddedControlCharactersWithoutAccessingKeychain() throws {
+        #expect(try NariAPIKeyStore.normalizedAPIKey("  test-placeholder  ") == "test-placeholder")
+        for value in ["", " \n ", "test\r\nheader", "test\u{00}value", "test value"] {
+            #expect(throws: NariAPIKeyStoreError.self) {
+                try NariAPIKeyStore.normalizedAPIKey(value)
+            }
+        }
+    }
+
     private func verifyPresenceQuery(
         _ query: [String: Any],
         service: String,

@@ -34,6 +34,7 @@ enum ProcessingEngine: String, CaseIterable, Identifiable {
     case gemini
     case meta
     case azure
+    case nari
 
     var id: String { rawValue }
 
@@ -44,12 +45,14 @@ enum ProcessingEngine: String, CaseIterable, Identifiable {
         case .gptTranscription: AppText.gptTranscriptionMode
         case .gemini: AppText.geminiModels
         case .azure: AzureMAICopy.title
+        case .nari: NariCopy.title
         case .meta: AppText.metaScribe
         }
     }
 
     @MainActor
     static func current(for session: TranslationSessionStore) -> ProcessingEngine {
+        if session.isUsingNariSTT { return .nari }
         if session.isUsingAzureMAI { return .azure }
         if session.isUsingMetaScribe { return .meta }
         if session.isUsingGPTTranscriptionMode { return .gptTranscription }
@@ -129,6 +132,7 @@ struct StageHeaderView: View {
         case .gpt, .gptTranscription: !session.hasOpenAIAPIKey
         case .gemini: !session.hasGeminiAPIKey
         case .azure: !session.hasAzureSpeechAPIKey || (try? AzureMAITranscriber.endpointURL(session.azureSpeechEndpoint)) == nil
+        case .nari: !session.hasNariAPIKey
         case .meta: !session.hasMetaAPIKey
         case .apple: false
         }
@@ -139,6 +143,7 @@ struct StageHeaderView: View {
         case .gpt, .gptTranscription: AppText.openAIAPIKeyNotConfigured
         case .gemini: AppText.geminiAPIKeyNotConfigured
         case .azure: AzureMAICopy.configurationRequired
+        case .nari: NariCopy.configurationRequired
         case .meta: AppText.metaAPIKeyNotConfigured
         case .apple: AppText.configureTranslationSettings
         }
@@ -249,7 +254,7 @@ struct ConsoleBarView: View {
         }
         .buttonStyle(AirIconButton())
         .airFocusRing(cornerRadius: 18)
-        .disabled(!session.isRunning)
+        .disabled(!session.isRunning || session.isFinishingNariSTT)
         .help(session.isPaused ? AppText.resume : AppText.pause)
         .accessibilityLabel(session.isPaused ? AppText.resume : AppText.pause)
     }
@@ -371,7 +376,25 @@ struct ConsoleBarView: View {
 
     @ViewBuilder
     private var outputControl: some View {
-        if session.isTranscribeOnlyMode {
+        if session.isUsingNariSTT && segmentedControlPresentation != .lockedSummary {
+            Menu {
+                Picker(AppText.model, selection: nariWorkflowBinding) {
+                    ForEach(IntelligenceModel.allCases) { model in
+                        Text(model.title).tag(model)
+                    }
+                }
+            } label: {
+                AirChip(
+                    text: session.isTranscribeOnlyMode ? NariCopy.sourceOnly : AppText.liveTranslation,
+                    systemImage: "text.alignleft",
+                    tint: AirTranslateDesign.Palette.textPrimary
+                )
+            }
+            .menuIndicator(.hidden)
+            .airFocusRing(cornerRadius: 12)
+            .accessibilityLabel(AppText.outputMode)
+            .accessibilityValue(session.selectedModel.title)
+        } else if session.isTranscribeOnlyMode {
             AirChip(
                 text: sourceOnlyOutputTitle,
                 systemImage: "text.alignleft",
@@ -467,10 +490,14 @@ struct ConsoleBarView: View {
                 if segmentedControlPresentation == .lockedSummary {
                     Text(session.languageSummary)
                 } else {
-                    Picker(AppText.from, selection: sourceLanguageBinding) {
-                        ForEach(LanguageOption.supported) { language in
-                            Text(language.localizedTitle).tag(language)
+                    if !usesAutomaticSource {
+                        Picker(AppText.from, selection: sourceLanguageBinding) {
+                            ForEach(LanguageOption.supported) { language in
+                                Text(language.localizedTitle).tag(language)
+                            }
                         }
+                    } else {
+                        Text(AppText.autoDetectInput)
                     }
                     if !session.isTranscribeOnlyMode {
                         Picker(AppText.to, selection: targetLanguageBinding) {
@@ -483,7 +510,13 @@ struct ConsoleBarView: View {
             }
 
             Section(AppText.output) {
-                if session.isTranscribeOnlyMode {
+                if session.isUsingNariSTT && segmentedControlPresentation != .lockedSummary {
+                    Picker(AppText.model, selection: nariWorkflowBinding) {
+                        ForEach(IntelligenceModel.allCases) { model in
+                            Text(model.title).tag(model)
+                        }
+                    }
+                } else if session.isTranscribeOnlyMode {
                     Text(sourceOnlyOutputTitle)
                 } else if segmentedControlPresentation == .lockedSummary {
                     Text(session.liveOutputMode.title)
@@ -651,6 +684,20 @@ struct ConsoleBarView: View {
         guardedBinding($session.translatedVoiceVolume)
     }
 
+    private var nariWorkflowBinding: Binding<IntelligenceModel> {
+        Binding(
+            get: { session.isTranscribeOnlyMode ? .appleSpeechOnly : .appleSystem },
+            set: { model in
+                guard isConfigurationAvailable else { return }
+                if model == .appleSpeechOnly {
+                    session.useTranscribeOnlyMode()
+                } else {
+                    session.useTranslationMode()
+                }
+            }
+        )
+    }
+
     private func guardedBinding<Value>(_ binding: Binding<Value>) -> Binding<Value> {
         Binding(
             get: { binding.wrappedValue },
@@ -666,7 +713,8 @@ struct ConsoleBarView: View {
     }
 
     private var usesAutomaticSource: Bool {
-        session.isAppleSourceAutoDetectionEnabled
+        if session.isUsingNariSTT { return session.isNariSourceAutoDetectionEnabled }
+        return session.isAppleSourceAutoDetectionEnabled
             || usesOpenAIAutoLanguageFlow
             || session.isUsingGeminiTranscriptionMode
             || session.isUsingMetaScribe
@@ -677,7 +725,7 @@ struct ConsoleBarView: View {
     }
 
     private var sourceOnlyOutputTitle: String {
-        session.isUsingGeminiTranscriptionMode ? AppText.originalOnly : AppText.gptTranscriptionSourceOnly
+        session.isUsingGeminiTranscriptionMode || session.isUsingNariSTT ? AppText.originalOnly : AppText.gptTranscriptionSourceOnly
     }
 
     private var selectedMicrophoneName: String {

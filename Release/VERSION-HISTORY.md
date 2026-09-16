@@ -1,5 +1,27 @@
 # AirTranslate Version History
 
+## 1.9.0 - 2026-09-16
+
+### Added
+
+- Optional Nari STT sends microphone or Mac audio to Nari Qwen3-ASR for realtime source transcription after the user configures a Nari API key.
+- Nari model selection includes the current GA STT IDs `qwen3-asr-fast` and `qwen3-asr`; model availability, limits, and paid-credit requirements follow Nari's current provider documentation and account state.
+- Nari can use manual source language selection or Nari-specific automatic spoken-language detection for supported spoken languages, including Korean.
+
+### Changed
+
+- API key settings now use one provider list for OpenAI, Gemini, Meta, Azure, and Nari, with saved/setup state, active engine context, provider icons, key-console links, and a Keychain information popover.
+- Nari STT starts as original-only transcription by default, then can use Apple Translation when translation output is enabled and the source language is available.
+- New Nari selections use the GA Fast model with a paid-credit notice. Saved Free Public Beta model choices are preserved and blocked from starting, without automatic migration to a paid model; users can explicitly select a GA model in Settings > General to resume.
+- Localized README files now describe the current product surface and point release chronology to `CHANGELOG.md` and this version history.
+- Public release metadata and README download links are updated for 1.9.0/build190.
+
+### Fixed
+
+- Nari API key presence checks avoid reading secret values or triggering Keychain authentication UI during startup status checks.
+- Nari session lifecycle handling preserves completed captions across pause, stop, reconnect, and queue-limit failures while avoiding replay of unfinished audio.
+- README provider copy now makes clear that configured keys are not proof of external provider authorization.
+
 ## 1.8.0 - 2026-09-08
 
 ### Added

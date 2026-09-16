@@ -31,7 +31,15 @@ right files before changing the app.
 - `Sources/AirTranslate/Views/TranscriptLibraryView.swift`
   - Saved transcript browser and editor.
 - `Sources/AirTranslate/Views/SettingsView.swift`
-  - Settings modal, including OpenAI and floating-caption settings.
+  - Settings navigation, provider mode selection, and floating-caption settings.
+- `Sources/AirTranslate/Views/APIKeySettingsView.swift`
+  - Unified OpenAI, Gemini, Meta, Azure, and Nari credential list. Expanding a
+    provider does not select it as the active engine; Apple mode has no key row.
+- `Sources/AirTranslate/Views/ProviderCredentialRow.swift`
+  - Shared secure input, icon actions, removal confirmation, and details popover.
+    Uses existing session Keychain operations without reading stored key values.
+- `Sources/AirTranslate/Views/CredentialsCopy.swift`
+  - Localized credential status, tooltips, and accessibility labels.
 
 ## Session And Services
 
@@ -121,3 +129,14 @@ Azure 리소스의 지원 지역·권한·과금 및 실제 음성 정확도는 
 구간을 넘는 화자 추적은 제공하지 않는다.
 
 공식 계약: https://learn.microsoft.com/en-us/azure/ai-services/speech-service/mai-transcribe
+
+## Optional Nari STT
+
+| 기능 | 진입점 | 핵심 파일·심볼 | 데이터·외부 의존성 | 검증 |
+| --- | --- | --- | --- | --- |
+| 추가 전사 엔진 | 설정/콘솔 → Nari STT | `ProcessingEngine`, `NariTranscriptionModel`, `TranslationSessionStore.useNariSTTMode` | 모델·자동감지 선택은 UserDefaults, 기존 Apple 기본값 유지 | `NariModelSettingsTests`, `NariSessionTests` |
+| 키·시작 준비 | 설정 → API 키 | `NariAPIKeyStore`, `StartReadinessPolicy`, `SettingsView` | 별도 Keychain 항목, 키 누락 시 기존 자막 보존 | `APIKeyStorePresenceTests`, `NariSessionTests` |
+| 실시간 오디오·발화 | PC 소리/마이크 → 시작 | `NariRealtimeTranscriber`, `AudioSamplePipelineRegistry`, `NariTranscriptLedger` | 16 kHz PCM16 mono → Nari WebSocket; item/revision별 전체 교체 | `NariRealtimeTranscriberTests` |
+| 종료·재개·저장 | 중지/일시정지/재개 | `finishNariCapture`, `pauseNariCapture`, `resumeNariCapture`, `receiveNariTranscript` | 마지막 commit drain, 새 연결 세대, 기존 번역 FIFO와 선택형 파일 저장 | `NariSessionTests`, `NariRealtimeTranscriberTests` |
+
+사용 방법·제한·공식 계약은 [Nari STT 안내](../docs/nari-stt.md)에 있다.

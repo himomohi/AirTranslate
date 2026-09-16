@@ -6,18 +6,6 @@ import SwiftUI
 struct SettingsView: View {
     @Bindable var session: TranslationSessionStore
     @SceneStorage("AirTranslate.SettingsView.selectedCategory") private var selectedCategoryID = SettingsCategory.general.rawValue
-    @State private var openAIAPIKey = ""
-    @State private var openAIKeyFeedback: APIKeyFeedback?
-    @State private var isConfirmingOpenAIKeyRemoval = false
-    @State private var geminiAPIKey = ""
-    @State private var geminiKeyFeedback: APIKeyFeedback?
-    @State private var isConfirmingGeminiKeyRemoval = false
-    @State private var azureAPIKey = ""
-    @State private var azureKeyFeedback = ""
-    @State private var confirmAzureRemoval = false
-    @State private var metaAPIKey = ""
-    @State private var metaKeyFeedback: APIKeyFeedback?
-    @State private var isConfirmingMetaKeyRemoval = false
     @State private var screenRecordingPermission: SettingsPermissionState = .unknown
     @State private var microphonePermission: SettingsPermissionState = .unknown
     @State private var speechRecognitionPermission: SettingsPermissionState = .unknown
@@ -225,6 +213,9 @@ struct SettingsView: View {
                     }
                 }
             }
+            if processingModeSelection.wrappedValue == .nari {
+                nariGeneralSettings
+            }
             if processingModeSelection.wrappedValue == .meta {
                 SettingsControlRow(
                     title: AppText.metaScribe,
@@ -289,120 +280,15 @@ struct SettingsView: View {
 
             SettingsValueRow(
                 title: AppText.autoDetectInput,
-                detail: session.isUsingMetaScribe
-                    ? SettingsCopy.metaAutoDetectDetail
-                    : session.isUsingGeminiTranscriptionMode
-                        ? SettingsCopy.geminiAutoDetectDetail
-                        : SettingsCopy.autoDetectDetail,
+                detail: autoDetectionDetail,
                 systemImage: "sparkles",
-                value: session.isUsingGeminiTranscriptionMode || session.isUsingMetaScribe
-                    ? SettingsCopy.enabled
-                    : SettingsCopy.comingSoon
-            )
-        }
-    }
-
-    private var apiSettings: some View {
-        SettingsGroup(title: AppText.openAIAPIKey) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 10) {
-                    Image(systemName: "key.fill")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(session.hasOpenAIAPIKey ? AirTranslateDesign.Palette.live : AirTranslateDesign.Palette.textSecondary)
-                        .frame(width: 24)
-
-                    SecureField(AppText.openAIAPIKeyPlaceholder, text: $openAIAPIKey)
-                        .textFieldStyle(.roundedBorder)
-                        .onSubmit(saveOpenAIAPIKey)
-                        .accessibilityLabel(AppText.openAIAPIKey)
-                        .accessibilityHint(
-                            session.hasOpenAIAPIKey
-                                ? SettingsCopy.replaceSavedAPIKeyHint
-                                : SettingsCopy.saveNewAPIKeyHint
-                        )
-
-                    Button {
-                        saveOpenAIAPIKey()
-                    } label: {
-                        Image(systemName: "checkmark.circle.fill")
-                    }
-                    .disabled(openAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .help(AppText.saveOpenAIAPIKey)
-                    .accessibilityLabel(AppText.saveOpenAIAPIKey)
-
-                    Button {
-                        isConfirmingOpenAIKeyRemoval = true
-                    } label: {
-                        Image(systemName: "trash")
-                    }
-                    .disabled(!session.hasOpenAIAPIKey)
-                    .help(AppText.removeOpenAIAPIKey)
-                    .accessibilityLabel(AppText.removeOpenAIAPIKey)
-                    .confirmationDialog(
-                        AppText.localized(
-                            english: "Remove the saved OpenAI API key from Keychain?",
-                            korean: "Keychain에 저장된 OpenAI API 키를 삭제할까요?",
-                            japanese: "Keychainに保存されたOpenAI APIキーを削除しますか？",
-                            chineseSimplified: "要从 Keychain 中删除已保存的 OpenAI API key 吗？"
-                        ),
-                        isPresented: $isConfirmingOpenAIKeyRemoval
-                    ) {
-                        Button(AppText.removeOpenAIAPIKey, role: .destructive) {
-                            removeOpenAIAPIKey()
-                        }
-                        Button(AppText.cancel, role: .cancel) {}
-                    }
-                }
-
-                APIKeyStatusRow(
-                    feedback: $openAIKeyFeedback,
-                    fallback: APIKeyFeedback(
-                        kind: session.hasOpenAIAPIKey ? .success : .warning,
-                        message: session.hasOpenAIAPIKey ? AppText.openAIAPIKeyConfigured : AppText.openAIAPIKeyNotConfigured
-                    )
-                )
-
-                Text(
-                    session.hasOpenAIAPIKey
-                        ? SettingsCopy.replaceSavedOpenAIKeyDetail
-                        : AppText.openAIAPIKeyDescription
-                )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.leading, 34)
-            }
-            .padding(.horizontal, 4)
-            .padding(.vertical, 3)
-
-            SettingsControlRow(
-                title: SettingsCopy.currentGPTRealtimeModel,
-                detail: SettingsCopy.currentGPTRealtimeModelDetail,
-                systemImage: "waveform"
-            ) {
-                Text(session.openAITranslationModel.isEnabled ? session.openAITranslationModel.title : OpenAIRealtimeTranslationModel.gptRealtimeTranslate.title)
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(AirTranslateDesign.Palette.textSecondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.78)
-            }
-
-            SettingsValueRow(
-                title: SettingsCopy.openAIVoiceAgentModels,
-                detail: SettingsCopy.openAIVoiceAgentModelsDetail,
-                systemImage: "person.wave.2",
-                value: OpenAIRealtimeTranslationModel.voiceAgentCases.map(\.rawValue).joined(separator: ", ")
+                value: autoDetectionStatus
             )
         }
     }
 
     private var apiKeySettings: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            apiSettings
-            geminiSettings
-            metaSettings
-            azureSettings
-        }
+        APIKeySettingsView(session: session)
     }
 
     private var audioSettings: some View {
@@ -848,243 +734,50 @@ struct SettingsView: View {
         }
     }
 
-    private var geminiSettings: some View {
-        SettingsGroup(title: AppText.geminiModels) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 10) {
-                    Image(systemName: "key.fill")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(session.hasGeminiAPIKey ? AirTranslateDesign.Palette.live : AirTranslateDesign.Palette.textSecondary)
-                        .frame(width: 24)
-
-                    SecureField(AppText.geminiAPIKeyPlaceholder, text: $geminiAPIKey)
-                        .textFieldStyle(.roundedBorder)
-                        .onSubmit(saveGeminiAPIKey)
-                        .accessibilityLabel(AppText.geminiAPIKey)
-                        .accessibilityHint(
-                            session.hasGeminiAPIKey
-                                ? SettingsCopy.replaceSavedAPIKeyHint
-                                : SettingsCopy.saveNewAPIKeyHint
-                        )
-
-                    Button {
-                        saveGeminiAPIKey()
-                    } label: {
-                        Image(systemName: "checkmark.circle.fill")
-                    }
-                    .disabled(geminiAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .help(AppText.saveGeminiAPIKey)
-                    .accessibilityLabel(AppText.saveGeminiAPIKey)
-
-                    Button {
-                        isConfirmingGeminiKeyRemoval = true
-                    } label: {
-                        Image(systemName: "trash")
-                    }
-                    .disabled(!session.hasGeminiAPIKey)
-                    .help(AppText.removeGeminiAPIKey)
-                    .accessibilityLabel(AppText.removeGeminiAPIKey)
-                    .confirmationDialog(
-                        AppText.localized(
-                            english: "Remove the saved Gemini API key from Keychain?",
-                            korean: "Keychain에 저장된 Gemini API 키를 삭제할까요?",
-                            japanese: "Keychainに保存されたGemini APIキーを削除しますか？",
-                            chineseSimplified: "要从 Keychain 中删除已保存的 Gemini API key 吗？"
-                        ),
-                        isPresented: $isConfirmingGeminiKeyRemoval
-                    ) {
-                        Button(AppText.removeGeminiAPIKey, role: .destructive) {
-                            removeGeminiAPIKey()
-                        }
-                        Button(AppText.cancel, role: .cancel) {}
-                    }
+    @ViewBuilder
+    private var nariGeneralSettings: some View {
+        SettingsControlRow(
+            title: NariCopy.modelLabel,
+            detail: NariCopy.modelDetail + "\n" + session.nariTranscriptionModel.billingSummary,
+            systemImage: "waveform.badge.mic"
+        ) {
+            Picker(NariCopy.modelLabel, selection: lockedSessionConfigurationBinding($session.nariTranscriptionModel)) {
+                ForEach(NariTranscriptionModel.selectableCases) { model in
+                    Text(model.title).tag(model)
                 }
-
-                APIKeyStatusRow(
-                    feedback: $geminiKeyFeedback,
-                    fallback: APIKeyFeedback(
-                        kind: session.hasGeminiAPIKey ? .success : .warning,
-                        message: session.hasGeminiAPIKey ? AppText.geminiAPIKeyConfigured : AppText.geminiAPIKeyNotConfigured
-                    )
-                )
-
-                Text(
-                    session.hasGeminiAPIKey
-                        ? SettingsCopy.replaceSavedGeminiKeyDetail
-                        : AppText.geminiAPIKeyDescription
-                )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.leading, 34)
             }
-            .padding(.horizontal, 4)
-            .padding(.vertical, 3)
-
-            SettingsControlRow(
-                title: AppText.geminiTranslationModel,
-                detail: SettingsCopy.geminiLiveModeDetail,
-                systemImage: "sparkles"
-            ) {
-                Text(
-                    session.geminiTranslationModel.isEnabled
-                        ? session.geminiTranslationModel.title
-                        : session.preferredGeminiModel.title
-                )
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(selectedProcessingMode == .gemini ? AirTranslateDesign.Palette.accent : AirTranslateDesign.Palette.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            .labelsHidden()
+            .frame(minWidth: 210, idealWidth: 250, maxWidth: 300)
+            .disabled(isSessionConfigurationLocked)
+            .accessibilityLabel(NariCopy.modelLabel)
+            .accessibilityValue(session.nariTranscriptionModel.title)
         }
-    }
 
-    private var azureSettings: some View {
-        SettingsGroup(title: AzureMAICopy.title) {
-            VStack(alignment: .leading, spacing: 12) {
-                Text(AzureMAICopy.detail).font(.callout).foregroundStyle(.secondary)
-                TextField(AzureMAICopy.endpointLabel, text: $session.azureSpeechEndpoint)
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityLabel(AzureMAICopy.endpointLabel)
-                    .disabled(isSessionConfigurationLocked)
-                Text("https://YourResourceName.cognitiveservices.azure.com")
-                    .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                SecureField(AzureMAICopy.apiKeyLabel, text: $azureAPIKey)
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityLabel(AzureMAICopy.apiKeyLabel)
-                    .disabled(isSessionConfigurationLocked)
-                HStack {
-                    Button(AzureMAICopy.saveKey) {
-                        do {
-                            try session.saveAzureSpeechAPIKey(azureAPIKey)
-                            azureAPIKey = ""
-                            azureKeyFeedback = AzureMAICopy.keySaved
-                        } catch { azureKeyFeedback = error.localizedDescription }
-                    }
-                    .disabled(isSessionConfigurationLocked || azureAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    Button(AzureMAICopy.removeKey, role: .destructive) {
-                        confirmAzureRemoval = true
-                    }
-                    .disabled(isSessionConfigurationLocked || !session.hasAzureSpeechAPIKey)
-                    .confirmationDialog(AzureMAICopy.removeKeyConfirmation, isPresented: $confirmAzureRemoval) {
-                        Button(AzureMAICopy.removeKey, role: .destructive) {
-                            do {
-                                try session.removeAzureSpeechAPIKey()
-                                azureAPIKey = ""
-                                azureKeyFeedback = AzureMAICopy.keyRemoved
-                            } catch { azureKeyFeedback = error.localizedDescription }
-                        }
-                        Button(AppText.cancel, role: .cancel) {}
-                    }
-                }
-                Text(azureSettingsStatusText)
-                    .font(.caption).accessibilityLabel(azureSettingsStatusText)
-                Link(AzureMAICopy.documentation, destination: URL(string: "https://learn.microsoft.com/en-us/azure/ai-services/speech-service/mai-transcribe")!)
-            }.padding(.vertical, 10)
+        SettingsControlRow(
+            title: AppText.autoDetectInput,
+            detail: NariCopy.autoDetectDetail,
+            systemImage: "globe"
+        ) {
+            Toggle("", isOn: lockedSessionConfigurationBinding($session.isNariSourceAutoDetectionEnabled))
+                .labelsHidden()
+                .disabled(isSessionConfigurationLocked)
+                .accessibilityLabel(AppText.autoDetectInput)
         }
-    }
 
-    private var metaSettings: some View {
-        SettingsGroup(title: AppText.metaScribe) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 10) {
-                    Image(systemName: "key.fill")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(session.hasMetaAPIKey ? AirTranslateDesign.Palette.live : AirTranslateDesign.Palette.textSecondary)
-                        .frame(width: 24)
-
-                    SecureField(AppText.metaAPIKeyPlaceholder, text: $metaAPIKey)
-                        .textFieldStyle(.roundedBorder)
-                        .onSubmit(saveMetaAPIKey)
-                        .accessibilityLabel(AppText.metaAPIKey)
-                        .accessibilityHint(
-                            session.hasMetaAPIKey
-                                ? SettingsCopy.replaceSavedAPIKeyHint
-                                : SettingsCopy.saveNewAPIKeyHint
-                        )
-
-                    Button {
-                        saveMetaAPIKey()
-                    } label: {
-                        Image(systemName: "checkmark.circle.fill")
-                    }
-                    .disabled(metaAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .help(AppText.saveMetaAPIKey)
-                    .accessibilityLabel(AppText.saveMetaAPIKey)
-
-                    Button {
-                        isConfirmingMetaKeyRemoval = true
-                    } label: {
-                        Image(systemName: "trash")
-                    }
-                    .disabled(!session.hasMetaAPIKey)
-                    .help(AppText.removeMetaAPIKey)
-                    .accessibilityLabel(AppText.removeMetaAPIKey)
-                    .confirmationDialog(
-                        AppText.localized(
-                            english: "Remove the saved Meta Model API key from Keychain?",
-                            korean: "Keychain에 저장된 Meta Model API 키를 삭제할까요?",
-                            japanese: "Keychainに保存されたMeta Model APIキーを削除しますか？",
-                            chineseSimplified: "要从 Keychain 中删除已保存的 Meta Model API key 吗？"
-                        ),
-                        isPresented: $isConfirmingMetaKeyRemoval
-                    ) {
-                        Button(AppText.removeMetaAPIKey, role: .destructive) {
-                            removeMetaAPIKey()
-                        }
-                        Button(AppText.cancel, role: .cancel) {}
-                    }
-                }
-
-                APIKeyStatusRow(
-                    feedback: $metaKeyFeedback,
-                    fallback: APIKeyFeedback(
-                        kind: session.hasMetaAPIKey ? .success : .warning,
-                        message: session.hasMetaAPIKey
-                            ? AppText.metaAPIKeyConfigured
-                            : AppText.metaAPIKeyNotConfigured
-                    )
-                )
-
-                Text(
-                    session.hasMetaAPIKey
-                        ? AppText.replaceSavedMetaAPIKeyDescription
-                        : AppText.metaAPIKeyDescription
-                )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.leading, 34)
-            }
-            .padding(.horizontal, 4)
-            .padding(.vertical, 3)
-
-            SettingsControlRow(
-                title: AppText.metaScribe,
-                detail: AppText.metaScribeDetail,
-                systemImage: "person.2.wave.2"
+        SettingsNoticeRow(text: NariCopy.detail, systemImage: "waveform")
+        if !session.hasNariAPIKey {
+            SettingsNoticeActionRow(
+                text: NariCopy.configurationRequired,
+                systemImage: "key",
+                actionTitle: NariCopy.configureSpeech
             ) {
-                Text(MetaTranscriptionModel.museVoiceTranscribe.title)
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(selectedProcessingMode == .meta ? AirTranslateDesign.Palette.accent : AirTranslateDesign.Palette.textSecondary)
+                selectedCategory.wrappedValue = .apiKeys
             }
-
-            HStack(spacing: 6) {
-                Text(AppText.metaAPIKeyPlatformPrompt)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Link(
-                    AppText.metaAPIKeyPlatformLink,
-                    destination: URL(string: "https://dev.meta.ai")!
-                )
-                .tint(AirTranslateDesign.Palette.accent)
-                .font(.caption.weight(.semibold))
-            }
-            .padding(.vertical, 9)
-            .settingsRowSeparator()
         }
     }
 
     private var selectedProcessingMode: SettingsProcessingMode {
+        if session.isUsingNariSTT { return .nari }
         if session.isUsingAzureMAI { return .azure }
         if session.isUsingMetaScribe {
             return .meta
@@ -1115,11 +808,19 @@ struct SettingsView: View {
         }
     }
 
-    private var azureSettingsStatusText: String {
-        if !azureKeyFeedback.isEmpty {
-            return azureKeyFeedback
+    private var autoDetectionDetail: String {
+        if session.isUsingNariSTT { return NariCopy.autoDetectDetail }
+        if session.isUsingMetaScribe { return SettingsCopy.metaAutoDetectDetail }
+        if session.isUsingGeminiTranscriptionMode { return SettingsCopy.geminiAutoDetectDetail }
+        return SettingsCopy.autoDetectDetail
+    }
+
+    private var autoDetectionStatus: String {
+        if session.isUsingNariSTT {
+            return session.isNariSourceAutoDetectionEnabled ? SettingsCopy.enabled : SettingsCopy.disabled
         }
-        return azureConfigurationIssue ?? AzureMAICopy.keyConfiguredUnverified
+        return session.isUsingGeminiTranscriptionMode || session.isUsingMetaScribe
+            ? SettingsCopy.enabled : SettingsCopy.comingSoon
     }
 
     private var isSessionConfigurationLocked: Bool {
@@ -1162,6 +863,8 @@ struct SettingsView: View {
                 session.usePreferredGeminiMode()
             case .azure:
                 session.useAzureMAIMode()
+            case .nari:
+                session.useNariSTTMode()
             case .meta:
                 session.useMetaScribeMode()
             }
@@ -1213,93 +916,6 @@ struct SettingsView: View {
         }
     }
 
-    private func saveOpenAIAPIKey() {
-        let trimmedKey = openAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedKey.isEmpty else {
-            openAIKeyFeedback = APIKeyFeedback(kind: .error, message: AppText.openAIAPIKeyEmpty)
-            return
-        }
-
-        do {
-            try session.saveOpenAIAPIKey(trimmedKey)
-        } catch {
-            openAIKeyFeedback = APIKeyFeedback(kind: .error, message: error.localizedDescription)
-            return
-        }
-
-        openAIKeyFeedback = APIKeyFeedback(kind: .success, message: AppText.openAIAPIKeySaved)
-        openAIAPIKey = ""
-    }
-
-    private func removeOpenAIAPIKey() {
-        do {
-            try session.removeOpenAIAPIKey()
-        } catch {
-            openAIKeyFeedback = APIKeyFeedback(kind: .error, message: error.localizedDescription)
-            return
-        }
-
-        openAIKeyFeedback = APIKeyFeedback(kind: .warning, message: AppText.openAIAPIKeyRemoved)
-        openAIAPIKey = ""
-    }
-
-    private func saveGeminiAPIKey() {
-        let trimmedKey = geminiAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedKey.isEmpty else {
-            geminiKeyFeedback = APIKeyFeedback(kind: .error, message: AppText.geminiAPIKeyEmpty)
-            return
-        }
-
-        do {
-            try session.saveGeminiAPIKey(trimmedKey)
-        } catch {
-            geminiKeyFeedback = APIKeyFeedback(kind: .error, message: error.localizedDescription)
-            return
-        }
-
-        geminiKeyFeedback = APIKeyFeedback(kind: .success, message: AppText.geminiAPIKeySaved)
-        geminiAPIKey = ""
-    }
-
-    private func removeGeminiAPIKey() {
-        do {
-            try session.removeGeminiAPIKey()
-        } catch {
-            geminiKeyFeedback = APIKeyFeedback(kind: .error, message: error.localizedDescription)
-            return
-        }
-
-        geminiKeyFeedback = APIKeyFeedback(kind: .warning, message: AppText.geminiAPIKeyRemoved)
-        geminiAPIKey = ""
-    }
-
-    private func saveMetaAPIKey() {
-        let trimmedKey = metaAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedKey.isEmpty else {
-            metaKeyFeedback = APIKeyFeedback(kind: .error, message: AppText.metaAPIKeyEmpty)
-            return
-        }
-        do {
-            try session.saveMetaAPIKey(trimmedKey)
-        } catch {
-            metaKeyFeedback = APIKeyFeedback(kind: .error, message: error.localizedDescription)
-            return
-        }
-        metaKeyFeedback = APIKeyFeedback(kind: .success, message: AppText.metaAPIKeySaved)
-        metaAPIKey = ""
-    }
-
-    private func removeMetaAPIKey() {
-        do {
-            try session.removeMetaAPIKey()
-        } catch {
-            metaKeyFeedback = APIKeyFeedback(kind: .error, message: error.localizedDescription)
-            return
-        }
-        metaKeyFeedback = APIKeyFeedback(kind: .warning, message: AppText.metaAPIKeyRemoved)
-        metaAPIKey = ""
-    }
-
     private var appVersionSummary: String {
         RunningAppVersion.current().summary ?? SettingsCopy.versionUnavailable
     }
@@ -1344,58 +960,6 @@ struct SettingsView: View {
     }
 }
 
-private struct APIKeyFeedback: Equatable {
-    enum Kind: Equatable {
-        case success
-        case warning
-        case error
-    }
-
-    let kind: Kind
-    let message: String
-    private let token = UUID()
-
-    var color: Color {
-        switch kind {
-        case .success:
-            AirTranslateDesign.Palette.live
-        case .warning:
-            AirTranslateDesign.Palette.warning
-        case .error:
-            AirTranslateDesign.Palette.danger
-        }
-    }
-}
-
-private struct APIKeyStatusRow: View {
-    @Binding var feedback: APIKeyFeedback?
-    let fallback: APIKeyFeedback
-
-    private var current: APIKeyFeedback {
-        feedback ?? fallback
-    }
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(current.color)
-                .frame(width: 7, height: 7)
-
-            Text(current.message)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(current.color)
-        }
-        .padding(.leading, 34)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(current.message)
-        .task(id: feedback) {
-            guard feedback != nil else { return }
-            guard (try? await Task.sleep(for: .seconds(6))) != nil else { return }
-            feedback = nil
-        }
-    }
-}
-
 private enum SettingsProcessingMode: String, CaseIterable, Identifiable {
     case apple
     case openAI
@@ -1403,6 +967,7 @@ private enum SettingsProcessingMode: String, CaseIterable, Identifiable {
     case gemini
     case meta
     case azure
+    case nari
 
     var id: String { rawValue }
 
@@ -1428,6 +993,8 @@ private enum SettingsProcessingMode: String, CaseIterable, Identifiable {
             "Gemini"
         case .azure:
             "Azure MAI"
+        case .nari:
+            NariCopy.title
         case .meta:
             "Meta"
         }
@@ -1537,12 +1104,7 @@ private enum SettingsCopy {
         english: "Set the default translation mode and language behavior.",
         korean: "기본 번역 방식과 언어 동작을 설정합니다."
     )
-    static let apiKeysDetail = AppText.localized(
-        english: "Save provider keys for OpenAI, Gemini Live, Meta Scribe, and Azure MAI modes.",
-        korean: "OpenAI, Gemini Live, Meta 스크라이브, Azure MAI 모드에 사용할 키를 저장합니다.",
-        japanese: "OpenAI、Gemini Live、Meta Scribe、Azure MAIモードで使用するキーを保存します。",
-        chineseSimplified: "保存 OpenAI、Gemini Live、Meta Scribe 和 Azure MAI 模式使用的密钥。"
-    )
+    static let apiKeysDetail = CredentialsCopy.pageDetail
     static let audioDetail = AppText.localized(
         english: "Choose where AirTranslate listens from.",
         korean: "AirTranslate가 어떤 오디오를 들을지 선택합니다."
@@ -1574,10 +1136,10 @@ private enum SettingsCopy {
     static let modeSettings = AppText.localized(english: "Mode Settings", korean: "모드 설정")
     static let processingEngine = AppText.localized(english: "Processing Mode", korean: "처리 방식")
     static let processingEngineDetail = AppText.localized(
-        english: "Choose exactly one active engine: local Apple mode, GPT Realtime, GPT Transcription, Gemini Live, Meta Scribe, or Azure MAI.",
-        korean: "Apple 기본 모드, GPT Realtime, GPT 전사, Gemini Live, Meta 스크라이브, Azure MAI 중 하나만 활성화합니다.",
-        japanese: "Appleローカルモード、GPT Realtime、GPT文字起こし、Gemini Live、Meta Scribe、Azure MAIから1つだけ有効にします。",
-        chineseSimplified: "仅启用一种处理方式：Apple 本地模式、GPT Realtime、GPT 转写、Gemini Live、Meta Scribe 或 Azure MAI。"
+        english: "Choose exactly one active engine: local Apple mode, GPT Realtime, GPT Transcription, Gemini Live, Meta Scribe, Azure MAI, or Nari STT.",
+        korean: "Apple 기본 모드, GPT Realtime, GPT 전사, Gemini Live, Meta 스크라이브, Azure MAI, Nari STT 중 하나만 활성화합니다.",
+        japanese: "Appleローカルモード、GPT Realtime、GPT文字起こし、Gemini Live、Meta Scribe、Azure MAI、Nari STTから1つだけ有効にします。",
+        chineseSimplified: "仅启用一种处理方式：Apple 本地模式、GPT Realtime、GPT 转写、Gemini Live、Meta Scribe、Azure MAI 或 Nari STT。"
     )
     static let enterOpenAIAPIKey = AppText.localized(
         english: "Enter OpenAI API key",
@@ -1599,8 +1161,8 @@ private enum SettingsCopy {
     )
     static let sessionWorkflow = AppText.localized(english: "Session Workflow", korean: "세션 처리 방식")
     static let sessionWorkflowDetail = AppText.localized(
-        english: "Apple mode can switch between translation and source-only transcription.",
-        korean: "Apple 모드에서 번역 자막 또는 원문 전사만 중에서 선택합니다."
+        english: "Choose translated captions or source-only transcription.",
+        korean: "번역 자막 또는 원문 전사만 중에서 선택합니다."
     )
     static let realtimeTranslationOutputOnly = AppText.localized(
         english: "API live translation modes produce translated captions. For source-only captions, choose Apple transcription, GPT Transcription, or Gemini Transcribe.",
@@ -1647,6 +1209,9 @@ private enum SettingsCopy {
         korean: "켜짐",
         japanese: "オン",
         chineseSimplified: "已开启"
+    )
+    static let disabled = AppText.localized(
+        english: "Off", korean: "꺼짐", japanese: "オフ", chineseSimplified: "已关闭"
     )
     static let comingSoon = AppText.localized(
         english: "Coming soon",
@@ -1942,8 +1507,10 @@ private enum SettingsCopy {
     )
     static let privacy = AppText.localized(english: "Privacy", korean: "개인정보")
     static let privacyDetail = AppText.localized(
-        english: "Apple mode runs locally. OpenAI and Gemini Live are used only after you provide a matching API key and select that mode.",
-        korean: "Apple 모드는 로컬에서 실행됩니다. OpenAI와 Gemini Live는 해당 API 키를 저장하고 해당 모드를 선택했을 때만 사용됩니다."
+        english: "Apple mode runs locally. Cloud providers receive audio only after you save their API key, choose the mode, and start capture.",
+        korean: "Apple 모드는 로컬에서 실행됩니다. 클라우드 제공업체는 해당 API 키를 저장하고 모드를 선택한 뒤 캡처를 시작하면 오디오를 받습니다.",
+        japanese: "Appleモードはローカルで動作します。クラウドサービスにはAPIキーを保存し、モードを選択してキャプチャを開始したときに音声が送信されます。",
+        chineseSimplified: "Apple 模式在本地运行。保存对应 API 密钥、选择模式并开始采集后，音频才会发送给云服务。"
     )
     static let macOSKeychain = AppText.localized(
         english: "macOS Keychain",

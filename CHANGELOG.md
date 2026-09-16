@@ -4,6 +4,28 @@ All notable changes to AirTranslate are documented in this file.
 
 ## [Unreleased]
 
+## 1.9.0 - 2026-09-16
+
+### Added
+
+- Added optional Nari STT with Qwen3-ASR realtime transcription. It sends microphone or Mac audio to Nari only after the user selects Nari STT and configures a Nari API key, then uses the existing Apple Translation workflow when translation output is enabled.
+- Added Nari model selection for the current GA STT IDs `qwen3-asr-fast` and `qwen3-asr`. Model availability, limits, and paid-credit requirements follow Nari's current provider documentation and account state.
+- Added Nari source-language handling with manual source language selection and Nari-specific automatic spoken-language detection for supported languages, including Korean.
+
+### Changed
+
+- Redesigned API key settings around provider rows for OpenAI, Gemini, Meta, Azure, and Nari, with saved/setup status, active-engine context, provider icons, key-console links, and a Keychain information popover.
+- Selecting Nari STT starts in original-only transcription by default. Users can switch to translation output when the selected or detected source language is available in AirTranslate's Apple translation workflow.
+- New Nari selections use the GA Fast model with a paid-credit notice. Saved Free Public Beta model choices are preserved and blocked from starting, without automatic migration to a paid model; Settings > General provides an explicit GA model selection to resume.
+- Refocused localized README files around the current product, download path, engine table, privacy boundary, and documentation links. Release chronology now lives in this changelog and `Release/VERSION-HISTORY.md`.
+- Updated public release metadata and README download links for 1.9.0/build190.
+
+### Fixed
+
+- API key presence checks include Nari without reading secret data or allowing Keychain authentication UI during startup status refreshes.
+- Nari session lifecycle handling preserves completed source captions across pause, stop, reconnect, and queue-limit failures while avoiding automatic replay of unfinished audio.
+- README provider wording now distinguishes a configured key from verified external service authorization.
+
 ## 1.8.0 - 2026-09-08
 
 ### Added

@@ -2,7 +2,7 @@
 
 AirTranslate transcribes and translates audio playing on the user's Mac.
 
-AirTranslate is an independent open-source project and is not affiliated with Apple, OpenAI, Google, Meta, or Microsoft.
+AirTranslate is an independent open-source project and is not affiliated with Apple, OpenAI, Google, Meta, Microsoft, or Nari Labs.
 
 ## Data Handling
 
@@ -50,6 +50,19 @@ Azure MAI is optional and works only after the user provides an Azure Speech end
 When Azure MAI is enabled, AirTranslate sends audio in the selected source language to Azure Speech MAI-Transcribe-2 in 5-second segments, then uses Apple Translation for captions. Azure charges apply separately, and service availability depends on the user's Azure resource.
 
 Azure Speech API keys are user-provided runtime data. AirTranslate stores them in macOS Keychain and does not include API keys in the source tree, release scripts, or generated release bundles. The Azure Speech endpoint is stored locally with macOS app preferences.
+
+## Optional Nari STT
+
+Nari STT is optional. When selected and started, it sends microphone or system
+audio directly to Nari's API for Qwen3-ASR transcription. The user supplies their
+own Nari API key, stored in a separate, device-local macOS Keychain item. Only
+model and language-detection preferences are stored in app preferences.
+
+Audio is buffered in memory for streaming and is not automatically replayed after
+connection failures. Transcript file saving remains off by default. Optional
+translation uses the existing Apple Translation path. Nari's account access,
+retention, quotas, and service terms apply to the external service; AirTranslate
+does not bundle a shared Nari credential or operate a relay.
 
 ## Permissions
 

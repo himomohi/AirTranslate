@@ -25,10 +25,17 @@ enum PrivacySettingsPane: Equatable {
 
 enum CaptureStartRecoveryAction: Equatable {
     case apiKeys
+    case generalSettings
     case privacy(PrivacySettingsPane)
     case retry
 
     static func forFailure(_ error: Error, audioInputSource _: AudioInputSource) -> Self {
+        if let nariError = error as? NariTranscriptionError {
+            switch nariError {
+            case .missingKey, .authentication: return .apiKeys
+            default: return .retry
+            }
+        }
         if let captureError = error as? CaptureError {
             switch captureError {
             case .screenRecordingNotGranted:
@@ -52,9 +59,11 @@ enum CaptureStartRecoveryAction: Equatable {
 
     static func forReadiness(_ readiness: StartReadinessAssessment) -> Self? {
         switch readiness.issue {
-        case .openAIAPIKeyMissing, .geminiAPIKeyMissing, .metaAPIKeyMissing, .azureConfigurationMissing:
+        case .openAIAPIKeyMissing, .geminiAPIKeyMissing, .metaAPIKeyMissing, .azureConfigurationMissing, .nariAPIKeyMissing:
             .apiKeys
-        case .localAssetsChecking, .localAssetsUnavailable:
+        case .nariLegacyFreeModelSelected:
+            .generalSettings
+        case .localAssetsChecking, .localAssetsUnavailable, .nariLanguageUnsupported:
             .retry
         case .localAssetsDownloadRequired, nil:
             nil
@@ -71,6 +80,8 @@ private enum SettingsKey {
     static let geminiTranslationModelID = "geminiTranslationModelID"
     static let preferredGeminiModelID = "preferredGeminiModelID"
     static let metaTranscriptionModelID = "metaTranscriptionModelID"
+    static let nariTranscriptionModelID = "nariTranscriptionModelID"
+    static let nariSourceAutoDetectionEnabled = "nariSourceAutoDetectionEnabled"
     static let metaSpeakerLabelsEnabled = "metaSpeakerLabelsEnabled"
     static let isDubbingEnabled = "isDubbingEnabled"
     static let appleVoiceOutputEnabled = "appleVoiceOutputEnabled"
@@ -129,6 +140,8 @@ struct StartConfiguration: Equatable {
     let openAITranslationModel: OpenAIRealtimeTranslationModel
     let geminiTranslationModel: GeminiTranslationModel
     let metaTranscriptionModel: MetaTranscriptionModel
+    let nariTranscriptionModel: NariTranscriptionModel
+    let usesNariSourceAutoDetection: Bool
     let azureMAIEnabled: Bool
     let azureSpeechEndpoint: String
     let usesMetaSpeakerLabels: Bool
@@ -144,6 +157,8 @@ struct StartConfiguration: Equatable {
         openAITranslationModel: OpenAIRealtimeTranslationModel,
         geminiTranslationModel: GeminiTranslationModel,
         metaTranscriptionModel: MetaTranscriptionModel = .off,
+        nariTranscriptionModel: NariTranscriptionModel = .off,
+        usesNariSourceAutoDetection: Bool = false,
         azureMAIEnabled: Bool = false,
         azureSpeechEndpoint: String = "",
         usesMetaSpeakerLabels: Bool = true,
@@ -158,6 +173,8 @@ struct StartConfiguration: Equatable {
         self.openAITranslationModel = openAITranslationModel
         self.geminiTranslationModel = geminiTranslationModel
         self.metaTranscriptionModel = metaTranscriptionModel
+        self.nariTranscriptionModel = nariTranscriptionModel
+        self.usesNariSourceAutoDetection = usesNariSourceAutoDetection
         self.azureMAIEnabled = azureMAIEnabled
         self.azureSpeechEndpoint = azureSpeechEndpoint
         self.usesMetaSpeakerLabels = usesMetaSpeakerLabels
@@ -303,6 +320,7 @@ private final class AudioSamplePipelineRegistry: @unchecked Sendable {
         let geminiLiveTranslator: GeminiLiveTranslationService
         let azureMAITranscriber: AzureMAITranscriber
         let metaVoiceTranscriber: MetaVoiceTranscribeService
+        let nariTranscriber: NariRealtimeTranscriber
     }
 
     private let lock = NSLock()
@@ -314,7 +332,8 @@ private final class AudioSamplePipelineRegistry: @unchecked Sendable {
         openAITranscriber: OpenAIRealtimeTranscriber,
         geminiLiveTranslator: GeminiLiveTranslationService,
         metaVoiceTranscriber: MetaVoiceTranscribeService,
-        azureMAITranscriber: AzureMAITranscriber
+        azureMAITranscriber: AzureMAITranscriber,
+        nariTranscriber: NariRealtimeTranscriber
     ) {
         lock.lock()
         pipeline = Pipeline(
@@ -323,7 +342,8 @@ private final class AudioSamplePipelineRegistry: @unchecked Sendable {
             openAITranscriber: openAITranscriber,
             geminiLiveTranslator: geminiLiveTranslator,
             azureMAITranscriber: azureMAITranscriber,
-            metaVoiceTranscriber: metaVoiceTranscriber
+            metaVoiceTranscriber: metaVoiceTranscriber,
+            nariTranscriber: nariTranscriber
         )
         lock.unlock()
     }
@@ -346,6 +366,7 @@ private final class AudioSamplePipelineRegistry: @unchecked Sendable {
         pipeline.geminiLiveTranslator.append(sampleBuffer)
         pipeline.metaVoiceTranscriber.append(sampleBuffer)
         pipeline.azureMAITranscriber.append(sampleBuffer)
+        pipeline.nariTranscriber.append(sampleBuffer)
     }
 }
 
@@ -496,12 +517,49 @@ final class TranslationSessionStore {
     var hasOpenAIAPIKey = OpenAIAPIKeyStore.hasAPIKey()
     var hasGeminiAPIKey = GeminiAPIKeyStore.hasAPIKey()
     var hasAzureSpeechAPIKey = AzureSpeechAPIKeyStore.hasAPIKey()
+    var hasNariAPIKey = NariAPIKeyStore.hasAPIKey()
+    var nariTranscriptionModel = NariTranscriptionModel.off {
+        didSet {
+            if nariTranscriptionModel.isEnabled {
+                isUsingAzureMAI = false
+                openAITranscriptionModel = .off
+                openAITranslationModel = .off
+                geminiTranslationModel = .off
+                metaTranscriptionModel = .off
+                isTranscriptLintEnabled = false
+            }
+            persistSelectedSettings()
+            resetTranslationCache()
+            resetDubbingProgress()
+            refreshModelAvailability()
+            if !nariTranscriptionModel.isLegacyFreeEndpoint,
+               statusMessage == NariCopy.legacyFreeModelEnded {
+                dismissCaptureStartFailure()
+                statusMessage = AppText.ready
+            }
+        }
+    }
+    var isNariSourceAutoDetectionEnabled = false {
+        didSet { persistSelectedSettings() }
+    }
+    var isFinishingNariSTT = false
+    var isReconnectingNariSTT = false
+    @ObservationIgnored private var nariTranscriber = NariRealtimeTranscriber()
+    @ObservationIgnored private var nariTransitionTask: Task<Void, Never>?
+#if DEBUG
+    var nariTranslationForTesting: (@MainActor (String) async throws -> String)?
+#endif
+    private var nariTurnLineIDs: [String: UUID] = [:]
+    private var nariFinalizedItemIDs: Set<String> = []
+    private var nariItemOrder: [String] = []
+    private var nariSavedTranscriptText = ""
     var azureSpeechEndpoint = "" {
         didSet { persistSelectedSettings() }
     }
     var isUsingAzureMAI = false {
         didSet {
             if isUsingAzureMAI {
+                nariTranscriptionModel = .off
                 selectedModel = .appleSystem
                 openAITranscriptionModel = .off
                 openAITranslationModel = .off
@@ -522,6 +580,7 @@ final class TranslationSessionStore {
     var openAITranscriptionModel = OpenAIRealtimeTranscriptionModel.off {
         didSet {
             if openAITranscriptionModel.isEnabled {
+                nariTranscriptionModel = .off
                 isUsingAzureMAI = false
                 isTranscriptLintEnabled = false
                 geminiTranslationModel = .off
@@ -535,6 +594,7 @@ final class TranslationSessionStore {
     var openAITranslationModel = OpenAIRealtimeTranslationModel.off {
         didSet {
             if openAITranslationModel.isEnabled {
+                nariTranscriptionModel = .off
                 isUsingAzureMAI = false
                 guard openAITranslationModel.isSupportedLiveTranslationModel else {
                     openAITranslationModel = .gptRealtimeTranslate
@@ -553,6 +613,7 @@ final class TranslationSessionStore {
     var geminiTranslationModel = GeminiTranslationModel.off {
         didSet {
             if geminiTranslationModel.isEnabled {
+                nariTranscriptionModel = .off
                 isUsingAzureMAI = false
                 isTranscriptLintEnabled = false
                 selectedModel = .appleSystem
@@ -576,6 +637,7 @@ final class TranslationSessionStore {
     var metaTranscriptionModel = MetaTranscriptionModel.off {
         didSet {
             if metaTranscriptionModel.isEnabled {
+                nariTranscriptionModel = .off
                 isUsingAzureMAI = false
                 isTranscriptLintEnabled = false
                 selectedModel = .appleSystem
@@ -856,12 +918,17 @@ final class TranslationSessionStore {
         metaTranscriptionModel.isEnabled
     }
 
+    var isUsingNariSTT: Bool {
+        nariTranscriptionModel.isEnabled
+    }
+
     private var usesAppleCaptionRollover: Bool {
         isRunning
             && !isUsingOpenAIRealtime
             && !isUsingGeminiTranscriptionMode
             && !isUsingMetaScribe
             && !isUsingAzureMAI
+            && !isUsingNariSTT
     }
 
     var isUsingProviderTranscriptionMode: Bool {
@@ -1014,6 +1081,8 @@ final class TranslationSessionStore {
                     statusMessage = AppText.connectingGeminiLiveTranslation
                 } else if configuration.metaTranscriptionModel.isEnabled {
                     statusMessage = AppText.connectingMetaScribe
+                } else if configuration.nariTranscriptionModel.isEnabled {
+                    statusMessage = NariCopy.connecting
                 } else {
                     statusMessage = AppText.checkingSpeechPermission
                 }
@@ -1028,7 +1097,8 @@ final class TranslationSessionStore {
                     openAITranscriber: openAITranscriber,
                     geminiLiveTranslator: geminiLiveTranslator,
                     metaVoiceTranscriber: metaVoiceTranscriber,
-                    azureMAITranscriber: azureMAITranscriber
+                    azureMAITranscriber: azureMAITranscriber,
+                    nariTranscriber: nariTranscriber
                 )
 
                 statusMessage = AppText.startingCapture(for: configuration.audioInputSource)
@@ -1087,6 +1157,10 @@ final class TranslationSessionStore {
 
     func stop() {
         guard isRunning || isStarting else { return }
+        if isUsingNariSTT, isRunning {
+            finishNariCapture()
+            return
+        }
         if isUsingAzureMAI, isRunning {
             guard !isFinishingAzureMAI else { return }
             isFinishingAzureMAI = true
@@ -1110,6 +1184,8 @@ final class TranslationSessionStore {
     }
 
     private func finishPipeline(statusOverride: String?) {
+        isFinishingNariSTT = false
+        isReconnectingNariSTT = false
         isFinishingAzureMAI = false
         invalidateCaptureStartAttempt()
         cancelTranslationSessionWarmup()
@@ -1224,6 +1300,8 @@ final class TranslationSessionStore {
             openAITranslationModel: openAITranslationModel,
             geminiTranslationModel: geminiTranslationModel,
             metaTranscriptionModel: metaTranscriptionModel,
+            nariTranscriptionModel: nariTranscriptionModel,
+            usesNariSourceAutoDetection: isNariSourceAutoDetectionEnabled,
             azureMAIEnabled: isUsingAzureMAI,
             azureSpeechEndpoint: azureSpeechEndpoint,
             usesMetaSpeakerLabels: isMetaSpeakerLabelsEnabled,
@@ -1270,6 +1348,10 @@ final class TranslationSessionStore {
     }
 
     private func handleSystemAudioCaptureStoppedByUser(generation: UInt64) {
+        if isUsingNariSTT, isRunning, pipelineLifecycle.acceptsSample(generation: generation) {
+            finishNariCapture()
+            return
+        }
         guard pipelineLifecycle.fail(generation: generation),
               isRunning || isStarting
         else {
@@ -1305,6 +1387,18 @@ final class TranslationSessionStore {
     }
 
     func startReadinessAssessment() -> StartReadinessAssessment {
+        if isUsingNariSTT {
+            if nariTranscriptionModel.isLegacyFreeEndpoint {
+                return StartReadinessAssessment(issue: .nariLegacyFreeModelSelected)
+            }
+            if !hasNariAPIKey {
+                return StartReadinessAssessment(issue: .nariAPIKeyMissing)
+            }
+            if !isNariSourceAutoDetectionEnabled,
+               NariTranscriptionModel.languageCode(for: sourceLanguage) == nil {
+                return StartReadinessAssessment(issue: .nariLanguageUnsupported)
+            }
+        }
         if isUsingAzureMAI, !hasAzureSpeechAPIKey || (try? AzureMAITranscriber.endpointURL(azureSpeechEndpoint)) == nil {
             return StartReadinessAssessment(issue: .azureConfigurationMissing)
         }
@@ -1320,6 +1414,9 @@ final class TranslationSessionStore {
     }
 
     private var requiredLocalModelForStart: IntelligenceModel? {
+        if isUsingNariSTT {
+            return isTranscribeOnlyMode ? nil : .appleOnDevice
+        }
         if openAITranslationModel.usesRealtimeAudioTranslation {
             return nil
         }
@@ -1347,6 +1444,12 @@ final class TranslationSessionStore {
             return AzureMAICopy.configurationRequired
         case .metaAPIKeyMissing:
             return AppText.metaAPIKeyMissing
+        case .nariAPIKeyMissing:
+            return NariCopy.configurationRequired
+        case .nariLanguageUnsupported:
+            return NariCopy.languageUnsupported
+        case .nariLegacyFreeModelSelected:
+            return NariCopy.legacyFreeModelEnded
         case .localAssetsChecking:
             return AppText.startBlockedLocalAssetsChecking
         case .localAssetsDownloadRequired:
@@ -1375,7 +1478,12 @@ final class TranslationSessionStore {
     }
 
     func pause() {
-        guard isRunning, !isPaused, !isFinishingAzureMAI else { return }
+        guard isRunning, !isPaused, !isFinishingAzureMAI, !isFinishingNariSTT else { return }
+
+        if isUsingNariSTT {
+            pauseNariCapture()
+            return
+        }
 
         flushPendingRecognizedCaption()
         flushPendingCaptionPresentation()
@@ -1391,7 +1499,11 @@ final class TranslationSessionStore {
     }
 
     func resume() {
-        guard isRunning, isPaused, !isFinishingAzureMAI else { return }
+        guard isRunning, isPaused, !isFinishingAzureMAI, !isFinishingNariSTT, !isReconnectingNariSTT else { return }
+        if isUsingNariSTT {
+            resumeNariCapture()
+            return
+        }
         pendingAutoDetectionLanguageChange = nil
 
         setCaptionersPaused(false)
@@ -1534,7 +1646,7 @@ final class TranslationSessionStore {
     }
 
     var languageSummary: String {
-        if isUsingGeminiTranscriptionMode {
+        if isUsingGeminiTranscriptionMode || (isUsingNariSTT && isNariSourceAutoDetectionEnabled) {
             return AppText.localized(
                 english: "Automatic language detection",
                 korean: "입력 언어 자동 감지",
@@ -1611,7 +1723,12 @@ final class TranslationSessionStore {
         requestedSettingsCategoryID = "apiKeys"
     }
 
+    func requestGeneralSettings() {
+        requestedSettingsCategoryID = "general"
+    }
+
     func useAppleDefaultMode() {
+        nariTranscriptionModel = .off
         isUsingAzureMAI = false
         clearTranscribeOnlyNotice(resetActivation: true)
         selectedModel = .appleSystem
@@ -1699,6 +1816,28 @@ final class TranslationSessionStore {
         restoreFloatingCaptionDisplayModeAfterTranscribeOnly()
     }
 
+    func useNariSTTMode() {
+        guard !isRunning, !isStarting else { return }
+        selectedModel = .appleSpeechOnly
+        if !isUsingNariSTT {
+            nariTranscriptionModel = .qwen3ASRFast
+        }
+        prepareTranscribeOnlyPresentation()
+        clearTranscribeOnlyNotice(resetActivation: true)
+    }
+
+    func saveNariAPIKey(_ key: String) throws {
+        guard !isRunning, !isStarting else { return }
+        try NariAPIKeyStore.saveAPIKey(key)
+        hasNariAPIKey = true
+    }
+
+    func removeNariAPIKey() throws {
+        guard !isRunning, !isStarting else { return }
+        try NariAPIKeyStore.deleteAPIKey()
+        hasNariAPIKey = false
+    }
+
     func saveAzureSpeechAPIKey(_ key: String) throws {
         try AzureSpeechAPIKeyStore.saveAPIKey(key)
         hasAzureSpeechAPIKey = true
@@ -1736,6 +1875,9 @@ final class TranslationSessionStore {
         clearTranscribeOnlyNotice(resetActivation: true)
         if isTranscribeOnlyMode {
             selectedModel = .appleSystem
+        }
+        if isUsingNariSTT, sourceLanguage == targetLanguage {
+            updateLanguagePair(source: sourceLanguage, target: fallbackTargetLanguage(excluding: sourceLanguage, preferred: .korean))
         }
         if openAITranscriptionModel.isEnabled || openAITranslationModel.isEnabled {
             openAITranscriptionModel = .off
@@ -2305,6 +2447,14 @@ final class TranslationSessionStore {
                 configuration: configuration,
                 generation: generation
             )
+        } else if configuration.nariTranscriptionModel.isEnabled {
+            nariTranscriber = NariRealtimeTranscriber()
+            configureNariCallbacks(service: nariTranscriber, generation: generation)
+            try await nariTranscriber.start(
+                model: configuration.nariTranscriptionModel,
+                sourceLanguage: configuration.sourceLanguage,
+                autoDetectLanguage: configuration.usesNariSourceAutoDetection
+            )
         } else if configuration.azureMAIEnabled {
             azureMAITranscriber = AzureMAITranscriber()
             let service = azureMAITranscriber
@@ -2347,6 +2497,7 @@ final class TranslationSessionStore {
         !configuration.openAITranscriptionModel.isEnabled
             && !configuration.geminiTranslationModel.isEnabled
             && !configuration.metaTranscriptionModel.isEnabled
+            && !configuration.nariTranscriptionModel.isEnabled
             && !configuration.azureMAIEnabled
             && !configuration.openAITranslationModel.usesRealtimeAudioTranslation
     }
@@ -2410,6 +2561,8 @@ final class TranslationSessionStore {
     }
 
     private func stopCaptioners(openAITranscriberAlreadyStopped: Bool = false) {
+        nariTransitionTask?.cancel()
+        nariTransitionTask = nil
         geminiSessionRefreshTask?.cancel()
         geminiSessionRefreshTask = nil
         metaSessionRefreshTask?.cancel()
@@ -2432,6 +2585,9 @@ final class TranslationSessionStore {
         geminiLiveTranslator.stop()
         metaVoiceTranscriber.stop()
         azureMAITranscriber.stop()
+        nariTranscriber.onTranscript = nil
+        nariTranscriber.onError = nil
+        nariTranscriber.stop()
     }
 
     private func scheduleGeminiSessionRefresh(
@@ -2633,9 +2789,134 @@ final class TranslationSessionStore {
         geminiLiveTranslator.setPaused(isPaused)
         metaVoiceTranscriber.setPaused(isPaused)
         azureMAITranscriber.setPaused(isPaused)
+        nariTranscriber.setPaused(isPaused)
+    }
+
+    private func configureNariCallbacks(service: NariRealtimeTranscriber, generation: UInt64) {
+        service.onTranscript = { [weak self, weak service] update in
+            await self?.receiveNariTranscript(update, service: service, generation: generation)
+        }
+        service.onError = { [weak self, weak service] error in
+            await self?.receiveNariError(error, service: service, generation: generation)
+        }
+    }
+
+    private func receiveNariError(_ error: Error, service: NariRealtimeTranscriber?, generation: UInt64) {
+        guard let service, service === nariTranscriber else { return }
+        // 시작 오류는 start()의 throw 경로가 복구 버튼과 함께 표시한다.
+        guard !isStarting else { return }
+        handleFatalPipelineError(error, generation: generation)
+    }
+
+    private func pauseNariCapture() {
+        audioSamplePipelineRegistry.clear()
+        nariTranscriber.setPaused(true)
+        isPaused = true
+        stopSpeaking()
+        statusMessage = AppText.paused
+        let service = nariTranscriber
+        let generation = pipelineLifecycle.generation
+        nariTransitionTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await service.finish()
+                guard !Task.isCancelled, service === nariTranscriber,
+                      pipelineLifecycle.acceptsSample(generation: generation) else { return }
+                _ = checkpointPendingTranscriptSave()
+            } catch is CancellationError {
+            } catch {
+                receiveNariError(error, service: service, generation: generation)
+            }
+        }
+    }
+
+    private func resumeNariCapture() {
+        isReconnectingNariSTT = true
+        statusMessage = NariCopy.reconnecting
+        let previousTransition = nariTransitionTask
+        let service = nariTranscriber
+        let configuration = currentStartConfiguration()
+        let generation = pipelineLifecycle.generation
+        nariTransitionTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            if let previousTransition { await previousTransition.value }
+            guard !Task.isCancelled, service === nariTranscriber, isPaused,
+                  pipelineLifecycle.acceptsSample(generation: generation),
+                  configuration == currentStartConfiguration() else { return }
+            do {
+                try await service.start(
+                    model: configuration.nariTranscriptionModel,
+                    sourceLanguage: configuration.sourceLanguage,
+                    autoDetectLanguage: configuration.usesNariSourceAutoDetection
+                )
+                guard !Task.isCancelled, service === nariTranscriber,
+                      pipelineLifecycle.acceptsSample(generation: generation),
+                      configuration == currentStartConfiguration() else { return }
+                audioSamplePipelineRegistry.publish(
+                    generation: generation, transcriber: transcriber,
+                    openAITranscriber: openAITranscriber, geminiLiveTranslator: geminiLiveTranslator,
+                    metaVoiceTranscriber: metaVoiceTranscriber, azureMAITranscriber: azureMAITranscriber,
+                    nariTranscriber: service
+                )
+                isReconnectingNariSTT = false
+                isPaused = false
+                statusMessage = AppText.listeningForSpeech(from: audioInputSource)
+            } catch is CancellationError {
+            } catch {
+                receiveNariError(error, service: service, generation: generation)
+            }
+        }
+    }
+
+    private func finishNariCapture() {
+        guard !isFinishingNariSTT else { return }
+        if isReconnectingNariSTT {
+            nariTransitionTask?.cancel()
+            pipelineLifecycle.stop()
+            finishPipeline(statusOverride: nil)
+            return
+        }
+        isFinishingNariSTT = true
+        statusMessage = NariCopy.finishing
+        audioSamplePipelineRegistry.clear()
+        nariTranscriber.setPaused(true)
+        let previousTransition = nariTransitionTask
+        let service = nariTranscriber
+        let generation = pipelineLifecycle.generation
+        nariTransitionTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await stopCapture()
+            if let previousTransition { await previousTransition.value }
+            guard !Task.isCancelled, service === nariTranscriber,
+                  pipelineLifecycle.acceptsSample(generation: generation) else { return }
+            do {
+                try await service.finish()
+                try await drainNariTranslations()
+                guard !Task.isCancelled, service === nariTranscriber,
+                      pipelineLifecycle.acceptsSample(generation: generation) else { return }
+                pipelineLifecycle.stop()
+                finishPipeline(statusOverride: nil)
+            } catch is CancellationError {
+            } catch {
+                receiveNariError(error, service: service, generation: generation)
+            }
+        }
+    }
+
+    private func drainNariTranslations() async throws {
+        guard !isTranscribeOnlyMode else { return }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(15))
+        while translationTask != nil, ContinuousClock.now < deadline {
+            try Task.checkCancellation()
+            try await Task.sleep(for: .milliseconds(20))
+        }
     }
 
     private func resetLiveSessionState(clearsVisibleLines: Bool) {
+        nariTurnLineIDs.removeAll()
+        nariFinalizedItemIDs.removeAll()
+        nariItemOrder.removeAll()
+        if clearsVisibleLines { nariSavedTranscriptText = "" }
         if clearsVisibleLines { azureSavedTranscriptText = "" }
         audioSampleCount = 0
         latestAudioLevel = nil
@@ -2941,7 +3222,13 @@ final class TranslationSessionStore {
             == OpenAIRealtimeTranscriptionModel.gptLiveTranscribe.rawValue
         let restoredGeminiTranscriptionMode = geminiTranslationModel.isTranscription
         let restoredMetaTranscriptionMode = metaTranscriptionModel.isEnabled
-        if restoredAzureMode {
+        let restoredNariModel = defaults.string(forKey: SettingsKey.nariTranscriptionModelID)
+            .flatMap(NariTranscriptionModel.init(rawValue:)) ?? .off
+        isNariSourceAutoDetectionEnabled = defaults.bool(forKey: SettingsKey.nariSourceAutoDetectionEnabled)
+        if restoredNariModel.isEnabled {
+            nariTranscriptionModel = restoredNariModel
+            if selectedModel == .appleSpeechOnly { prepareTranscribeOnlyPresentation() }
+        } else if restoredAzureMode {
             isUsingAzureMAI = true
         } else if restoredGPTTranscriptionMode {
             if floatingCaptionDisplayModeBeforeTranscribeOnly == nil {
@@ -2974,7 +3261,7 @@ final class TranslationSessionStore {
         } else if openAITranscriptionModel == .gptRealtimeWhisper {
             openAITranscriptionModel = .off
         }
-        if restoredGPTTranscriptionMode || restoredGeminiTranscriptionMode {
+        if (restoredNariModel.isEnabled && isTranscribeOnlyMode) || restoredGPTTranscriptionMode || restoredGeminiTranscriptionMode {
             applyVoiceOutputDefault(false)
         } else {
             applyRestoredVoiceOutputPreference()
@@ -2995,6 +3282,8 @@ final class TranslationSessionStore {
         defaults.set(isUsingAzureMAI, forKey: "azureMAIEnabled")
         defaults.set(azureSpeechEndpoint, forKey: "azureSpeechEndpoint")
         defaults.set(metaTranscriptionModel.id, forKey: SettingsKey.metaTranscriptionModelID)
+        defaults.set(nariTranscriptionModel.rawValue, forKey: SettingsKey.nariTranscriptionModelID)
+        defaults.set(isNariSourceAutoDetectionEnabled, forKey: SettingsKey.nariSourceAutoDetectionEnabled)
         defaults.set(isMetaSpeakerLabelsEnabled, forKey: SettingsKey.metaSpeakerLabelsEnabled)
         defaults.set(isDubbingEnabled, forKey: SettingsKey.isDubbingEnabled)
         defaults.set(appleVoiceOutputEnabled, forKey: SettingsKey.appleVoiceOutputEnabled)
@@ -3216,6 +3505,14 @@ final class TranslationSessionStore {
             if !translatedText.isEmpty {
                 activeAutosaveTranslatedText = translatedText
             }
+        }
+        if isUsingNariSTT {
+            activeAutosaveSourceText = nariSavedTranscriptText
+            activeAutosaveTranslatedText = lines.filter {
+                $0.isFinal && $0.translatedSourceText == $0.sourceText
+                    && !$0.translatedText.isEmpty && $0.translatedText != AppText.translating
+                    && $0.translatedText != AppText.translationCancelled
+            }.map(\.translatedText).joined(separator: "\n")
         }
 
         let sourceText = activeAutosaveSourceText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -4740,6 +5037,11 @@ final class TranslationSessionStore {
         target: LanguageOption,
         progress: @escaping @MainActor @Sendable (String) -> Void = { _ in }
     ) async throws -> String {
+#if DEBUG
+        if isUsingNariSTT, let nariTranslationForTesting {
+            return try await nariTranslationForTesting(text)
+        }
+#endif
         let paragraphSegments = try await Task.detached(priority: .userInitiated) {
             try Task.checkCancellation()
             return Self.translationSegmentGroups(from: text)
@@ -5091,6 +5393,61 @@ final class TranslationSessionStore {
         )
     }
 
+    private func receiveNariTranscript(_ update: NariTranscriptUpdate, service: NariRealtimeTranscriber?, generation: UInt64) {
+        guard let service, service === nariTranscriber,
+              pipelineLifecycle.acceptsSample(generation: generation), isRunning, isUsingNariSTT,
+              !nariFinalizedItemIDs.contains(update.itemID) else { return }
+        let text = update.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let detectedLanguage = update.languageCode.flatMap { code in
+            LanguageOption.supported.first { NariTranscriptionModel.languageCode(for: $0) == code }
+        }
+        let language = detectedLanguage ?? sourceLanguage
+        let unknownDetectedLanguage = isNariSourceAutoDetectionEnabled && update.isFinal && detectedLanguage == nil
+        let existingIndex = nariTurnLineIDs[update.itemID].flatMap { id in lines.firstIndex { $0.id == id } }
+        if nariTurnLineIDs[update.itemID] == nil && !nariItemOrder.contains(update.itemID) {
+            nariItemOrder.append(update.itemID)
+        }
+        if update.isFinal { nariFinalizedItemIDs.insert(update.itemID) }
+
+        // 오래된 완료 ID만 비워 늦은 중복과 현재 진행 중 발화를 구분한다.
+        while nariItemOrder.count > 256,
+              let oldest = nariItemOrder.first, nariFinalizedItemIDs.contains(oldest) {
+            nariItemOrder.removeFirst()
+            nariFinalizedItemIDs.remove(oldest)
+            nariTurnLineIDs.removeValue(forKey: oldest)
+        }
+        if text.isEmpty {
+            if let index = existingIndex {
+                let removed = lines.remove(at: index)
+                sourceLanguageByLineID.removeValue(forKey: removed.id)
+                nariTurnLineIDs.removeValue(forKey: update.itemID)
+                rehydrateFloatingCaptionDisplayFromCurrentLine()
+            }
+            return
+        }
+        let previous = existingIndex.map { lines[$0] }
+        let line = CaptionLine(
+            id: previous?.id ?? UUID(), sourceText: text,
+            translatedText: isTranscribeOnlyMode ? "" : (unknownDetectedLanguage ? NariCopy.translationLanguageUnavailable : AppText.translating),
+            createdAt: previous?.createdAt ?? Date(), isFinal: update.isFinal,
+            revision: (previous?.revision ?? 0) + 1, usesLongSessionDisplay: usesLongSessionMode
+        )
+        if let index = existingIndex { lines[index] = line } else { lines.append(line) }
+        nariTurnLineIDs[update.itemID] = line.id
+        sourceLanguageByLineID[line.id] = language
+        lastRecognizedText = text
+        lastRecognizedWasFinal = update.isFinal
+        lastRecognitionAt = Date()
+        presentFloatingSourceText(text)
+        if update.isFinal {
+            nariSavedTranscriptText = nariSavedTranscriptText.isEmpty ? text : nariSavedTranscriptText + "\n" + text
+            stageTranscriptForSave(nariSavedTranscriptText)
+            if !isTranscribeOnlyMode, !unknownDetectedLanguage {
+                requestTranslation(for: line, source: language, target: targetLanguage, preservesOrdering: true)
+            }
+        }
+    }
+
     private func receiveAzureMAI(_ result: Result<String, AzureMAIError>, service: AzureMAITranscriber?, generation: UInt64) {
         guard let service, service === azureMAITranscriber,
               pipelineLifecycle.acceptsSample(generation: generation), isRunning, isUsingAzureMAI else { return }
@@ -5398,7 +5755,7 @@ final class TranslationSessionStore {
         }
 
         let sourceText = line.sourceText
-        let preservesOrdering = preservesOrdering ?? (isUsingMetaScribe || isUsingAzureMAI)
+        let preservesOrdering = preservesOrdering ?? (isUsingMetaScribe || isUsingAzureMAI || isUsingNariSTT)
         if !preservesOrdering {
             guard force || pendingTranslationSourceText != sourceText else { return }
             pendingTranslationSourceText = sourceText
@@ -5639,7 +5996,7 @@ final class TranslationSessionStore {
             pendingTranslationSourceText = ""
         }
         stageTranscriptForSave(
-            isUsingAzureMAI ? azureSavedTranscriptText : (isUsingMetaScribe ? metaSavedTranscriptText : currentSourceText),
+            isUsingNariSTT ? nariSavedTranscriptText : (isUsingAzureMAI ? azureSavedTranscriptText : (isUsingMetaScribe ? metaSavedTranscriptText : currentSourceText)),
             translatedText: organizedTranslatedText
         )
 
@@ -6017,6 +6374,23 @@ final class TranslationSessionStore {
     }
 
 #if DEBUG
+    func deliverNariTranscriptForTesting(_ update: NariTranscriptUpdate, generation: UInt64) {
+        receiveNariTranscript(update, service: nariTranscriber, generation: generation)
+    }
+
+    func finishNariPipelineForTesting() {
+        pipelineLifecycle.stop()
+        finishPipeline(statusOverride: nil)
+    }
+
+    func drainNariTranslationsForTesting() async throws {
+        try await drainNariTranslations()
+    }
+
+    func stopNariFromSystemMenuForTesting(generation: UInt64) {
+        handleSystemAudioCaptureStoppedByUser(generation: generation)
+    }
+
     func beginPermissionSuspendedStartForTesting() -> UInt64? {
         guard !isRunning, !isStarting else { return nil }
 
