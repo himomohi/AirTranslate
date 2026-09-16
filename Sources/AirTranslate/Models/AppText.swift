@@ -733,6 +733,60 @@ enum AppText {
         korean: "따로 띄우는 플로팅 자막 창에 표시할 내용을 선택합니다."
     )
     static let floatingTextSize = localized(english: "Floating Text Size", korean: "플로팅 글자 크기")
+    static let floatingCustomTextSize = localized(
+        english: "Custom Text Size",
+        korean: "사용자 지정 글자 크기",
+        japanese: "カスタム文字サイズ",
+        chineseSimplified: "自定义文字大小"
+    )
+    static let floatingColorCode = localized(
+        english: "color code", korean: "색상 코드", japanese: "カラーコード", chineseSimplified: "颜色代码"
+    )
+    static let applyFloatingColor = localized(
+        english: "Apply", korean: "적용", japanese: "適用", chineseSimplified: "应用"
+    )
+    static let floatingTextColor = localized(
+        english: "Caption Text Color",
+        korean: "자막 글자 색상",
+        japanese: "字幕テキストカラー",
+        chineseSimplified: "字幕文字颜色"
+    )
+    static let floatingBackgroundColor = localized(
+        english: "Caption Background Color",
+        korean: "자막 배경 색상",
+        japanese: "字幕背景カラー",
+        chineseSimplified: "字幕背景颜色"
+    )
+    static let floatingBackgroundOpacity = localized(
+        english: "Background Opacity",
+        korean: "배경 불투명도",
+        japanese: "背景の不透明度",
+        chineseSimplified: "背景不透明度"
+    )
+    static let resetFloatingCaptionAppearance = localized(
+        english: "Reset Appearance",
+        korean: "외형 초기화",
+        japanese: "外観をリセット",
+        chineseSimplified: "重置外观"
+    )
+    static let resetFloatingCaptionSize = localized(
+        english: "Reset Window Size",
+        korean: "창 크기 초기화",
+        japanese: "ウインドウサイズをリセット",
+        chineseSimplified: "重置窗口大小"
+    )
+    static let floatingCaptionDragHandle = localized(
+        english: "Floating caption drag handle",
+        korean: "플로팅 자막 드래그 핸들",
+        japanese: "フローティング字幕ドラッグハンドル",
+        chineseSimplified: "悬浮字幕拖动手柄"
+    )
+    static let floatingCaptionResizeHandle = localized(
+        english: "Floating caption resize handle",
+        korean: "플로팅 자막 크기 조절 핸들",
+        japanese: "フローティング字幕リサイズハンドル",
+        chineseSimplified: "悬浮字幕大小调整手柄"
+    )
     static let floatingLineCount = localized(english: "Floating Lines", korean: "플로팅 표시 줄 수")
     static let originalOnly = localized(english: "Original", korean: "원문", japanese: "原文", chineseSimplified: "原文")
     static let originalAndTranslation = localized(english: "Original + Translation", korean: "원문 + 번역", japanese: "原文 + 翻訳", chineseSimplified: "原文 + 译文")

@@ -23,14 +23,16 @@
 
 AirTranslateはMacで再生中の音声を取り込み、ライブで文字起こしし、翻訳ワークフローを選んだ場合は翻訳し、必要に応じて他のアプリの上にフローティング字幕を表示します。Apple Modeは引き続きローカル優先の標準ワークフローです。クラウドエンジンは任意で、対応するプロバイダーキーを設定すると利用できます。
 
-AirTranslate **1.9.0/build190** では、任意のNari STTと新しいAPIキー画面を追加しました。
+AirTranslate **1.9.1/build191** では、フローティング字幕に双方向リサイズ、hover時の移動・リサイズ表示、カスタム文字サイズ、テキスト色、背景色と背景の不透明度、設定保存とリセットを追加しました。
+
+文字色と背景色は **#RRGGBB カラーコード** を直接入力し、キーボードで適用することもできます。
 
 ## ダウンロード
 
-現在の公開最新版: **v1.9.0**。
+現在の公開最新版: **v1.9.1**。
 
 - [AirTranslate.dmgをダウンロード](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [AirTranslate-1.9.0.zipをダウンロード](https://github.com/himomohi/AirTranslate/releases/download/v1.9.0/AirTranslate-1.9.0.zip)
+- [AirTranslate-1.9.1.zipをダウンロード](https://github.com/himomohi/AirTranslate/releases/download/v1.9.1/AirTranslate-1.9.1.zip)
 - [AirTranslate.dmg.sha256をダウンロード](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [バージョン履歴を見る](Release/VERSION-HISTORY.md)
 
@@ -45,7 +47,7 @@ cat AirTranslate.dmg.sha256
 
 ![AirTranslate workspace](docs/assets/airtranslate-workspace.jpg)
 
-1.9.0ローカルビルドのキャプチャ開始前の画面です（韓国語UI）。
+キャプチャ開始前のAirTranslateワークスペースです（韓国語UI）。
 
 AirTranslateは原文の文字起こしと翻訳文を1つのワークスペースに保ち、別のアプリで視聴または作業している間はフローティング字幕で表示できます。
 
@@ -70,6 +72,7 @@ API連携エンジンは、**Settings > API Keys**でキーを設定すると利
 - ローカル優先の標準経路であるApple Speech文字起こしとApple Translation翻訳。
 - 翻訳なしで原文字幕だけを見る文字起こし専用モード。
 - フローティング字幕、保存済み記録ライブラリ、任意の翻訳音声、ワンクリック言語入れ替え。
+- フローティング字幕ウィンドウの双方向リサイズ、移動・リサイズ表示、カスタム文字サイズ、テキスト色、背景色、文字を薄くしない背景の不透明度、設定保存とリセット。
 - 記録ファイル保存はデフォルトでオフです。Application Supportに通常の`.txt`ファイルを残す場合は**Save Transcript Files**を有効にします。
 - 英語、韓国語、日本語、簡体字中国語のアプリ言語。
 
@@ -90,6 +93,10 @@ Nari STTは1.9.0の任意エンジンです。Nariの初回選択は原文文字
 Nariは韓国語を含む入力言語の手動選択と音声言語の自動検出に対応します。
 
 Nariを新しく選択すると、Nariクレジットが必要なGA Fastモデルを使用します。保存済みのFree Public Betaモデルの選択は保持して開始をブロックし、有料モデルへ自動移行しません。設定 > 一般で課金の案内を確認し、GAモデルを明示的に選択するとNari STTを再開できます。
+
+## フローティング字幕
+
+フローティング字幕ウィンドウは横方向と縦方向の両方でリサイズでき、hover状態で移動とリサイズの表示を出します。字幕スタイルには既存のプリセット文字サイズに加えてカスタムサイズ、テキスト色、背景色、文字を薄くしない背景の不透明度、設定保存とリセットがあります。Caption Stabilityは別の設定として維持されます。
 
 ## APIキー
 

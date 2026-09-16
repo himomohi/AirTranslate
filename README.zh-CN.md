@@ -23,14 +23,16 @@
 
 AirTranslate 会捕获 Mac 正在播放的音频，实时转写；当你选择翻译流程时，它会进行翻译，并可将字幕悬浮在其他应用上方。Apple Mode 仍然是默认的本地优先流程。云端引擎为可选项，配置对应提供方密钥后即可使用。
 
-AirTranslate **1.9.0/build190** 新增可选 Nari STT 和重新设计的 API 密钥页面。
+AirTranslate **1.9.1/build191** 为悬浮字幕新增双向调整大小、hover 移动和缩放提示、自定义字号、文本颜色、背景颜色和背景透明度、偏好保存和重置。
+
+文字和背景颜色也可通过直接输入 **#RRGGBB 颜色代码** 并使用键盘应用。
 
 ## 下载
 
-当前公开最新版：**v1.9.0**。
+当前公开最新版：**v1.9.1**。
 
 - [下载 AirTranslate.dmg](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [下载 AirTranslate-1.9.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.9.0/AirTranslate-1.9.0.zip)
+- [下载 AirTranslate-1.9.1.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.9.1/AirTranslate-1.9.1.zip)
 - [下载 AirTranslate.dmg.sha256](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [查看版本历史](Release/VERSION-HISTORY.md)
 
@@ -45,7 +47,7 @@ cat AirTranslate.dmg.sha256
 
 ![AirTranslate workspace](docs/assets/airtranslate-workspace.jpg)
 
-1.9.0 本地构建开始采集前的界面（韩语 UI）。
+开始采集前的 AirTranslate 工作区（韩语 UI）。
 
 AirTranslate 会在一个工作区中保留原文转写和译文，也可以在使用其他应用观看或收听时显示悬浮字幕。
 
@@ -70,6 +72,7 @@ API 驱动的引擎在 **Settings > API Keys** 中配置密钥后即可使用。
 - 以 Apple Speech 转写和 Apple Translation 翻译作为默认本地优先路径。
 - 无需翻译时可使用只显示原文字幕的转写模式。
 - 悬浮字幕、已保存记录库、可选译文朗读和一键切换语言方向。
+- 悬浮字幕窗口双向调整大小、移动和缩放提示、自定义字号、文本颜色、背景颜色、不影响文字的背景透明度、偏好保存和重置。
 - 记录文件保存默认关闭。需要在 Application Support 中保存普通 `.txt` 文件时，请开启 **Save Transcript Files**。
 - 英语、韩语、日语和简体中文应用语言。
 
@@ -90,6 +93,10 @@ Nari STT 是 1.9.0 的可选引擎。首次选择 Nari 会以原文转写开始�
 Nari 支持手动选择输入语言及自动检测语音语言，包括韩语。
 
 新选择 Nari 时会使用需要 Nari 额度的 GA Fast 模型。已保存的 Free Public Beta 模型选择会保留，但无法启动，也不会自动切换到付费模型。请在设置 > 通用中查看计费提示，然后主动选择 GA 模型以重新启动 Nari STT。
+
+## 悬浮字幕
+
+悬浮字幕窗口可同时调整宽度和高度，并在 hover 状态显示移动和缩放提示。字幕样式在现有预设字号之外支持自定义字号、文本颜色、背景颜色、不影响文字的背景透明度、偏好保存和重置。Caption Stability 仍作为独立设置保留。
 
 ## API 密钥
 

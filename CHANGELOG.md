@@ -4,6 +4,18 @@ All notable changes to AirTranslate are documented in this file.
 
 ## [Unreleased]
 
+## 1.9.1 - 2026-09-16
+
+### Added
+
+- Added precise #RRGGBB color-code input with keyboard Apply for caption text and background colors.
+
+- Added a resizable floating caption window that can be adjusted in both width and height.
+- Added visible hover affordances for moving and resizing floating captions.
+- Added custom floating-caption font sizing while keeping the existing preset sizes.
+- Added floating-caption text color, background color, and background opacity controls that do not fade caption text.
+- Added persistence and reset behavior for floating-caption window and style preferences.
+
 ## 1.9.0 - 2026-09-16
 
 ### Added

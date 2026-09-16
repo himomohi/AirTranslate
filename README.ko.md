@@ -23,14 +23,16 @@
 
 AirTranslate는 Mac에서 재생되는 소리를 캡처해 실시간으로 전사하고, 번역 흐름을 선택하면 번역하며, 필요하면 다른 앱 위에 플로팅 자막을 유지합니다. Apple 기본 모드는 계속 로컬 우선 기본 경로입니다. 클라우드 엔진은 선택형이며 해당 제공자 키를 설정하면 사용할 수 있습니다.
 
-AirTranslate **1.9.0/build190**은 선택형 Nari STT와 새 API 키 화면을 추가합니다.
+AirTranslate **1.9.1/build191**은 플로팅 자막에 양방향 크기 조절, hover 이동·리사이즈 표시, 사용자 지정 글자 크기, 텍스트 색상, 배경 색상과 배경 투명도, 설정 저장과 초기화를 추가합니다.
+
+글자색과 배경색은 **#RRGGBB 색상 코드**를 직접 입력하고 키보드로 적용할 수도 있습니다.
 
 ## 다운로드
 
-현재 공개 최신 릴리즈: **v1.9.0**.
+현재 공개 최신 릴리즈: **v1.9.1**.
 
 - [AirTranslate.dmg 다운로드](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [AirTranslate-1.9.0.zip 다운로드](https://github.com/himomohi/AirTranslate/releases/download/v1.9.0/AirTranslate-1.9.0.zip)
+- [AirTranslate-1.9.1.zip 다운로드](https://github.com/himomohi/AirTranslate/releases/download/v1.9.1/AirTranslate-1.9.1.zip)
 - [AirTranslate.dmg.sha256 다운로드](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [버전 이력 보기](Release/VERSION-HISTORY.md)
 
@@ -45,7 +47,7 @@ cat AirTranslate.dmg.sha256
 
 ![AirTranslate workspace](docs/assets/airtranslate-workspace.jpg)
 
-캡처 시작 전의 1.9.0 로컬 빌드 화면입니다.
+캡처 시작 전의 AirTranslate 작업 공간입니다.
 
 AirTranslate는 원문 기록과 번역문을 한 작업 공간에 유지하며, 다른 앱을 보거나 들을 때 플로팅 자막으로 볼 수 있습니다.
 
@@ -70,6 +72,7 @@ API 기반 엔진은 **설정 > API 키**에서 키를 설정한 뒤 사용할 �
 - 기본 로컬 우선 경로인 Apple Speech 전사와 Apple Translation 번역.
 - 번역 없이 원문 자막만 보는 전사 전용 모드.
 - 플로팅 자막, 저장된 기록 보관함, 선택형 번역 음성, 원클릭 언어 바꾸기.
+- 플로팅 자막 창 양방향 크기 조절, 이동·리사이즈 표시, 사용자 지정 글자 크기, 텍스트 색상, 배경 색상, 글자에는 영향 없는 배경 투명도, 설정 저장과 초기화.
 - 기록 파일 저장은 기본으로 꺼져 있습니다. 일반 `.txt` 파일을 Application Support에 남기려면 **Save Transcript Files**를 켭니다.
 - 영어, 한국어, 일본어, 중국어 간체 앱 언어.
 
@@ -90,6 +93,10 @@ Nari STT는 1.9.0의 선택형 엔진입니다. Nari 최초 선택은 원문 전
 Nari는 한국어를 포함한 입력 언어 직접 선택과 음성 언어 자동 감지를 지원합니다.
 
 Nari를 새로 선택하면 크레딧이 필요한 GA Fast 모델을 사용합니다. 저장된 Free Public Beta 모델 선택은 보존하고 시작을 차단하며, 유료 모델로 자동 전환하지 않습니다. 설정 > 일반에서 과금 안내를 확인한 뒤 GA 모델을 직접 선택하면 Nari STT를 다시 시작할 수 있습니다.
+
+## 플로팅 자막
+
+플로팅 자막 창은 가로와 세로를 모두 조절할 수 있고, hover 상태에서 이동과 리사이즈 표시를 보여 줍니다. 자막 스타일은 기존 프리셋 글자 크기에 사용자 지정 크기, 텍스트 색상, 배경 색상, 글자에는 영향 없는 배경 투명도, 설정 저장과 초기화를 더합니다. Caption Stability 설정은 별도로 유지됩니다.
 
 ## API 키
 

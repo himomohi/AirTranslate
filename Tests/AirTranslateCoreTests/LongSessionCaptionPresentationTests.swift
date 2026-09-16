@@ -7,8 +7,8 @@ struct LongSessionCaptionPresentationTests {
     @Test
     @MainActor
     func standardSessionCoalescesLargeTranscriptUpdatesAndKeepsLatestText() async throws {
-        let (session, directory) = try makeTranscriptionSession()
-        defer { try? FileManager.default.removeItem(at: directory) }
+        let (session, _, cleanup) = try makeTranscriptionSession()
+        defer { cleanup() }
         session.usesManualCaptionDeliveryForTesting = true
         let baseText = String(repeating: "long session transcript ", count: 180)
         session.receiveCaptionForTesting(baseText)
@@ -28,8 +28,8 @@ struct LongSessionCaptionPresentationTests {
     @Test
     @MainActor
     func standardSessionStillPresentsShortTranscriptImmediately() async throws {
-        let (session, directory) = try makeTranscriptionSession()
-        defer { try? FileManager.default.removeItem(at: directory) }
+        let (session, _, cleanup) = try makeTranscriptionSession()
+        defer { cleanup() }
         let transcriber = LiveSpeechTranscriber()
 
         session.liveSpeechTranscriber(
@@ -55,8 +55,8 @@ struct LongSessionCaptionPresentationTests {
     @Test
     @MainActor
     func stopFlushesLatestCoalescedLongTranscript() async throws {
-        let (session, directory) = try makeTranscriptionSession()
-        defer { try? FileManager.default.removeItem(at: directory) }
+        let (session, directory, cleanup) = try makeTranscriptionSession()
+        defer { cleanup() }
         let transcriber = LiveSpeechTranscriber()
         let baseText = String(repeating: "long stop transcript ", count: 200)
 
@@ -85,8 +85,8 @@ struct LongSessionCaptionPresentationTests {
     @Test
     @MainActor
     func pauseFlushesLatestCoalescedLongTranscript() async throws {
-        let (session, directory) = try makeTranscriptionSession()
-        defer { try? FileManager.default.removeItem(at: directory) }
+        let (session, directory, cleanup) = try makeTranscriptionSession()
+        defer { cleanup() }
         let transcriber = LiveSpeechTranscriber()
         let baseText = String(repeating: "long pause transcript ", count: 200)
 
@@ -115,8 +115,8 @@ struct LongSessionCaptionPresentationTests {
     @Test
     @MainActor
     func terminationFlushesAndSavesLatestCoalescedLongTranscript() async throws {
-        let (session, directory) = try makeTranscriptionSession()
-        defer { try? FileManager.default.removeItem(at: directory) }
+        let (session, directory, cleanup) = try makeTranscriptionSession()
+        defer { cleanup() }
         let transcriber = LiveSpeechTranscriber()
         let baseText = String(repeating: "long termination transcript ", count: 180)
 
@@ -146,8 +146,8 @@ struct LongSessionCaptionPresentationTests {
     @Test
     @MainActor
     func runningSessionCheckpointsTranscriptWithoutStopping() async throws {
-        let (session, directory) = try makeTranscriptionSession(checkpointInterval: 0.04)
-        defer { try? FileManager.default.removeItem(at: directory) }
+        let (session, directory, cleanup) = try makeTranscriptionSession(checkpointInterval: 0.04)
+        defer { cleanup() }
         let transcriber = LiveSpeechTranscriber()
 
         session.liveSpeechTranscriber(
@@ -168,8 +168,8 @@ struct LongSessionCaptionPresentationTests {
     @Test
     @MainActor
     func fiftyThousandCharacterBurstDoesNotStarveMainActorHeartbeat() async throws {
-        let (session, directory) = try makeTranscriptionSession()
-        defer { try? FileManager.default.removeItem(at: directory) }
+        let (session, _, cleanup) = try makeTranscriptionSession()
+        defer { cleanup() }
         let transcriber = LiveSpeechTranscriber()
         let baseText = String(repeating: "responsive long transcript ", count: 2_000)
 
@@ -203,12 +203,15 @@ struct LongSessionCaptionPresentationTests {
     @MainActor
     private func makeTranscriptionSession(
         checkpointInterval: TimeInterval = 30
-    ) throws -> (TranslationSessionStore, URL) {
+    ) throws -> (TranslationSessionStore, URL, () -> Void) {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("AirTranslateLongSessionTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let suiteName = "AirTranslateLongSessionSettings-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
         let session = TranslationSessionStore(
             modelAvailabilityProvider: { _, _ in [:] },
+            settingsDefaults: defaults,
             transcriptsDirectoryURL: directory,
             transcriptCheckpointInterval: checkpointInterval
         )
@@ -220,7 +223,10 @@ struct LongSessionCaptionPresentationTests {
         session.isAppleSourceAutoDetectionEnabled = false
         session.paragraphBreakSilenceInterval = 30
         session.isRunning = true
-        return (session, directory)
+        return (session, directory, {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: directory)
+        })
     }
 
     private func savedTranscriptText(in directory: URL) -> String {

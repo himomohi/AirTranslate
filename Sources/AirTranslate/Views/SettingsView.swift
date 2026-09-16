@@ -1,3 +1,4 @@
+import AppKit
 import AVFoundation
 import CoreGraphics
 import Speech
@@ -531,7 +532,12 @@ struct SettingsView: View {
                 displayMode: session.floatingCaptionDisplayMode,
                 textSize: session.floatingCaptionTextSize,
                 lineCount: session.floatingCaptionLineCount,
-                alignment: session.floatingCaptionTextAlignment
+                alignment: session.floatingCaptionTextAlignment,
+                primaryPointSize: session.floatingCaptionPrimaryPointSize,
+                secondaryPointSize: session.floatingCaptionSecondaryPointSize,
+                textColor: session.floatingCaptionTextColor,
+                backgroundColor: session.floatingCaptionBackgroundColor,
+                backgroundOpacity: session.floatingCaptionBackgroundOpacity
             )
 
             SettingsGroup(title: SettingsCopy.displaySettings) {
@@ -554,7 +560,7 @@ struct SettingsView: View {
                     detail: SettingsCopy.floatingTextSizeDetail,
                     systemImage: "textformat.size"
                 ) {
-                    Picker(AppText.floatingTextSize, selection: $session.floatingCaptionTextSize) {
+                    Picker(AppText.floatingTextSize, selection: floatingCaptionTextSizePresetBinding) {
                         ForEach(FloatingCaptionTextSize.allCases) { size in
                             Text(size.title).tag(size)
                         }
@@ -563,6 +569,31 @@ struct SettingsView: View {
                     .tint(AirTranslateDesign.Palette.accent)
                     .labelsHidden()
                     .frame(width: 232)
+                }
+
+                SettingsControlRow(
+                    title: AppText.floatingCustomTextSize,
+                    detail: SettingsCopy.floatingCustomTextSizeDetail,
+                    systemImage: "textformat"
+                ) {
+                    HStack(spacing: 10) {
+                        Stepper(
+                            value: floatingCaptionCustomPointSizeBinding,
+                            in: Double(FloatingCaptionAppearance.customPointSizeRange.lowerBound)...Double(FloatingCaptionAppearance.customPointSizeRange.upperBound),
+                            step: 1
+                        ) {
+                            Text("\(Int(session.floatingCaptionPrimaryPointSize)) pt")
+                                .monospacedDigit()
+                        }
+                        .accessibilityLabel(AppText.floatingCustomTextSize)
+                        .accessibilityValue("\(Int(session.floatingCaptionPrimaryPointSize)) pt")
+                        Button(SettingsCopy.usePresetTextSize) {
+                            session.floatingCaptionCustomPointSize = FloatingCaptionAppearance.defaultCustomPointSize
+                        }
+                        .disabled(session.floatingCaptionCustomPointSize == FloatingCaptionAppearance.defaultCustomPointSize)
+                        .accessibilityLabel(SettingsCopy.usePresetTextSize)
+                    }
+                    .frame(width: 280)
                 }
 
                 SettingsControlRow(
@@ -613,12 +644,64 @@ struct SettingsView: View {
                     .frame(width: 168)
                 }
 
+                SettingsControlRow(
+                    title: AppText.floatingTextColor,
+                    detail: SettingsCopy.floatingTextColorDetail,
+                    systemImage: "textformat.alt"
+                ) {
+                    FloatingCaptionColorEditor(
+                        title: AppText.floatingTextColor,
+                        color: floatingCaptionTextColorBinding,
+                        hex: $session.floatingCaptionTextColorHex
+                    )
+                }
+
+                SettingsControlRow(
+                    title: AppText.floatingBackgroundColor,
+                    detail: SettingsCopy.floatingBackgroundColorDetail,
+                    systemImage: "paintpalette"
+                ) {
+                    FloatingCaptionColorEditor(
+                        title: AppText.floatingBackgroundColor,
+                        color: floatingCaptionBackgroundColorBinding,
+                        hex: $session.floatingCaptionBackgroundColorHex
+                    )
+                }
+
+                SettingsControlRow(
+                    title: AppText.floatingBackgroundOpacity,
+                    detail: SettingsCopy.floatingBackgroundOpacityDetail,
+                    systemImage: "circle.lefthalf.filled"
+                ) {
+                    HStack(spacing: 10) {
+                        Slider(value: $session.floatingCaptionBackgroundOpacity, in: 0...1)
+                            .accessibilityLabel(AppText.floatingBackgroundOpacity)
+                        Text("\(Int(round(session.floatingCaptionBackgroundOpacity * 100)))%")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .frame(width: 42, alignment: .trailing)
+                    }
+                    .frame(width: 220)
+                }
+
                 SettingsToggleRow(
                     title: SettingsCopy.keepOnTop,
                     detail: SettingsCopy.keepOnTopDetail,
                     systemImage: "pin",
                     isOn: $session.keepsFloatingCaptionAboveOtherWindows
                 )
+
+                HStack(spacing: 10) {
+                    Button(AppText.resetFloatingCaptionAppearance) {
+                        session.resetFloatingCaptionAppearance()
+                    }
+                    .accessibilityLabel(AppText.resetFloatingCaptionAppearance)
+
+                    Button(AppText.resetFloatingCaptionSize) {
+                        FloatingCaptionWindowController.resetSize()
+                    }
+                    .accessibilityLabel(AppText.resetFloatingCaptionSize)
+                }
             }
 
             Label(SettingsCopy.floatingFooter, systemImage: "info.circle")
@@ -825,6 +908,50 @@ struct SettingsView: View {
 
     private var isSessionConfigurationLocked: Bool {
         session.isRunning || session.isStarting
+    }
+
+    private var floatingCaptionTextSizePresetBinding: Binding<FloatingCaptionTextSize> {
+        Binding {
+            session.floatingCaptionTextSize
+        } set: { size in
+            session.selectFloatingCaptionTextSizePreset(size)
+        }
+    }
+
+    private var floatingCaptionCustomPointSizeBinding: Binding<Double> {
+        Binding {
+            Double(session.floatingCaptionPrimaryPointSize)
+        } set: { value in
+            session.floatingCaptionCustomPointSize = CGFloat(value)
+        }
+    }
+
+    private var floatingCaptionTextColorBinding: Binding<Color> {
+        Binding {
+            session.floatingCaptionTextColor
+        } set: { color in
+            if let hex = Self.hexString(from: color) {
+                session.floatingCaptionTextColorHex = hex
+            }
+        }
+    }
+
+    private var floatingCaptionBackgroundColorBinding: Binding<Color> {
+        Binding {
+            session.floatingCaptionBackgroundColor
+        } set: { color in
+            if let hex = Self.hexString(from: color) {
+                session.floatingCaptionBackgroundColorHex = hex
+            }
+        }
+    }
+
+    private static func hexString(from color: Color) -> String? {
+        if let cgColor = color.cgColor,
+           let nsColor = NSColor(cgColor: cgColor) {
+            return FloatingCaptionAppearance.hexString(from: nsColor)
+        }
+        return FloatingCaptionAppearance.hexString(from: NSColor(color))
     }
 
     /// Keeps AppKit's segmented control enabled state stable while capture starts.
@@ -1347,9 +1474,39 @@ private enum SettingsCopy {
         english: "Controls the optical size used in the floating caption window.",
         korean: "플로팅 자막 창에 쓰이는 글자 크기를 조정합니다."
     )
+    static let floatingCustomTextSizeDetail = AppText.localized(
+        english: "Fine-tunes the caption point size without changing the saved preset.",
+        korean: "저장된 preset은 유지한 채 자막 포인트 크기만 세밀하게 조정합니다.",
+        japanese: "保存済みのプリセットを保ったまま、字幕のポイントサイズだけを細かく調整します。",
+        chineseSimplified: "保留已保存的预设，只精细调整字幕字号。"
+    )
     static let floatingLineCountDetail = AppText.localized(
         english: "Limits how many wrapped lines stay visible at once.",
         korean: "한 번에 표시되는 줄 수를 제한합니다."
+    )
+    static let floatingTextColorDetail = AppText.localized(
+        english: "Uses one readable foreground color for source and translation text.",
+        korean: "원문과 번역에 공통으로 쓰는 읽기 쉬운 글자 색상입니다.",
+        japanese: "原文と翻訳に共通で使う読みやすい前景色です。",
+        chineseSimplified: "源文和译文共用的易读前景颜色。"
+    )
+    static let floatingBackgroundColorDetail = AppText.localized(
+        english: "Sets the caption box background color.",
+        korean: "자막 박스 배경 색상을 설정합니다.",
+        japanese: "字幕ボックスの背景色を設定します。",
+        chineseSimplified: "设置字幕框背景颜色。"
+    )
+    static let floatingBackgroundOpacityDetail = AppText.localized(
+        english: "Adjusts only the caption background opacity. Text and resize handles stay visible.",
+        korean: "자막 배경 불투명도만 조정합니다. 글자와 크기 조절 핸들은 계속 보입니다.",
+        japanese: "字幕背景の不透明度だけを調整します。文字とリサイズハンドルは表示されたままです。",
+        chineseSimplified: "仅调整字幕背景不透明度。文字和大小调整手柄保持可见。"
+    )
+    static let usePresetTextSize = AppText.localized(
+        english: "Use Preset",
+        korean: "프리셋 사용",
+        japanese: "プリセットを使用",
+        chineseSimplified: "使用预设"
     )
     static let keepOnTop = AppText.localized(english: "Always On Top", korean: "항상 위에 표시")
     static let keepOnTopDetail = AppText.localized(
@@ -1631,6 +1788,11 @@ private struct FloatingCaptionPreview: View {
     let textSize: FloatingCaptionTextSize
     let lineCount: FloatingCaptionLineCount
     var alignment: FloatingCaptionTextAlignment = .center
+    let primaryPointSize: CGFloat
+    let secondaryPointSize: CGFloat
+    let textColor: Color
+    let backgroundColor: Color
+    let backgroundOpacity: Double
 
     private let originalText = "We're going to focus on real-time translation."
     private let translationText = "우리는 실시간 번역에 집중할 것입니다."
@@ -1648,28 +1810,19 @@ private struct FloatingCaptionPreview: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .accessibilityLabel(
-                        "\(AppText.floatingDisplay): \(displayMode.title), \(AppText.floatingTextSize): \(textSize.title), \(AppText.floatingLineCount): \(lineCount.title)"
+                        "\(AppText.floatingDisplay): \(displayMode.title), \(AppText.floatingTextSize): \(textSize.title), \(Int(primaryPointSize)) pt, \(AppText.floatingLineCount): \(lineCount.title)"
                     )
             }
 
             ZStack {
                 RoundedRectangle(cornerRadius: AirTranslateDesign.surfaceRadius, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                AirTranslateDesign.Palette.floatingScrimTop,
-                                AirTranslateDesign.Palette.floatingScrimBottom
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
+                    .fill(backgroundColor.opacity(backgroundOpacity))
 
                 VStack(alignment: alignment.horizontalAlignment, spacing: 8) {
                     if displayMode == .original || displayMode == .originalAndTranslation {
                         Text(originalText)
                             .font(displayMode == .original ? previewPrimaryFont : previewSecondaryFont)
-                            .foregroundStyle(AirTranslateDesign.Palette.floatingTextPrimary)
+                            .foregroundStyle(displayMode == .original ? textColor : textColor.opacity(0.82))
                             .lineLimit(lineCount.rawValue)
                             .frame(maxWidth: .infinity, alignment: alignment.frameAlignment(vertical: .center))
                             .accessibilityLabel("\(AppText.original): \(originalText)")
@@ -1678,7 +1831,7 @@ private struct FloatingCaptionPreview: View {
                     if displayMode == .translation || displayMode == .originalAndTranslation {
                         Text(translationText)
                             .font(previewPrimaryFont)
-                            .foregroundStyle(AirTranslateDesign.Palette.accentBright)
+                            .foregroundStyle(textColor)
                             .lineLimit(lineCount.rawValue)
                             .frame(maxWidth: .infinity, alignment: alignment.frameAlignment(vertical: .center))
                             .accessibilityLabel("\(AppText.translation): \(translationText)")
@@ -1687,7 +1840,6 @@ private struct FloatingCaptionPreview: View {
                 .multilineTextAlignment(alignment.textAlignment)
                 .padding(.horizontal, 22)
                 .padding(.vertical, 16)
-                .background(AirTranslateDesign.Palette.floatingScrimBottom, in: RoundedRectangle(cornerRadius: AirTranslateDesign.surfaceRadius, style: .continuous))
                 .accessibilityElement(children: .contain)
             }
             .frame(minHeight: previewHeight)
@@ -1700,29 +1852,11 @@ private struct FloatingCaptionPreview: View {
     }
 
     private var previewPrimaryFont: Font {
-        switch textSize {
-        case .small:
-            .system(size: 14, weight: .semibold)
-        case .medium:
-            .system(size: 17, weight: .semibold)
-        case .large:
-            .system(size: 20, weight: .semibold)
-        case .extraLarge:
-            .system(size: 23, weight: .semibold)
-        }
+        .system(size: max(12, primaryPointSize * 0.58), weight: .semibold)
     }
 
     private var previewSecondaryFont: Font {
-        switch textSize {
-        case .small:
-            .system(size: 11, weight: .medium)
-        case .medium:
-            .system(size: 13, weight: .medium)
-        case .large:
-            .system(size: 15, weight: .medium)
-        case .extraLarge:
-            .system(size: 17, weight: .medium)
-        }
+        .system(size: max(10, secondaryPointSize * 0.62), weight: .medium)
     }
 
     private var previewHeight: CGFloat {
@@ -2120,5 +2254,49 @@ private extension View {
                 .frame(height: 1)
                 .padding(.leading, 42)
         }
+    }
+}
+
+
+private struct FloatingCaptionColorEditor: View {
+    let title: String
+    @Binding var color: Color
+    @Binding var hex: String
+    @State private var draft: String
+
+    init(title: String, color: Binding<Color>, hex: Binding<String>) {
+        self.title = title
+        _color = color
+        _hex = hex
+        _draft = State(initialValue: hex.wrappedValue)
+    }
+
+    private var validHex: String? {
+        guard let value = FloatingCaptionAppearance.nsColor(hex: draft) else { return nil }
+        return FloatingCaptionAppearance.hexString(from: value)
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ColorPicker("", selection: $color, supportsOpacity: false)
+                .labelsHidden()
+                .accessibilityLabel(title)
+            TextField("#RRGGBB", text: $draft)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(.body, design: .monospaced))
+                .frame(width: 96)
+                .accessibilityLabel("\(title) \(AppText.floatingColorCode)")
+                .onSubmit(apply)
+            Button(AppText.applyFloatingColor, action: apply)
+                .disabled(validHex == nil || validHex == hex)
+                .accessibilityLabel("\(title) \(AppText.applyFloatingColor)")
+        }
+        .onChange(of: hex) { _, value in draft = value }
+    }
+
+    private func apply() {
+        guard let value = validHex else { return }
+        hex = value
+        draft = value
     }
 }

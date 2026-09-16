@@ -2,9 +2,12 @@ import SwiftUI
 
 struct FloatingCaptionWindowView: View {
     @Bindable var session: TranslationSessionStore
+    @State private var isHoveringChrome = false
 
     private static let lineSpacing: CGFloat = 5
     private static let blockSpacing: CGFloat = 8
+    private static let horizontalPadding: CGFloat = AirTranslateDesign.Spacing.lg * 2
+    private static let verticalPadding: CGFloat = AirTranslateDesign.Spacing.md * 2
     private static let replacementCrossfadeDuration = 0.16
 
     var body: some View {
@@ -14,47 +17,60 @@ struct FloatingCaptionWindowView: View {
             VStack(spacing: Self.blockSpacing) {
                 content
             }
-            .onGeometryChange(for: CGFloat.self) { proxy in
-                proxy.size.width
-            } action: { width in
-                if session.floatingCaptionMeasuredTextWidth != width {
-                    session.floatingCaptionMeasuredTextWidth = width
-                }
-            }
             .padding(.horizontal, AirTranslateDesign.Spacing.lg)
             .padding(.vertical, AirTranslateDesign.Spacing.md)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background {
                 if hasVisibleCaptionText {
                     RoundedRectangle(cornerRadius: AirTranslateDesign.Radius.surface, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    AirTranslateDesign.Palette.floatingScrimTop,
-                                    AirTranslateDesign.Palette.floatingScrimBottom
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
+                        .fill(session.floatingCaptionBackgroundColor.opacity(session.floatingCaptionBackgroundOpacity))
                         .overlay {
                             RoundedRectangle(cornerRadius: AirTranslateDesign.Radius.surface, style: .continuous)
                                 .strokeBorder(AirTranslateDesign.Palette.floatingOutline)
                         }
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(minWidth: 420, idealWidth: 720, maxWidth: 960, minHeight: 90, idealHeight: preferredHeight, maxHeight: preferredHeight)
+        .frame(
+            minWidth: FloatingCaptionWindowController.minimumWindowSize.width,
+            idealWidth: FloatingCaptionWindowController.defaultWindowSize.width,
+            maxWidth: .infinity,
+            minHeight: session.floatingCaptionMinimumWindowHeight,
+            idealHeight: preferredHeight,
+            maxHeight: .infinity
+        )
+        .onGeometryChange(for: CGSize.self) { proxy in
+            proxy.size
+        } action: { size in
+            let textWidth = max(0, size.width - Self.horizontalPadding)
+            let contentHeight = max(0, size.height - Self.verticalPadding)
+            if session.floatingCaptionMeasuredTextWidth != textWidth {
+                session.floatingCaptionMeasuredTextWidth = textWidth
+            }
+            if session.floatingCaptionMeasuredContentHeight != contentHeight {
+                session.floatingCaptionMeasuredContentHeight = contentHeight
+            }
+        }
         .contentShape(Rectangle())
-        .gesture(WindowDragGesture())
         .allowsWindowActivationEvents(true)
+        .onHover { isHoveringChrome = $0 }
         .overlay {
             FloatingCaptionDragSurface()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .overlay(alignment: .top) {
+            FloatingCaptionMoveAffordance(isVisible: isHoveringChrome)
+                .padding(.top, 8)
+        }
+        .overlay(alignment: .bottomTrailing) {
+            FloatingCaptionResizeHandle(minimumSize: session.floatingCaptionMinimumWindowSize)
+                .frame(width: 34, height: 34)
+                .padding(6)
+        }
         .background(
             FloatingWindowConfigurator(
                 preferredContentHeight: preferredHeight,
+                minimumWindowSize: session.floatingCaptionMinimumWindowSize,
                 keepsAboveOtherWindows: session.keepsFloatingCaptionAboveOtherWindows
             )
         )
@@ -120,7 +136,7 @@ struct FloatingCaptionWindowView: View {
     }
 
     private var lineLimit: Int {
-        session.floatingCaptionLineCount.rawValue
+        session.floatingCaptionEffectiveLineCount
     }
 
     private var alignment: FloatingCaptionTextAlignment {
@@ -128,15 +144,15 @@ struct FloatingCaptionWindowView: View {
     }
 
     static func blockHeight(lineHeight: CGFloat, lineCount: Int) -> CGFloat {
-        lineHeight * CGFloat(lineCount) + CGFloat(max(0, lineCount - 1)) * lineSpacing
+        FloatingCaptionAppearance.blockHeight(lineHeight: lineHeight, lineCount: lineCount)
     }
 
     private var primaryBlockHeight: CGFloat {
-        Self.blockHeight(lineHeight: session.floatingCaptionTextSize.primaryLineHeight, lineCount: lineLimit)
+        Self.blockHeight(lineHeight: session.floatingCaptionPrimaryLineHeight, lineCount: lineLimit)
     }
 
     private var secondaryBlockHeight: CGFloat {
-        Self.blockHeight(lineHeight: session.floatingCaptionTextSize.secondaryLineHeight, lineCount: lineLimit)
+        Self.blockHeight(lineHeight: session.floatingCaptionSecondaryLineHeight, lineCount: lineLimit)
     }
 
     private var preferredHeight: CGFloat {
@@ -157,10 +173,8 @@ struct FloatingCaptionWindowView: View {
     private func primaryBlock(_ text: String, anchor: VerticalAlignment, font: Font? = nil) -> some View {
         captionBlock(
             text,
-            font: font ?? session.floatingCaptionTextSize.primaryFont,
-            color: font == nil
-                ? AirTranslateDesign.Palette.floatingTextPrimary
-                : AirTranslateDesign.Palette.floatingTextSecondary,
+            font: font ?? session.floatingCaptionPrimaryFont,
+            color: font == nil ? session.floatingCaptionTextColor : session.floatingCaptionTextColor.opacity(0.82),
             height: primaryBlockHeight,
             anchor: anchor
         )
@@ -169,8 +183,8 @@ struct FloatingCaptionWindowView: View {
     private func secondaryBlock(_ text: String, anchor: VerticalAlignment) -> some View {
         captionBlock(
             text,
-            font: session.floatingCaptionTextSize.secondaryFont,
-            color: AirTranslateDesign.Palette.floatingTextSecondary,
+            font: session.floatingCaptionSecondaryFont,
+            color: session.floatingCaptionTextColor.opacity(0.82),
             height: secondaryBlockHeight,
             anchor: anchor
         )

@@ -27,7 +27,9 @@ right files before changing the app.
 - `Sources/AirTranslate/Views/CaptionBoardView.swift`
   - Live transcript workspace and caption rows.
 - `Sources/AirTranslate/Views/FloatingCaptionWindowView.swift`
-  - Always-on-top floating caption overlay.
+  - Always-on-top floating caption overlay with bounded text blocks, live width/height measurement, and resize-aware appearance.
+- `Sources/AirTranslate/Views/FloatingCaptionResizeHandle.swift`
+  - Hover affordances and pointer/keyboard/accessibility resizing for the floating caption panel.
 - `Sources/AirTranslate/Views/TranscriptLibraryView.swift`
   - Saved transcript browser and editor.
 - `Sources/AirTranslate/Views/SettingsView.swift`
@@ -65,7 +67,7 @@ right files before changing the app.
 ## Floating Captions
 
 - `Sources/AirTranslate/Support/FloatingCaptionWindowController.swift`
-  - Floating caption panel lifecycle.
+  - Floating caption panel lifecycle, persisted frame restore/reset, and screen-bounded resize clamps.
 - `Sources/AirTranslate/Support/FloatingCaptionTextFormatter.swift`
   - Tail selection and line formatting for floating captions.
 - `Sources/AirTranslate/Models/FloatingCaptionDisplayMode.swift`
@@ -74,6 +76,8 @@ right files before changing the app.
   - User-selectable floating caption line count.
 - `Sources/AirTranslate/Models/FloatingCaptionTextSize.swift`
   - User-selectable floating caption text size and line-height estimates.
+- `Sources/AirTranslate/Models/FloatingCaptionAppearance.swift`
+  - Custom caption color, background opacity, point-size clamp, and block-height sizing helpers.
 
 ## Release And Site
 
@@ -102,9 +106,11 @@ ignored so private investigation notes do not appear in pull requests.
 | 오래된 플로팅 번역 만료 | 새 원문 표시 → 이전 번역 유지 | `TranslationSessionStore.scheduleFloatingTranslationHoldExpiry` | 요청 시점의 ContinuousClock 만료 시각을 사용; 새 번역 수신 시 취소 | `swift test --filter FloatingTranslationPresentationTests` |
 | 단계별 지연 측정 | `AIRTRANSLATE_LATENCY_TRACE=1`로 로컬 앱 실행 | `PipelineDiagnostics`, `script/summarize_latency_trace.py`, `script/build_and_run.sh` | 타임스탬프·문자 수·구간 ID만 출력; 전사·번역 본문·키는 기록하지 않음 | 동일 음성·설정·release 빌드의 trace 비교; [2026-09-08 검증 보고서](../docs/adversarial-review/08-apple-caption-pipeline-2026-09-08.md) |
 
-플로팅 창의 읽기 대기 정책은 `TranslationSessionStore`에 유지한다.
+플로팅 창의 읽기 대기 정책과 사용자 지정 외형 저장은 `TranslationSessionStore`에 유지한다.
 번역만 표시하는 모드에서 원문만 도착했을 때는
 `FloatingCaptionWindowView`가 번역 대기 상태를 표시한다.
+플로팅 창은 사용자가 폭과 높이를 조절할 수 있으며, 사용자 지정 글자 크기·텍스트 색·배경색·배경 불투명도는 UserDefaults에 보존된다.
+창 높이가 큰 글자와 6줄 dual 모드를 모두 담기 어려운 경우에는 최소 한 줄짜리 원문·번역 블록을 보존하고, 표시 줄 수를 현재 창 높이에 맞춰 줄인다.
 Stage 복사 버튼은 포인터·키보드·접근성 포커스에서 표시되고,
 복사할 텍스트가 없을 때 비활성화된다. 2026-09-08 실제 창에서 hover 없이
 Shift-Tab 키보드 포커스가 보이는 것을 확인했다. 표시 정책 테스트,

@@ -3,6 +3,7 @@ import SwiftUI
 
 struct FloatingWindowConfigurator: NSViewRepresentable {
     let preferredContentHeight: CGFloat
+    let minimumWindowSize: NSSize
     let keepsAboveOtherWindows: Bool
 
     func makeNSView(context _: Context) -> NSView {
@@ -23,13 +24,23 @@ struct FloatingWindowConfigurator: NSViewRepresentable {
             window.isOpaque = false
             window.hasShadow = false
 
-            let minimumSize = NSSize(width: 420, height: preferredContentHeight)
+            let maximumSize = FloatingCaptionWindowController.maximumWindowSize(for: window.screen ?? NSScreen.main)
+            window.maxSize = maximumSize
+            let safeMinimumSize = NSSize(
+                width: max(FloatingCaptionWindowController.minimumWindowSize.width, minimumWindowSize.width),
+                height: max(FloatingCaptionWindowController.minimumWindowSize.height, minimumWindowSize.height)
+            )
+            let targetContentHeight = min(max(preferredContentHeight, safeMinimumSize.height), maximumSize.height)
+            let minimumSize = NSSize(
+                width: safeMinimumSize.width,
+                height: min(max(safeMinimumSize.height, targetContentHeight), maximumSize.height)
+            )
             window.minSize = minimumSize
-            if window.contentLayoutRect.height + 1 < preferredContentHeight {
+            if window.contentLayoutRect.height + 1 < targetContentHeight {
                 window.setContentSize(
                     NSSize(
                         width: max(window.contentLayoutRect.width, minimumSize.width),
-                        height: preferredContentHeight
+                        height: targetContentHeight
                     )
                 )
             }
@@ -41,19 +52,10 @@ struct FloatingWindowConfigurator: NSViewRepresentable {
         guard window.isVisible else { return }
         guard let visibleFrame = (window.screen ?? NSScreen.main)?.visibleFrame else { return }
 
-        let inset: CGFloat = 16
-        var frame = window.frame
-        let maximumWidth = max(window.minSize.width, visibleFrame.width - inset * 2)
-        let maximumHeight = max(window.minSize.height, visibleFrame.height - inset * 2)
-        frame.size.width = min(max(frame.width, window.minSize.width), maximumWidth)
-        frame.size.height = min(max(frame.height, window.minSize.height), maximumHeight)
-        frame.origin.x = min(
-            max(frame.origin.x, visibleFrame.minX + inset),
-            visibleFrame.maxX - frame.width - inset
-        )
-        frame.origin.y = min(
-            max(frame.origin.y, visibleFrame.minY + inset),
-            visibleFrame.maxY - frame.height - inset
+        let frame = FloatingCaptionWindowController.clampedFrame(
+            window.frame,
+            within: visibleFrame,
+            minimumSize: minimumWindowSize
         )
 
         if !NSEqualRects(frame, window.frame) {

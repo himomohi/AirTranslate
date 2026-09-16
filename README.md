@@ -23,14 +23,16 @@ Live Mac audio captions and translation for meetings, videos, lectures, intervie
 
 AirTranslate captures audio playing on your Mac, transcribes it live, translates it when you choose a translation workflow, and can keep captions floating above other apps. Apple Mode remains the default local-first workflow. Cloud engines are optional and become available after you configure the matching provider key.
 
-AirTranslate **1.9.0/build190** adds optional Nari STT and a redesigned API Keys screen.
+AirTranslate **1.9.1/build191** improves floating captions with two-axis resizing, visible hover controls, custom font sizing, text color, background color and opacity, persistent preferences, and reset.
+
+Text and background colors can also be entered precisely as **#RRGGBB color codes** and applied from the keyboard.
 
 ## Download
 
-Latest public release: **v1.9.0**.
+Latest public release: **v1.9.1**.
 
 - [Download AirTranslate.dmg](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [Download AirTranslate-1.9.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.9.0/AirTranslate-1.9.0.zip)
+- [Download AirTranslate-1.9.1.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.9.1/AirTranslate-1.9.1.zip)
 - [Download AirTranslate.dmg.sha256](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [View release history](Release/VERSION-HISTORY.md)
 
@@ -45,7 +47,7 @@ cat AirTranslate.dmg.sha256
 
 ![AirTranslate workspace](docs/assets/airtranslate-workspace.jpg)
 
-Current 1.9.0 local build, shown in Korean before starting capture.
+AirTranslate workspace before starting capture.
 
 AirTranslate keeps the source transcript and translated text in one workspace, with a floating caption option for watching or listening in another app.
 
@@ -70,6 +72,7 @@ API-backed engines become available after you configure their keys in **Settings
 - Apple Speech transcription and Apple Translation output as the default local-first path.
 - Original-only transcription for source captions without translation.
 - Floating captions, saved transcript library, optional translated speech, and one-click language swap.
+- Floating-caption window resizing, drag and resize affordances, custom font size, text color, background color, background opacity that does not fade text, persistent preferences, and reset.
 - Transcript file saving is off by default; enable **Save Transcript Files** when you want plain `.txt` files in Application Support.
 - Four app languages: English, Korean, Japanese, and Simplified Chinese.
 
@@ -90,6 +93,10 @@ Nari STT is an optional 1.9.0 engine. The first Nari selection starts as origina
 Nari supports manual source-language selection and automatic spoken-language detection, including Korean.
 
 New Nari selections use the GA Fast model and require Nari credits. Saved Free Public Beta model choices are preserved and blocked from starting; they are never automatically upgraded to a paid model. Review the billing notice in Settings > General and explicitly select a GA model to resume Nari STT.
+
+## Floating Captions
+
+The floating caption window can be resized in both dimensions and shows hover affordances for moving and resizing. Caption style controls support preset sizes plus a custom font size, text color, background color, background opacity that does not fade caption text, persistent preferences, and reset. Caption Stability remains available separately.
 
 ## API Keys
 

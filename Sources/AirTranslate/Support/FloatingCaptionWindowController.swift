@@ -21,8 +21,15 @@ final class FloatingCaptionWindowController: NSObject, NSWindowDelegate {
         shared.close()
     }
 
+    static func resetSize() {
+        shared.resetSize()
+    }
+
     private static let shared = FloatingCaptionWindowController()
     private static let frameDefaultsKey = "floatingCaptionWindowFrame"
+    nonisolated static let defaultWindowSize = NSSize(width: 720, height: 170)
+    nonisolated static let minimumWindowSize = NSSize(width: 420, height: 90)
+    nonisolated static let screenInset: CGFloat = 16
 
     private var window: NSPanel?
 
@@ -65,10 +72,9 @@ final class FloatingCaptionWindowController: NSObject, NSWindowDelegate {
     }
 
     private func makeWindow(session: TranslationSessionStore) -> NSPanel {
-        let size = NSSize(width: 720, height: 170)
         let panel = NSPanel(
-            contentRect: NSRect(origin: .zero, size: size),
-            styleMask: [.borderless, .nonactivatingPanel],
+            contentRect: NSRect(origin: .zero, size: Self.defaultWindowSize),
+            styleMask: [.borderless, .nonactivatingPanel, .resizable],
             backing: .buffered,
             defer: false
         )
@@ -86,6 +92,8 @@ final class FloatingCaptionWindowController: NSObject, NSWindowDelegate {
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
         panel.isMovableByWindowBackground = true
+        panel.minSize = Self.minimumWindowSize
+        panel.maxSize = Self.maximumWindowSize(for: panel.screen ?? NSScreen.main)
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.backgroundColor = .clear
@@ -111,6 +119,21 @@ final class FloatingCaptionWindowController: NSObject, NSWindowDelegate {
         UserDefaults.standard.set(NSStringFromRect(panel.frame), forKey: Self.frameDefaultsKey)
     }
 
+    private func resetSize() {
+        UserDefaults.standard.removeObject(forKey: Self.frameDefaultsKey)
+        guard let panel = window else { return }
+
+        var frame = panel.frame
+        frame.origin.x = frame.midX - Self.defaultWindowSize.width / 2
+        frame.origin.y = frame.midY - Self.defaultWindowSize.height / 2
+        frame.size = Self.defaultWindowSize
+        if let visibleFrame = (panel.screen ?? NSScreen.main)?.visibleFrame {
+            frame = Self.clampedFrame(frame, within: visibleFrame)
+        }
+        panel.setFrame(frame, display: true)
+        persistFrame(of: panel)
+    }
+
     private func restorePersistedFrame(_ panel: NSPanel) -> Bool {
         guard let frameString = UserDefaults.standard.string(forKey: Self.frameDefaultsKey) else {
             return false
@@ -133,6 +156,46 @@ final class FloatingCaptionWindowController: NSObject, NSWindowDelegate {
             let intersection = visibleFrame.intersection(frame)
             return intersection.width >= 160 && intersection.height >= 60
         }
+    }
+
+    nonisolated static func maximumWindowSize(for screen: NSScreen?) -> NSSize {
+        guard let visibleFrame = screen?.visibleFrame else {
+            return NSSize(width: 1400, height: 900)
+        }
+        return NSSize(
+            width: max(minimumWindowSize.width, visibleFrame.width - screenInset * 2),
+            height: max(minimumWindowSize.height, visibleFrame.height - screenInset * 2)
+        )
+    }
+
+    nonisolated static func clampedFrame(
+        _ frame: NSRect,
+        within visibleFrame: NSRect,
+        minimumSize requestedMinimumSize: NSSize = minimumWindowSize
+    ) -> NSRect {
+        let minimumSize = NSSize(
+            width: max(Self.minimumWindowSize.width, requestedMinimumSize.width),
+            height: max(Self.minimumWindowSize.height, requestedMinimumSize.height)
+        )
+        guard frame.width.isFinite, frame.height.isFinite,
+              frame.origin.x.isFinite, frame.origin.y.isFinite else {
+            return NSRect(origin: visibleFrame.origin, size: Self.defaultWindowSize)
+        }
+
+        let maximumSize = NSSize(
+            width: max(minimumSize.width, visibleFrame.width - screenInset * 2),
+            height: max(minimumSize.height, visibleFrame.height - screenInset * 2)
+        )
+        var clamped = frame
+        clamped.size.width = min(max(clamped.width, minimumSize.width), maximumSize.width)
+        clamped.size.height = min(max(clamped.height, minimumSize.height), maximumSize.height)
+        let minimumX = visibleFrame.minX + screenInset
+        let maximumX = max(minimumX, visibleFrame.maxX - clamped.width - screenInset)
+        let minimumY = visibleFrame.minY + screenInset
+        let maximumY = max(minimumY, visibleFrame.maxY - clamped.height - screenInset)
+        clamped.origin.x = min(max(clamped.origin.x, minimumX), maximumX)
+        clamped.origin.y = min(max(clamped.origin.y, minimumY), maximumY)
+        return clamped
     }
 
     private func notifyVisibilityChanged() {

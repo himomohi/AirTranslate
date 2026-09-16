@@ -12,6 +12,8 @@ struct FloatingCaptionDragSurface: NSViewRepresentable {
     func updateNSView(_: NSView, context _: Context) {}
 
     private final class DragView: NSView {
+        private var initialFrame: NSRect = .zero
+        private var initialPointer: NSPoint = .zero
         override var mouseDownCanMoveWindow: Bool {
             true
         }
@@ -21,7 +23,7 @@ struct FloatingCaptionDragSurface: NSViewRepresentable {
         }
 
         override func hitTest(_ point: NSPoint) -> NSView? {
-            bounds.contains(point) ? self : nil
+            super.hitTest(point) == nil ? nil : self
         }
 
         override func resetCursorRects() {
@@ -29,9 +31,21 @@ struct FloatingCaptionDragSurface: NSViewRepresentable {
         }
 
         override func mouseDown(with event: NSEvent) {
-            NSCursor.closedHand.push()
-            window?.performDrag(with: event)
-            NSCursor.pop()
+            guard let window else { return }
+            initialFrame = window.frame
+            initialPointer = window.convertPoint(toScreen: event.locationInWindow)
+        }
+
+        override func mouseDragged(with event: NSEvent) {
+            guard let window else { return }
+            let pointer = window.convertPoint(toScreen: event.locationInWindow)
+            var frame = initialFrame
+            frame.origin.x += pointer.x - initialPointer.x
+            frame.origin.y += pointer.y - initialPointer.y
+            if let visibleFrame = (window.screen ?? NSScreen.main)?.visibleFrame {
+                frame = FloatingCaptionWindowController.clampedFrame(frame, within: visibleFrame, minimumSize: window.minSize)
+            }
+            window.setFrame(frame, display: true)
         }
     }
 }

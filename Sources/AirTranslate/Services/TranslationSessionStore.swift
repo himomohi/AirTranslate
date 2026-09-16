@@ -3,6 +3,7 @@ import AppKit
 import AirTranslateCore
 import Foundation
 import Observation
+import SwiftUI
 
 enum PrivacySettingsPane: Equatable {
     case screenRecording
@@ -95,6 +96,10 @@ private enum SettingsKey {
     static let keepsFloatingCaptionAboveOtherWindows = "keepsFloatingCaptionAboveOtherWindows"
     static let floatingCaptionStability = "floatingCaptionStability"
     static let floatingCaptionTextAlignment = "floatingCaptionTextAlignment"
+    static let floatingCaptionCustomPointSize = "floatingCaptionCustomPointSize"
+    static let floatingCaptionTextColorHex = "floatingCaptionTextColorHex"
+    static let floatingCaptionBackgroundColorHex = "floatingCaptionBackgroundColorHex"
+    static let floatingCaptionBackgroundOpacity = "floatingCaptionBackgroundOpacity"
     static let paragraphBreakSilenceInterval = "paragraphBreakSilenceInterval"
     static let savedTranscriptContentMode = "savedTranscriptContentMode"
     static let sessionDurationMode = "sessionDurationMode"
@@ -682,6 +687,16 @@ final class TranslationSessionStore {
     var floatingCaptionTextSize = FloatingCaptionTextSize.medium {
         didSet { persistSelectedSettings() }
     }
+    var floatingCaptionCustomPointSize = FloatingCaptionAppearance.defaultCustomPointSize {
+        didSet {
+            let clamped = FloatingCaptionAppearance.clampedCustomPointSize(floatingCaptionCustomPointSize)
+            guard floatingCaptionCustomPointSize == clamped else {
+                floatingCaptionCustomPointSize = clamped
+                return
+            }
+            persistSelectedSettings()
+        }
+    }
     var floatingCaptionLineCount = FloatingCaptionLineCount.three {
         didSet { persistSelectedSettings() }
     }
@@ -694,10 +709,30 @@ final class TranslationSessionStore {
     var floatingCaptionTextAlignment = FloatingCaptionTextAlignment.center {
         didSet { persistSelectedSettings() }
     }
+    var floatingCaptionTextColorHex = FloatingCaptionAppearance.defaultTextColorHex {
+        didSet { persistSelectedSettings() }
+    }
+    var floatingCaptionBackgroundColorHex = FloatingCaptionAppearance.defaultBackgroundColorHex {
+        didSet { persistSelectedSettings() }
+    }
+    var floatingCaptionBackgroundOpacity = FloatingCaptionAppearance.defaultBackgroundOpacity {
+        didSet {
+            let clamped = FloatingCaptionAppearance.clampedOpacity(floatingCaptionBackgroundOpacity)
+            guard floatingCaptionBackgroundOpacity == clamped else {
+                floatingCaptionBackgroundOpacity = clamped
+                return
+            }
+            persistSelectedSettings()
+        }
+    }
     /// Text width the floating window currently offers, reported by the view so
     /// captions wrap to the real width instead of a per-size estimate. `0` means
     /// unknown and falls back to the estimate.
     var floatingCaptionMeasuredTextWidth: CGFloat = 0
+    /// Available caption content height reported by the floating window. Extreme
+    /// font and line-count combinations reduce their effective line count to
+    /// stay inside the current window instead of clipping a fixed block.
+    var floatingCaptionMeasuredContentHeight: CGFloat = 0
     var paragraphBreakSilenceInterval = 5.0 {
         didSet { persistSelectedSettings() }
     }
@@ -2183,6 +2218,109 @@ final class TranslationSessionStore {
         isTranscribeOnlyMode ? [.original] : FloatingCaptionDisplayMode.allCases
     }
 
+    var floatingCaptionPrimaryPointSize: CGFloat {
+        floatingCaptionCustomPointSize > 0
+            ? floatingCaptionCustomPointSize
+            : floatingCaptionTextSize.primaryPointSize
+    }
+
+    var floatingCaptionSecondaryPointSize: CGFloat {
+        floatingCaptionCustomPointSize > 0
+            ? FloatingCaptionAppearance.secondaryPointSize(for: floatingCaptionCustomPointSize)
+            : floatingCaptionTextSize.secondaryPointSize
+    }
+
+    var floatingCaptionPrimaryFont: Font {
+        .system(size: floatingCaptionPrimaryPointSize, weight: .semibold)
+    }
+
+    var floatingCaptionSecondaryFont: Font {
+        .system(size: floatingCaptionSecondaryPointSize, weight: .medium)
+    }
+
+    var floatingCaptionPrimaryLineHeight: CGFloat {
+        floatingCaptionPrimaryPointSize * 1.24
+    }
+
+    var floatingCaptionSecondaryLineHeight: CGFloat {
+        floatingCaptionSecondaryPointSize * 1.28
+    }
+
+    var floatingCaptionEffectiveLineCount: Int {
+        let configured = floatingCaptionLineCount.rawValue
+        guard floatingCaptionMeasuredContentHeight.isFinite,
+              floatingCaptionMeasuredContentHeight > 0
+        else { return configured }
+
+        let usesTwoBlocks = floatingCaptionDisplayMode == .originalAndTranslation
+            || !(floatingNoticeText?.isEmpty ?? true)
+        if usesTwoBlocks {
+            for candidate in stride(from: configured, through: 1, by: -1) {
+                let height = FloatingCaptionAppearance.blockHeight(
+                    lineHeight: floatingCaptionPrimaryLineHeight,
+                    lineCount: candidate
+                ) + FloatingCaptionAppearance.blockHeight(
+                    lineHeight: floatingCaptionSecondaryLineHeight,
+                    lineCount: candidate
+                ) + FloatingCaptionAppearance.captionBlockSpacing
+                if height <= floatingCaptionMeasuredContentHeight {
+                    return candidate
+                }
+            }
+            return 1
+        }
+
+        let lineHeight = floatingCaptionPrimaryLineHeight
+        let spacing = FloatingCaptionAppearance.captionLineSpacing
+        let possibleLines = Int(floor((floatingCaptionMeasuredContentHeight + spacing) / (lineHeight + spacing)))
+        return min(configured, max(1, possibleLines))
+    }
+
+    var floatingCaptionMinimumWindowHeight: CGFloat {
+        let usesTwoBlocks = floatingCaptionDisplayMode == .originalAndTranslation
+            || !(floatingNoticeText?.isEmpty ?? true)
+        let textHeight = usesTwoBlocks
+            ? FloatingCaptionAppearance.blockHeight(lineHeight: floatingCaptionPrimaryLineHeight, lineCount: 1)
+                + FloatingCaptionAppearance.blockHeight(lineHeight: floatingCaptionSecondaryLineHeight, lineCount: 1)
+                + FloatingCaptionAppearance.captionBlockSpacing
+            : FloatingCaptionAppearance.blockHeight(lineHeight: floatingCaptionPrimaryLineHeight, lineCount: 1)
+        return max(90, textHeight + FloatingCaptionAppearance.windowVerticalPadding)
+    }
+
+    var floatingCaptionMinimumWindowSize: NSSize {
+        NSSize(width: 420, height: floatingCaptionMinimumWindowHeight)
+    }
+
+    var floatingCaptionTextColor: Color {
+        FloatingCaptionAppearance.color(
+            hex: floatingCaptionTextColorHex,
+            fallback: FloatingCaptionAppearance.defaultTextColorHex
+        )
+    }
+
+    var floatingCaptionBackgroundColor: Color {
+        FloatingCaptionAppearance.color(
+            hex: floatingCaptionBackgroundColorHex,
+            fallback: FloatingCaptionAppearance.defaultBackgroundColorHex
+        )
+    }
+
+    func resetFloatingCaptionAppearance() {
+        floatingCaptionTextSize = .medium
+        floatingCaptionLineCount = .three
+        floatingCaptionStability = .balanced
+        floatingCaptionTextAlignment = .center
+        floatingCaptionCustomPointSize = FloatingCaptionAppearance.defaultCustomPointSize
+        floatingCaptionTextColorHex = FloatingCaptionAppearance.defaultTextColorHex
+        floatingCaptionBackgroundColorHex = FloatingCaptionAppearance.defaultBackgroundColorHex
+        floatingCaptionBackgroundOpacity = FloatingCaptionAppearance.defaultBackgroundOpacity
+    }
+
+    func selectFloatingCaptionTextSizePreset(_ size: FloatingCaptionTextSize) {
+        floatingCaptionTextSize = size
+        floatingCaptionCustomPointSize = FloatingCaptionAppearance.defaultCustomPointSize
+    }
+
     var effectiveSavedTranscriptContentMode: SavedTranscriptContentMode {
         isTranscribeOnlyMode ? .original : savedTranscriptContentMode
     }
@@ -3191,6 +3329,26 @@ final class TranslationSessionStore {
            let alignment = FloatingCaptionTextAlignment(rawValue: alignmentID) {
             floatingCaptionTextAlignment = alignment
         }
+        if defaults.object(forKey: SettingsKey.floatingCaptionCustomPointSize) != nil {
+            floatingCaptionCustomPointSize = CGFloat(defaults.double(forKey: SettingsKey.floatingCaptionCustomPointSize))
+        }
+        if let textColorHex = defaults.string(forKey: SettingsKey.floatingCaptionTextColorHex) {
+            floatingCaptionTextColorHex = FloatingCaptionAppearance.normalizedHex(
+                textColorHex,
+                fallback: FloatingCaptionAppearance.defaultTextColorHex
+            )
+        }
+        if let backgroundColorHex = defaults.string(forKey: SettingsKey.floatingCaptionBackgroundColorHex) {
+            floatingCaptionBackgroundColorHex = FloatingCaptionAppearance.normalizedHex(
+                backgroundColorHex,
+                fallback: FloatingCaptionAppearance.defaultBackgroundColorHex
+            )
+        }
+        if defaults.object(forKey: SettingsKey.floatingCaptionBackgroundOpacity) != nil {
+            floatingCaptionBackgroundOpacity = FloatingCaptionAppearance.clampedOpacity(
+                defaults.double(forKey: SettingsKey.floatingCaptionBackgroundOpacity)
+            )
+        }
         if defaults.object(forKey: SettingsKey.paragraphBreakSilenceInterval) != nil {
             paragraphBreakSilenceInterval = min(
                 max(defaults.double(forKey: SettingsKey.paragraphBreakSilenceInterval), 1),
@@ -3300,6 +3458,10 @@ final class TranslationSessionStore {
         defaults.set(keepsFloatingCaptionAboveOtherWindows, forKey: SettingsKey.keepsFloatingCaptionAboveOtherWindows)
         defaults.set(floatingCaptionStability.id, forKey: SettingsKey.floatingCaptionStability)
         defaults.set(floatingCaptionTextAlignment.id, forKey: SettingsKey.floatingCaptionTextAlignment)
+        defaults.set(Double(floatingCaptionCustomPointSize), forKey: SettingsKey.floatingCaptionCustomPointSize)
+        defaults.set(floatingCaptionTextColorHex, forKey: SettingsKey.floatingCaptionTextColorHex)
+        defaults.set(floatingCaptionBackgroundColorHex, forKey: SettingsKey.floatingCaptionBackgroundColorHex)
+        defaults.set(floatingCaptionBackgroundOpacity, forKey: SettingsKey.floatingCaptionBackgroundOpacity)
         defaults.set(paragraphBreakSilenceInterval, forKey: SettingsKey.paragraphBreakSilenceInterval)
         defaults.set(savedTranscriptContentMode.id, forKey: SettingsKey.savedTranscriptContentMode)
         defaults.set(sessionDurationMode.id, forKey: SettingsKey.sessionDurationMode)
@@ -3317,14 +3479,14 @@ final class TranslationSessionStore {
         guard let text else { return "" }
 
         return text.floatingCaptionTail(
-            maxLines: floatingCaptionLineCount.rawValue,
+            maxLines: floatingCaptionEffectiveLineCount,
             lineWidthUnits: floatingCaptionLineWidthUnits(usesPrimaryFont: usesPrimaryFont)
         )
     }
 
     func floatingCaptionLineWidthUnits(usesPrimaryFont: Bool) -> Double {
         let textSize = floatingCaptionTextSize
-        let pointSize = usesPrimaryFont ? textSize.primaryPointSize : textSize.secondaryPointSize
+        let pointSize = usesPrimaryFont ? floatingCaptionPrimaryPointSize : floatingCaptionSecondaryPointSize
         let measuredUnits = FloatingCaptionTextSize.lineWidthUnits(
             forAvailableWidth: floatingCaptionMeasuredTextWidth,
             pointSize: pointSize
@@ -3333,7 +3495,7 @@ final class TranslationSessionStore {
             let fallback = textSize.floatingLineWidthUnits
             return usesPrimaryFont
                 ? fallback
-                : fallback * Double(textSize.primaryPointSize / textSize.secondaryPointSize)
+                : fallback * Double(floatingCaptionPrimaryPointSize / floatingCaptionSecondaryPointSize)
         }
         return measuredUnits
     }

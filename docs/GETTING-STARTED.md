@@ -41,6 +41,12 @@ When troubleshooting permissions, check which app copy is running. Older or diff
 
 Provider keys are managed in **Settings > API Keys**. A configured key means AirTranslate has local provider settings; it does not prove provider account authorization until a session starts.
 
+## Floating Captions
+
+Open floating captions from the main window or menu bar while a session is running. The floating caption window can be resized in both width and height and shows hover affordances for moving and resizing.
+
+Caption style controls include preset sizes, custom font size, text color, background color, background opacity that does not fade caption text, persistent preferences, and reset. Caption Stability remains a separate readability timing control.
+
 ## Transcript Files
 
 Transcript file saving is off by default. Enable **Save Transcript Files** in Settings when you want dated `.txt` files under:
