@@ -89,7 +89,9 @@ jobs:
           done
 
       - name: Run full test suite
-        run: swift test
+        # 시간 기반 통합 테스트가 공유 MainActor 부하로 서로 지연되지 않게 한다.
+        # 테스트 내부 동시성 검증과 전체 테스트·기존 시간 조건은 그대로 유지한다.
+        run: swift test --no-parallel
 
       - name: Build release configuration
         run: swift build -c release
