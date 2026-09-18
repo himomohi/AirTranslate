@@ -23,9 +23,13 @@
 
 AirTranslateはMacで再生中の音声を取り込み、ライブで文字起こしし、翻訳ワークフローを選んだ場合は翻訳し、必要に応じて他のアプリの上にフローティング字幕を表示します。Apple Modeは引き続きローカル優先の標準ワークフローです。クラウドエンジンは任意で、対応するプロバイダーキーを設定すると利用できます。
 
-AirTranslate **1.9.2/build192** は、**設定 > アセット**からAppleのアプリ内ダウンロード承認画面を使って翻訳言語パックをダウンロードするよう修正しました。
+AirTranslate **1.10.0/build1100** は、マイクやMac音声をGrok Voice Transcribe 2.0で文字起こしする **Grok STT** を追加します。
 
-ダウンロード後はアセットの状態を更新します。キャンセルや失敗後は再試行でき、言語を変更した場合は以前のリクエストが誤ったセッションを開始しないようにします。
+**設定 > APIキー > SpaceXAI (xAI)** に自分のキーを保存し、一般設定で **Grok STT** を選択します。キーはmacOS Keychainの専用項目に保存され、キャプチャ開始時に音声がxAIへ直接送信されます。プロバイダーの利用料金とアカウント制限が適用されます。
+
+Grokは **原文のみの字幕と音声言語の自動認識** で開始します。Apple Modeは標準のままで、Apple Translationによる翻訳を別途有効にできます。実際のxAIアカウントでの認証・認識精度・遅延は未検証です。
+
+最後の応答で確定済み発話を重複追加せず、空白なしで連結された日本語も処理します。保存ファイルから暫定字幕と翻訳状態の案内を除外します。別のエンジンへ切り替えるとGrokのキー未設定案内が解除されます。
 
 フローティング字幕は双方向リサイズ、hover時の移動・リサイズ表示、カスタム文字サイズ、テキスト色、背景色と背景の不透明度、設定保存とリセットに対応しています。
 
@@ -33,10 +37,10 @@ AirTranslate **1.9.2/build192** は、**設定 > アセット**からAppleのア
 
 ## ダウンロード
 
-現在の公開最新版: **v1.9.2**。
+現在の公開最新版: **v1.10.0**。
 
 - [AirTranslate.dmgをダウンロード](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [AirTranslate-1.9.2.zipをダウンロード](https://github.com/himomohi/AirTranslate/releases/download/v1.9.2/AirTranslate-1.9.2.zip)
+- [AirTranslate-1.10.0.zipをダウンロード](https://github.com/himomohi/AirTranslate/releases/download/v1.10.0/AirTranslate-1.10.0.zip)
 - [AirTranslate.dmg.sha256をダウンロード](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [バージョン履歴を見る](Release/VERSION-HISTORY.md)
 
@@ -91,6 +95,9 @@ API連携エンジンは、**Settings > API Keys**でキーを設定すると利
 | Meta Scribe | AirTranslate翻訳の前段にある、話者ラベル付き多言語文字起こしです。 | Meta |
 | Azure MAI | Apple Translation字幕と組み合わせるプレビューのクラウド文字起こしです。 | Azure Speechキーとエンドポイント |
 | Nari STT | 1.9.0ソースで準備されたNari Qwen3-ASR原文文字起こしです。マイクまたはMac音声を使えます。 | Nari |
+| Grok STT | マイクまたはMac音声をGrok Voice Transcribe 2.0で原文に文字起こしします。 | SpaceXAI (xAI) |
+
+Grok STTは1.10.0から含まれます。初回選択は原文文字起こしで、自分のxAI APIキーを使用します。設定、言語処理、検証範囲は[Grok STTの説明](docs/grok-stt.md)をご確認ください。
 
 Nari STTは1.9.0の任意エンジンです。Nariの初回選択は原文文字起こしとして開始し、原文言語が利用できる場合はApple Translationで翻訳できます。Nariの現在のGA STTモデルIDはqwen3-asr-fastとqwen3-asrで、利用可否、利用制限、有料クレジット条件はNariのプロバイダー文書とアカウント状態に従います。詳細は[docs/nari-stt.md](docs/nari-stt.md)にまとめています。
 
@@ -104,14 +111,14 @@ Nariを新しく選択すると、Nariクレジットが必要なGA Fastモデ�
 
 ## APIキー
 
-1.9.0のAPIキー画面は、**OpenAI**、**Gemini**、**Meta**、**Azure**、**Nari**を1つのプロバイダー一覧で管理します。各行には、設定/準備状態、プロバイダーアイコン、キー管理コンソールへのリンク、設定済みキーがプロバイダー権限の検証を意味しないことを説明する情報ポップオーバーが表示されます。
+APIキー画面は、**OpenAI**、**Gemini**、**Meta**、**Azure**、**Nari**、**SpaceXAI (xAI)**を1つのプロバイダー一覧で管理します。各行には、設定/準備状態、プロバイダーアイコン、キー管理コンソールへのリンク、設定済みキーがプロバイダー権限の検証を意味しないことを説明する情報ポップオーバーが表示されます。
 
 キーはmacOS Keychainに保存されます。AirTranslateにはアカウントシステム、開発者運用の中継サーバー、ハードコードされたプロバイダーキーは含まれていません。
 
 ## プライバシー
 
 - Apple ModeはmacOSフレームワークとApple管理の言語アセットを使います。
-- GPT、Gemini、Meta、Azure、Nariモードは、選択した機能に必要な音声またはテキストだけを、ユーザーのキーで該当プロバイダーへ直接送信します。
+- GPT、Gemini、Meta、Azure、Nari、Grokモードは、選択した機能に必要な音声またはテキストだけを、ユーザーのキーで該当プロバイダーへ直接送信します。
 - 保存済み記録は、ファイル保存を有効にした場合にだけMac上の通常のテキストファイルとして残ります。
 - より詳しいプロバイダーと保存の説明は[Release/PRIVACY-NOTICE.md](Release/PRIVACY-NOTICE.md)を参照してください。
 
@@ -121,7 +128,7 @@ Nariを新しく選択すると、Nariクレジットが必要なGA Fastモデ�
 - ソースビルド用Swift 6.2以降
 - システムオーディオ取り込みに対応したMac
 - Apple SpeechとApple Translationフレームワークが利用できる環境
-- 任意: OpenAI、Gemini、Meta、Azure Speech、Nariのプロバイダーキー
+- 任意: OpenAI、Gemini、Meta、Azure Speech、Nari、xAIのプロバイダーキー
 
 ## ドキュメント
 
@@ -152,4 +159,4 @@ swift test
 
 AirTranslateは[Apache License 2.0](LICENSE)で公開されています。著作権表記は[NOTICE](NOTICE)にあります。
 
-AirTranslateは独立したオープンソースプロジェクトであり、Apple、OpenAI、Google、Meta、Microsoft、Nariとは提携していません。
+AirTranslateは独立したオープンソースプロジェクトであり、Apple、OpenAI、Google、Meta、Microsoft、Nari、SpaceXAI (xAI)とは提携していません。

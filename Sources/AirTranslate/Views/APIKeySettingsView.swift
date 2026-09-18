@@ -113,6 +113,7 @@ struct APIKeySettingsView: View {
     }
 
     private var activeProvider: CredentialProvider? {
+        if session.isUsingGrokSTT { return .grok }
         if session.isUsingNariSTT { return .nari }
         if session.isUsingAzureMAI { return .azure }
         if session.isUsingMetaScribe { return .meta }
@@ -128,6 +129,7 @@ struct APIKeySettingsView: View {
         case .meta: session.hasMetaAPIKey
         case .azure: session.hasAzureSpeechAPIKey
         case .nari: session.hasNariAPIKey
+        case .grok: session.hasGrokAPIKey
         }
     }
 
@@ -141,6 +143,7 @@ struct APIKeySettingsView: View {
         case .meta: MetaTranscriptionModel.museVoiceTranscribe.title
         case .azure: "MAI-Transcribe-2"
         case .nari: "Qwen3-ASR"
+        case .grok: GrokTranscriptionModel.voiceTranscribe2.title
         }
     }
 
@@ -151,6 +154,7 @@ struct APIKeySettingsView: View {
         case .meta: AppText.metaScribeDetail
         case .azure: AzureMAICopy.detail
         case .nari: NariCopy.detail + "\n\n" + NariCopy.modelDetail
+        case .grok: GrokCopy.detail
         }
     }
 
@@ -162,6 +166,7 @@ struct APIKeySettingsView: View {
         case .meta: try session.saveMetaAPIKey(key)
         case .azure: try session.saveAzureSpeechAPIKey(key)
         case .nari: try session.saveNariAPIKey(key)
+        case .grok: try session.saveGrokAPIKey(key)
         }
     }
 
@@ -173,12 +178,13 @@ struct APIKeySettingsView: View {
         case .meta: try session.removeMetaAPIKey()
         case .azure: try session.removeAzureSpeechAPIKey()
         case .nari: try session.removeNariAPIKey()
+        case .grok: try session.removeGrokAPIKey()
         }
     }
 }
 
 private enum CredentialProvider: String, CaseIterable, Identifiable {
-    case openAI, gemini, meta, azure, nari
+    case openAI, gemini, meta, azure, nari, grok
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -187,6 +193,7 @@ private enum CredentialProvider: String, CaseIterable, Identifiable {
         case .meta: "Meta"
         case .azure: "Azure"
         case .nari: "Nari"
+        case .grok: GrokCopy.provider
         }
     }
     var symbol: String {
@@ -196,6 +203,7 @@ private enum CredentialProvider: String, CaseIterable, Identifiable {
         case .meta: "person.2.wave.2"
         case .azure: "cloud"
         case .nari: "waveform.badge.mic"
+        case .grok: "waveform"
         }
     }
     var consoleURL: URL {
@@ -205,6 +213,7 @@ private enum CredentialProvider: String, CaseIterable, Identifiable {
         case .meta: "https://dev.meta.ai"
         case .azure: "https://portal.azure.com"
         case .nari: "https://app.narilabs.com/keys"
+        case .grok: "https://console.x.ai"
         }
         return URL(string: address)!
     }

@@ -23,9 +23,13 @@ Live Mac audio captions and translation for meetings, videos, lectures, intervie
 
 AirTranslate captures audio playing on your Mac, transcribes it live, translates it when you choose a translation workflow, and can keep captions floating above other apps. Apple Mode remains the default local-first workflow. Cloud engines are optional and become available after you configure the matching provider key.
 
-AirTranslate **1.9.2/build192** fixes translation language-pack downloads from **Settings > Assets** using Apple’s in-app download approval flow.
+AirTranslate **1.10.0/build1100** adds **Grok STT**: Grok Voice Transcribe 2.0 transcription for microphone or Mac audio.
 
-After a download completes, asset availability is refreshed. Cancelled or failed requests can be retried, and changing languages prevents an old request from starting the wrong session.
+Add your own key under **Settings > API Keys > SpaceXAI (xAI)** and select **Grok STT** in General settings. The key is stored separately in macOS Keychain; audio is sent directly to xAI when capture starts. Provider charges and account limits apply.
+
+Grok starts with **original-only captions and automatic spoken-language recognition**. Apple Mode remains the default, and Apple Translation can be enabled separately. Live xAI authentication, transcription accuracy, and latency have not been verified with a real account.
+
+Completed Grok utterances are not duplicated by the final response, including Japanese text joined without spaces. Saved transcripts exclude provisional captions and translation-status messages. Switching to another engine clears the Grok missing-key notice.
 
 Floating captions support two-axis resizing, visible hover controls, custom font sizing, text color, background color and opacity, persistent preferences, and reset.
 
@@ -33,10 +37,10 @@ Text and background colors can also be entered precisely as **#RRGGBB color code
 
 ## Download
 
-Latest public release: **v1.9.2**.
+Latest public release: **v1.10.0**.
 
 - [Download AirTranslate.dmg](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [Download AirTranslate-1.9.2.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.9.2/AirTranslate-1.9.2.zip)
+- [Download AirTranslate-1.10.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.10.0/AirTranslate-1.10.0.zip)
 - [Download AirTranslate.dmg.sha256](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [View release history](Release/VERSION-HISTORY.md)
 
@@ -91,6 +95,9 @@ API-backed engines become available after you configure their keys in **Settings
 | Meta Scribe | Speaker-labeled multilingual transcription before AirTranslate translation. | Meta |
 | Azure MAI | Preview cloud transcription with Apple Translation captions. | Azure Speech key and endpoint |
 | Nari STT | Prepared in 1.9.0 source for Qwen3-ASR source transcription from microphone or Mac audio. | Nari |
+| Grok STT | Grok Voice Transcribe 2.0 source transcription from microphone or Mac audio. | SpaceXAI (xAI) |
+
+Grok STT is included from version 1.10.0. It starts with original-only captions and uses your own xAI API key. See [Grok STT notes](docs/grok-stt.md) for setup, language behavior, and verification limits.
 
 Nari STT is an optional 1.9.0 engine. The first Nari selection starts as original-only transcription; translation uses Apple Translation when the source language is available. Nari's current GA STT model IDs are qwen3-asr-fast and qwen3-asr; availability, rate limits, and paid credits follow Nari's provider documentation and account state, summarized in [docs/nari-stt.md](docs/nari-stt.md).
 
@@ -104,14 +111,14 @@ The floating caption window can be resized in both dimensions and shows hover af
 
 ## API Keys
 
-The 1.9.0 API Keys screen manages **OpenAI**, **Gemini**, **Meta**, **Azure**, and **Nari** in one provider list. Rows show configured/setup state, provider icons, key console links, and an information popover explaining that configured keys do not prove provider authorization.
+The API Keys screen manages **OpenAI**, **Gemini**, **Meta**, **Azure**, **Nari**, and **SpaceXAI (xAI)** in one provider list. Rows show configured/setup state, provider icons, key console links, and an information popover explaining that configured keys do not prove provider authorization.
 
 Keys are stored in macOS Keychain. AirTranslate does not ship with an account system, a developer-operated relay server, or hardcoded provider keys.
 
 ## Privacy
 
 - Apple Mode uses macOS frameworks and locally managed Apple language assets.
-- GPT, Gemini, Meta, Azure, and Nari modes send only the audio or text needed for the selected feature directly to that provider using your key.
+- GPT, Gemini, Meta, Azure, Nari, and Grok modes send only the audio or text needed for the selected feature directly to that provider using your key.
 - Saved transcripts are normal text files on your Mac only when file saving is enabled.
 - See [Release/PRIVACY-NOTICE.md](Release/PRIVACY-NOTICE.md) for the longer provider and storage guide.
 
@@ -121,7 +128,7 @@ Keys are stored in macOS Keychain. AirTranslate does not ship with an account sy
 - Swift 6.2 or later for source builds
 - A Mac that supports system-audio capture
 - Apple Speech and Apple Translation framework availability
-- Optional provider keys for OpenAI, Gemini, Meta, Azure Speech, or Nari
+- Optional provider keys for OpenAI, Gemini, Meta, Azure Speech, Nari, or xAI
 
 ## Documentation
 
@@ -152,4 +159,4 @@ Keep user-facing release chronology in [CHANGELOG.md](CHANGELOG.md). README file
 
 AirTranslate is released under the [Apache License 2.0](LICENSE). Copyright attribution is provided in [NOTICE](NOTICE).
 
-AirTranslate is an independent open-source project and is not affiliated with Apple, OpenAI, Google, Meta, Microsoft, or Nari.
+AirTranslate is an independent open-source project and is not affiliated with Apple, OpenAI, Google, Meta, Microsoft, Nari, or SpaceXAI (xAI).

@@ -38,6 +38,7 @@ When troubleshooting permissions, check which app copy is running. Older or diff
 - **Apple Mode:** default local-first transcription and translation path. Choose the source language manually; Apple source-language auto-detection is currently disabled while language-switch handling is improved.
 - **Transcribe Only:** source captions without translation.
 - **GPT, Gemini, Meta, Azure, or Nari:** optional provider modes that require user-supplied keys.
+- **Grok STT (1.10.0+):** Grok Voice Transcribe 2.0 transcription with your own SpaceXAI (xAI) key. Select Grok STT after adding the key in API Keys. See [Grok STT notes](grok-stt.md).
 
 Provider keys are managed in **Settings > API Keys**. A configured key means AirTranslate has local provider settings; it does not prove provider account authorization until a session starts.
 

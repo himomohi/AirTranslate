@@ -2,7 +2,7 @@
 
 AirTranslate transcribes and translates audio playing on the user's Mac.
 
-AirTranslate is an independent open-source project and is not affiliated with Apple, OpenAI, Google, Meta, Microsoft, or Nari Labs.
+AirTranslate is an independent open-source project and is not affiliated with Apple, OpenAI, Google, Meta, Microsoft, Nari Labs, or SpaceXAI (xAI).
 
 ## Data Handling
 
@@ -63,6 +63,20 @@ connection failures. Transcript file saving remains off by default. Optional
 translation uses the existing Apple Translation path. Nari's account access,
 retention, quotas, and service terms apply to the external service; AirTranslate
 does not bundle a shared Nari credential or operate a relay.
+
+## Optional Grok STT (1.10.0+)
+
+When the user selects Grok STT and starts capture, AirTranslate sends microphone
+or system audio directly to SpaceXAI's xAI API for `grok-voice-transcribe-2.0`
+transcription. The user supplies their own xAI API key, which is stored in a
+separate device-local macOS Keychain item. The key is sent only in the API
+authorization header, and is not embedded in source, app preferences, or URLs.
+
+Grok is optional and does not change the default engine. Transcript file saving
+remains off by default. The provider's account access, retention, quotas, billing,
+and service terms apply; AirTranslate does not operate a relay or bundle a shared
+credential. See [Grok STT notes](../docs/grok-stt.md) for the implementation and
+verification boundaries. Grok STT is included from version 1.10.0.
 
 ## Permissions
 

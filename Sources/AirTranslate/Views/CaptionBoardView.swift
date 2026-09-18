@@ -46,7 +46,7 @@ private struct CaptionTranscriptFeed: View {
                 chineseSimplified: "开始采集后，将显示自动检测的原文字幕。"
             )
         }
-        if session.isUsingProviderTranscriptionMode || session.isUsingNariSTT {
+        if session.isUsingProviderTranscriptionMode || session.isUsingNariSTT || session.isUsingGrokSTT {
             return AppText.gptTranscriptionNoCaptionsDescription(for: session.audioInputSource)
         }
         return AppText.noCaptionsDescription

@@ -2,7 +2,22 @@
 
 All notable changes to AirTranslate are documented in this file.
 
-## [Unreleased]
+## 1.10.0 - 2026-09-18
+
+### Added
+
+- Optional Grok STT uses SpaceXAI (xAI) Grok Voice Transcribe 2.0 for microphone or Mac-audio transcription.
+- API Keys includes a dedicated SpaceXAI (xAI) entry; keys are stored separately in macOS Keychain and audio goes directly to xAI only when Grok capture starts.
+
+### Changed
+
+- Grok starts with original-only captions and automatic spoken-language recognition. Existing Apple defaults and other provider settings remain available; Apple Translation can be enabled separately.
+
+### Fixed
+
+- Grok final-response handling avoids duplicating completed utterances, including Japanese utterances joined without spaces.
+- Saved Grok transcripts exclude provisional captions and translation-status messages.
+- Switching away from Grok clears its missing-key notice while preserving unrelated errors.
 
 ## 1.9.2 - 2026-09-16
 

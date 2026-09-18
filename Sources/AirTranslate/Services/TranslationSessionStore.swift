@@ -31,6 +31,7 @@ enum CaptureStartRecoveryAction: Equatable {
     case retry
 
     static func forFailure(_ error: Error, audioInputSource _: AudioInputSource) -> Self {
+        if let grokError = error as? GrokTranscriptionError, grokError == .missingKey { return .apiKeys }
         if let nariError = error as? NariTranscriptionError {
             switch nariError {
             case .missingKey, .authentication: return .apiKeys
@@ -60,11 +61,11 @@ enum CaptureStartRecoveryAction: Equatable {
 
     static func forReadiness(_ readiness: StartReadinessAssessment) -> Self? {
         switch readiness.issue {
-        case .openAIAPIKeyMissing, .geminiAPIKeyMissing, .metaAPIKeyMissing, .azureConfigurationMissing, .nariAPIKeyMissing:
+        case .openAIAPIKeyMissing, .geminiAPIKeyMissing, .metaAPIKeyMissing, .azureConfigurationMissing, .nariAPIKeyMissing, .grokAPIKeyMissing:
             .apiKeys
         case .nariLegacyFreeModelSelected:
             .generalSettings
-        case .localAssetsChecking, .localAssetsUnavailable, .nariLanguageUnsupported:
+        case .localAssetsChecking, .localAssetsUnavailable, .nariLanguageUnsupported, .grokLanguageUnsupported:
             .retry
         case .localAssetsDownloadRequired, nil:
             nil
@@ -82,7 +83,9 @@ private enum SettingsKey {
     static let preferredGeminiModelID = "preferredGeminiModelID"
     static let metaTranscriptionModelID = "metaTranscriptionModelID"
     static let nariTranscriptionModelID = "nariTranscriptionModelID"
+    static let grokTranscriptionModelID = "grokTranscriptionModelID"
     static let nariSourceAutoDetectionEnabled = "nariSourceAutoDetectionEnabled"
+    static let grokSourceAutoDetectionEnabled = "grokSourceAutoDetectionEnabled"
     static let metaSpeakerLabelsEnabled = "metaSpeakerLabelsEnabled"
     static let isDubbingEnabled = "isDubbingEnabled"
     static let appleVoiceOutputEnabled = "appleVoiceOutputEnabled"
@@ -146,7 +149,9 @@ struct StartConfiguration: Equatable {
     let geminiTranslationModel: GeminiTranslationModel
     let metaTranscriptionModel: MetaTranscriptionModel
     let nariTranscriptionModel: NariTranscriptionModel
+    let grokTranscriptionModel: GrokTranscriptionModel
     let usesNariSourceAutoDetection: Bool
+    let usesGrokSourceAutoDetection: Bool
     let azureMAIEnabled: Bool
     let azureSpeechEndpoint: String
     let usesMetaSpeakerLabels: Bool
@@ -162,6 +167,8 @@ struct StartConfiguration: Equatable {
         openAITranslationModel: OpenAIRealtimeTranslationModel,
         geminiTranslationModel: GeminiTranslationModel,
         metaTranscriptionModel: MetaTranscriptionModel = .off,
+        grokTranscriptionModel: GrokTranscriptionModel = .off,
+        usesGrokSourceAutoDetection: Bool = true,
         nariTranscriptionModel: NariTranscriptionModel = .off,
         usesNariSourceAutoDetection: Bool = false,
         azureMAIEnabled: Bool = false,
@@ -178,6 +185,8 @@ struct StartConfiguration: Equatable {
         self.openAITranslationModel = openAITranslationModel
         self.geminiTranslationModel = geminiTranslationModel
         self.metaTranscriptionModel = metaTranscriptionModel
+        self.grokTranscriptionModel = grokTranscriptionModel
+        self.usesGrokSourceAutoDetection = usesGrokSourceAutoDetection
         self.nariTranscriptionModel = nariTranscriptionModel
         self.usesNariSourceAutoDetection = usesNariSourceAutoDetection
         self.azureMAIEnabled = azureMAIEnabled
@@ -325,6 +334,7 @@ private final class AudioSamplePipelineRegistry: @unchecked Sendable {
         let geminiLiveTranslator: GeminiLiveTranslationService
         let azureMAITranscriber: AzureMAITranscriber
         let metaVoiceTranscriber: MetaVoiceTranscribeService
+        let grokTranscriber: GrokRealtimeTranscriber
         let nariTranscriber: NariRealtimeTranscriber
     }
 
@@ -338,6 +348,7 @@ private final class AudioSamplePipelineRegistry: @unchecked Sendable {
         geminiLiveTranslator: GeminiLiveTranslationService,
         metaVoiceTranscriber: MetaVoiceTranscribeService,
         azureMAITranscriber: AzureMAITranscriber,
+        grokTranscriber: GrokRealtimeTranscriber,
         nariTranscriber: NariRealtimeTranscriber
     ) {
         lock.lock()
@@ -348,6 +359,7 @@ private final class AudioSamplePipelineRegistry: @unchecked Sendable {
             geminiLiveTranslator: geminiLiveTranslator,
             azureMAITranscriber: azureMAITranscriber,
             metaVoiceTranscriber: metaVoiceTranscriber,
+            grokTranscriber: grokTranscriber,
             nariTranscriber: nariTranscriber
         )
         lock.unlock()
@@ -371,6 +383,7 @@ private final class AudioSamplePipelineRegistry: @unchecked Sendable {
         pipeline.geminiLiveTranslator.append(sampleBuffer)
         pipeline.metaVoiceTranscriber.append(sampleBuffer)
         pipeline.azureMAITranscriber.append(sampleBuffer)
+        pipeline.grokTranscriber.append(sampleBuffer)
         pipeline.nariTranscriber.append(sampleBuffer)
     }
 }
@@ -526,6 +539,7 @@ final class TranslationSessionStore {
     var nariTranscriptionModel = NariTranscriptionModel.off {
         didSet {
             if nariTranscriptionModel.isEnabled {
+                grokTranscriptionModel = .off
                 isUsingAzureMAI = false
                 openAITranscriptionModel = .off
                 openAITranslationModel = .off
@@ -558,12 +572,52 @@ final class TranslationSessionStore {
     private var nariFinalizedItemIDs: Set<String> = []
     private var nariItemOrder: [String] = []
     private var nariSavedTranscriptText = ""
+    var hasGrokAPIKey = GrokAPIKeyStore.hasAPIKey()
+    var grokTranscriptionModel = GrokTranscriptionModel.off {
+        didSet {
+            if grokTranscriptionModel.isEnabled {
+                nariTranscriptionModel = .off
+                isUsingAzureMAI = false
+                openAITranscriptionModel = .off
+                openAITranslationModel = .off
+                geminiTranslationModel = .off
+                metaTranscriptionModel = .off
+                isTranscriptLintEnabled = false
+            }
+            persistSelectedSettings()
+            resetTranslationCache()
+            resetDubbingProgress()
+            refreshModelAvailability()
+            if oldValue.isEnabled, !grokTranscriptionModel.isEnabled,
+               !isRunning, !isStarting,
+               let failure = captureStartFailureMessage,
+               failure == GrokCopy.configurationRequired || failure == GrokCopy.languageUnsupported {
+                dismissCaptureStartFailure()
+                if statusMessage == failure { statusMessage = AppText.ready }
+            }
+        }
+    }
+    var isGrokSourceAutoDetectionEnabled = true {
+        didSet { persistSelectedSettings() }
+    }
+    var isFinishingGrokSTT = false
+    var isReconnectingGrokSTT = false
+    @ObservationIgnored private var grokTranscriber = GrokRealtimeTranscriber()
+    @ObservationIgnored private var grokTransitionTask: Task<Void, Never>?
+#if DEBUG
+    var grokTranslationForTesting: (@MainActor (String) async throws -> String)?
+#endif
+    private var grokTurnLineIDs: [String: UUID] = [:]
+    private var grokFinalizedItemIDs: Set<String> = []
+    private var grokItemOrder: [String] = []
+    private var grokSavedTranscriptText = ""
     var azureSpeechEndpoint = "" {
         didSet { persistSelectedSettings() }
     }
     var isUsingAzureMAI = false {
         didSet {
             if isUsingAzureMAI {
+                grokTranscriptionModel = .off
                 nariTranscriptionModel = .off
                 selectedModel = .appleSystem
                 openAITranscriptionModel = .off
@@ -585,6 +639,7 @@ final class TranslationSessionStore {
     var openAITranscriptionModel = OpenAIRealtimeTranscriptionModel.off {
         didSet {
             if openAITranscriptionModel.isEnabled {
+                grokTranscriptionModel = .off
                 nariTranscriptionModel = .off
                 isUsingAzureMAI = false
                 isTranscriptLintEnabled = false
@@ -599,6 +654,7 @@ final class TranslationSessionStore {
     var openAITranslationModel = OpenAIRealtimeTranslationModel.off {
         didSet {
             if openAITranslationModel.isEnabled {
+                grokTranscriptionModel = .off
                 nariTranscriptionModel = .off
                 isUsingAzureMAI = false
                 guard openAITranslationModel.isSupportedLiveTranslationModel else {
@@ -618,6 +674,7 @@ final class TranslationSessionStore {
     var geminiTranslationModel = GeminiTranslationModel.off {
         didSet {
             if geminiTranslationModel.isEnabled {
+                grokTranscriptionModel = .off
                 nariTranscriptionModel = .off
                 isUsingAzureMAI = false
                 isTranscriptLintEnabled = false
@@ -642,6 +699,7 @@ final class TranslationSessionStore {
     var metaTranscriptionModel = MetaTranscriptionModel.off {
         didSet {
             if metaTranscriptionModel.isEnabled {
+                grokTranscriptionModel = .off
                 nariTranscriptionModel = .off
                 isUsingAzureMAI = false
                 isTranscriptLintEnabled = false
@@ -972,6 +1030,10 @@ final class TranslationSessionStore {
         nariTranscriptionModel.isEnabled
     }
 
+    var isUsingGrokSTT: Bool {
+        grokTranscriptionModel.isEnabled
+    }
+
     private var usesAppleCaptionRollover: Bool {
         isRunning
             && !isUsingOpenAIRealtime
@@ -979,6 +1041,7 @@ final class TranslationSessionStore {
             && !isUsingMetaScribe
             && !isUsingAzureMAI
             && !isUsingNariSTT
+            && !isUsingGrokSTT
     }
 
     var isUsingProviderTranscriptionMode: Bool {
@@ -1129,6 +1192,8 @@ final class TranslationSessionStore {
                     statusMessage = AppText.connectingGeminiLiveTranslation
                 } else if configuration.metaTranscriptionModel.isEnabled {
                     statusMessage = AppText.connectingMetaScribe
+                } else if configuration.grokTranscriptionModel.isEnabled {
+                    statusMessage = GrokCopy.connecting
                 } else if configuration.nariTranscriptionModel.isEnabled {
                     statusMessage = NariCopy.connecting
                 } else {
@@ -1146,6 +1211,7 @@ final class TranslationSessionStore {
                     geminiLiveTranslator: geminiLiveTranslator,
                     metaVoiceTranscriber: metaVoiceTranscriber,
                     azureMAITranscriber: azureMAITranscriber,
+                    grokTranscriber: grokTranscriber,
                     nariTranscriber: nariTranscriber
                 )
 
@@ -1205,6 +1271,10 @@ final class TranslationSessionStore {
 
     func stop() {
         guard isRunning || isStarting else { return }
+        if isUsingGrokSTT, isRunning {
+            finishGrokCapture()
+            return
+        }
         if isUsingNariSTT, isRunning {
             finishNariCapture()
             return
@@ -1232,6 +1302,8 @@ final class TranslationSessionStore {
     }
 
     private func finishPipeline(statusOverride: String?) {
+        isFinishingGrokSTT = false
+        isReconnectingGrokSTT = false
         isFinishingNariSTT = false
         isReconnectingNariSTT = false
         isFinishingAzureMAI = false
@@ -1349,6 +1421,8 @@ final class TranslationSessionStore {
             openAITranslationModel: openAITranslationModel,
             geminiTranslationModel: geminiTranslationModel,
             metaTranscriptionModel: metaTranscriptionModel,
+            grokTranscriptionModel: grokTranscriptionModel,
+            usesGrokSourceAutoDetection: isGrokSourceAutoDetectionEnabled,
             nariTranscriptionModel: nariTranscriptionModel,
             usesNariSourceAutoDetection: isNariSourceAutoDetectionEnabled,
             azureMAIEnabled: isUsingAzureMAI,
@@ -1397,6 +1471,10 @@ final class TranslationSessionStore {
     }
 
     private func handleSystemAudioCaptureStoppedByUser(generation: UInt64) {
+        if isUsingGrokSTT, isRunning, pipelineLifecycle.acceptsSample(generation: generation) {
+            finishGrokCapture()
+            return
+        }
         if isUsingNariSTT, isRunning, pipelineLifecycle.acceptsSample(generation: generation) {
             finishNariCapture()
             return
@@ -1436,6 +1514,12 @@ final class TranslationSessionStore {
     }
 
     func startReadinessAssessment() -> StartReadinessAssessment {
+        if isUsingGrokSTT {
+            if !hasGrokAPIKey { return .init(issue: .grokAPIKeyMissing) }
+            if !isGrokSourceAutoDetectionEnabled, GrokTranscriptionModel.languageCode(for: sourceLanguage) == nil {
+                return .init(issue: .grokLanguageUnsupported)
+            }
+        }
         if isUsingNariSTT {
             if nariTranscriptionModel.isLegacyFreeEndpoint {
                 return StartReadinessAssessment(issue: .nariLegacyFreeModelSelected)
@@ -1463,7 +1547,7 @@ final class TranslationSessionStore {
     }
 
     private var requiredLocalModelForStart: IntelligenceModel? {
-        if isUsingNariSTT {
+        if isUsingNariSTT || isUsingGrokSTT {
             return isTranscribeOnlyMode ? nil : .appleOnDevice
         }
         if openAITranslationModel.usesRealtimeAudioTranslation {
@@ -1493,6 +1577,10 @@ final class TranslationSessionStore {
             return AzureMAICopy.configurationRequired
         case .metaAPIKeyMissing:
             return AppText.metaAPIKeyMissing
+        case .grokAPIKeyMissing:
+            return GrokCopy.configurationRequired
+        case .grokLanguageUnsupported:
+            return GrokCopy.languageUnsupported
         case .nariAPIKeyMissing:
             return NariCopy.configurationRequired
         case .nariLanguageUnsupported:
@@ -1527,8 +1615,12 @@ final class TranslationSessionStore {
     }
 
     func pause() {
-        guard isRunning, !isPaused, !isFinishingAzureMAI, !isFinishingNariSTT else { return }
+        guard isRunning, !isPaused, !isFinishingAzureMAI, !isFinishingNariSTT, !isFinishingGrokSTT else { return }
 
+        if isUsingGrokSTT {
+            pauseGrokCapture()
+            return
+        }
         if isUsingNariSTT {
             pauseNariCapture()
             return
@@ -1548,7 +1640,11 @@ final class TranslationSessionStore {
     }
 
     func resume() {
-        guard isRunning, isPaused, !isFinishingAzureMAI, !isFinishingNariSTT, !isReconnectingNariSTT else { return }
+        guard isRunning, isPaused, !isFinishingAzureMAI, !isFinishingNariSTT, !isReconnectingNariSTT, !isFinishingGrokSTT, !isReconnectingGrokSTT else { return }
+        if isUsingGrokSTT {
+            resumeGrokCapture()
+            return
+        }
         if isUsingNariSTT {
             resumeNariCapture()
             return
@@ -1695,7 +1791,7 @@ final class TranslationSessionStore {
     }
 
     var languageSummary: String {
-        if isUsingGeminiTranscriptionMode || (isUsingNariSTT && isNariSourceAutoDetectionEnabled) {
+        if isUsingGeminiTranscriptionMode || (isUsingNariSTT && isNariSourceAutoDetectionEnabled) || (isUsingGrokSTT && isGrokSourceAutoDetectionEnabled) {
             return AppText.localized(
                 english: "Automatic language detection",
                 korean: "입력 언어 자동 감지",
@@ -1777,6 +1873,7 @@ final class TranslationSessionStore {
     }
 
     func useAppleDefaultMode() {
+        grokTranscriptionModel = .off
         nariTranscriptionModel = .off
         isUsingAzureMAI = false
         clearTranscribeOnlyNotice(resetActivation: true)
@@ -1887,6 +1984,28 @@ final class TranslationSessionStore {
         hasNariAPIKey = false
     }
 
+    func useGrokSTTMode() {
+        guard !isRunning, !isStarting else { return }
+        selectedModel = .appleSpeechOnly
+        if !isUsingGrokSTT {
+            grokTranscriptionModel = .voiceTranscribe2
+        }
+        prepareTranscribeOnlyPresentation()
+        clearTranscribeOnlyNotice(resetActivation: true)
+    }
+
+    func saveGrokAPIKey(_ key: String) throws {
+        guard !isRunning, !isStarting else { return }
+        try GrokAPIKeyStore.saveAPIKey(key)
+        hasGrokAPIKey = true
+    }
+
+    func removeGrokAPIKey() throws {
+        guard !isRunning, !isStarting else { return }
+        try GrokAPIKeyStore.deleteAPIKey()
+        hasGrokAPIKey = false
+    }
+
     func saveAzureSpeechAPIKey(_ key: String) throws {
         try AzureSpeechAPIKeyStore.saveAPIKey(key)
         hasAzureSpeechAPIKey = true
@@ -1925,7 +2044,7 @@ final class TranslationSessionStore {
         if isTranscribeOnlyMode {
             selectedModel = .appleSystem
         }
-        if isUsingNariSTT, sourceLanguage == targetLanguage {
+        if (isUsingNariSTT || isUsingGrokSTT), sourceLanguage == targetLanguage {
             updateLanguagePair(source: sourceLanguage, target: fallbackTargetLanguage(excluding: sourceLanguage, preferred: .korean))
         }
         if openAITranscriptionModel.isEnabled || openAITranslationModel.isEnabled {
@@ -2627,6 +2746,14 @@ final class TranslationSessionStore {
                 sourceLanguage: configuration.sourceLanguage,
                 autoDetectLanguage: configuration.usesNariSourceAutoDetection
             )
+        } else if configuration.grokTranscriptionModel.isEnabled {
+            grokTranscriber = GrokRealtimeTranscriber()
+            configureGrokCallbacks(service: grokTranscriber, generation: generation)
+            try await grokTranscriber.start(
+                model: configuration.grokTranscriptionModel,
+                sourceLanguage: configuration.sourceLanguage,
+                autoDetectLanguage: configuration.usesGrokSourceAutoDetection
+            )
         } else if configuration.azureMAIEnabled {
             azureMAITranscriber = AzureMAITranscriber()
             let service = azureMAITranscriber
@@ -2670,6 +2797,7 @@ final class TranslationSessionStore {
             && !configuration.geminiTranslationModel.isEnabled
             && !configuration.metaTranscriptionModel.isEnabled
             && !configuration.nariTranscriptionModel.isEnabled
+            && !configuration.grokTranscriptionModel.isEnabled
             && !configuration.azureMAIEnabled
             && !configuration.openAITranslationModel.usesRealtimeAudioTranslation
     }
@@ -2733,6 +2861,8 @@ final class TranslationSessionStore {
     }
 
     private func stopCaptioners(openAITranscriberAlreadyStopped: Bool = false) {
+        grokTransitionTask?.cancel()
+        grokTransitionTask = nil
         nariTransitionTask?.cancel()
         nariTransitionTask = nil
         geminiSessionRefreshTask?.cancel()
@@ -2757,6 +2887,9 @@ final class TranslationSessionStore {
         geminiLiveTranslator.stop()
         metaVoiceTranscriber.stop()
         azureMAITranscriber.stop()
+        grokTranscriber.onTranscript = nil
+        grokTranscriber.onError = nil
+        grokTranscriber.stop()
         nariTranscriber.onTranscript = nil
         nariTranscriber.onError = nil
         nariTranscriber.stop()
@@ -2961,6 +3094,7 @@ final class TranslationSessionStore {
         geminiLiveTranslator.setPaused(isPaused)
         metaVoiceTranscriber.setPaused(isPaused)
         azureMAITranscriber.setPaused(isPaused)
+        grokTranscriber.setPaused(isPaused)
         nariTranscriber.setPaused(isPaused)
     }
 
@@ -3028,6 +3162,7 @@ final class TranslationSessionStore {
                     generation: generation, transcriber: transcriber,
                     openAITranscriber: openAITranscriber, geminiLiveTranslator: geminiLiveTranslator,
                     metaVoiceTranscriber: metaVoiceTranscriber, azureMAITranscriber: azureMAITranscriber,
+                    grokTranscriber: grokTranscriber,
                     nariTranscriber: service
                 )
                 isReconnectingNariSTT = false
@@ -3084,7 +3219,133 @@ final class TranslationSessionStore {
         }
     }
 
+    private func configureGrokCallbacks(service: GrokRealtimeTranscriber, generation: UInt64) {
+        service.onTranscript = { [weak self, weak service] update in
+            await self?.receiveGrokTranscript(update, service: service, generation: generation)
+        }
+        service.onError = { [weak self, weak service] error in
+            await self?.receiveGrokError(error, service: service, generation: generation)
+        }
+    }
+
+    private func receiveGrokError(_ error: Error, service: GrokRealtimeTranscriber?, generation: UInt64) {
+        guard let service, service === grokTranscriber else { return }
+        // 시작 오류는 start()의 throw 경로가 복구 버튼과 함께 표시한다.
+        guard !isStarting else { return }
+        handleFatalPipelineError(error, generation: generation)
+    }
+
+    private func pauseGrokCapture() {
+        audioSamplePipelineRegistry.clear()
+        grokTranscriber.setPaused(true)
+        isPaused = true
+        stopSpeaking()
+        statusMessage = AppText.paused
+        let service = grokTranscriber
+        let generation = pipelineLifecycle.generation
+        grokTransitionTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await service.finish()
+                guard !Task.isCancelled, service === grokTranscriber,
+                      pipelineLifecycle.acceptsSample(generation: generation) else { return }
+                _ = checkpointPendingTranscriptSave()
+            } catch is CancellationError {
+            } catch {
+                receiveGrokError(error, service: service, generation: generation)
+            }
+        }
+    }
+
+    private func resumeGrokCapture() {
+        isReconnectingGrokSTT = true
+        statusMessage = GrokCopy.reconnecting
+        let previousTransition = grokTransitionTask
+        let service = grokTranscriber
+        let configuration = currentStartConfiguration()
+        let generation = pipelineLifecycle.generation
+        grokTransitionTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            if let previousTransition { await previousTransition.value }
+            guard !Task.isCancelled, service === grokTranscriber, isPaused,
+                  pipelineLifecycle.acceptsSample(generation: generation),
+                  configuration == currentStartConfiguration() else { return }
+            do {
+                try await service.start(
+                    model: configuration.grokTranscriptionModel,
+                    sourceLanguage: configuration.sourceLanguage,
+                    autoDetectLanguage: configuration.usesGrokSourceAutoDetection
+                )
+                guard !Task.isCancelled, service === grokTranscriber,
+                      pipelineLifecycle.acceptsSample(generation: generation),
+                      configuration == currentStartConfiguration() else { return }
+                audioSamplePipelineRegistry.publish(
+                    generation: generation, transcriber: transcriber,
+                    openAITranscriber: openAITranscriber, geminiLiveTranslator: geminiLiveTranslator,
+                    metaVoiceTranscriber: metaVoiceTranscriber, azureMAITranscriber: azureMAITranscriber,
+                    grokTranscriber: service,
+                    nariTranscriber: nariTranscriber
+                )
+                isReconnectingGrokSTT = false
+                isPaused = false
+                statusMessage = AppText.listeningForSpeech(from: audioInputSource)
+            } catch is CancellationError {
+            } catch {
+                receiveGrokError(error, service: service, generation: generation)
+            }
+        }
+    }
+
+    private func finishGrokCapture() {
+        guard !isFinishingGrokSTT else { return }
+        if isReconnectingGrokSTT {
+            grokTransitionTask?.cancel()
+            pipelineLifecycle.stop()
+            finishPipeline(statusOverride: nil)
+            return
+        }
+        isFinishingGrokSTT = true
+        statusMessage = GrokCopy.finishing
+        audioSamplePipelineRegistry.clear()
+        grokTranscriber.setPaused(true)
+        let previousTransition = grokTransitionTask
+        let service = grokTranscriber
+        let generation = pipelineLifecycle.generation
+        grokTransitionTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await stopCapture()
+            if let previousTransition { await previousTransition.value }
+            guard !Task.isCancelled, service === grokTranscriber,
+                  pipelineLifecycle.acceptsSample(generation: generation) else { return }
+            do {
+                try await service.finish()
+                try await drainGrokTranslations()
+                guard !Task.isCancelled, service === grokTranscriber,
+                      pipelineLifecycle.acceptsSample(generation: generation) else { return }
+                pipelineLifecycle.stop()
+                finishPipeline(statusOverride: nil)
+            } catch is CancellationError {
+            } catch {
+                receiveGrokError(error, service: service, generation: generation)
+            }
+        }
+    }
+
+    private func drainGrokTranslations() async throws {
+        guard !isTranscribeOnlyMode else { return }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(15))
+        while translationTask != nil, ContinuousClock.now < deadline {
+            try Task.checkCancellation()
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        if translationTask != nil { throw GrokTranscriptionError.finishTimeout }
+    }
+
     private func resetLiveSessionState(clearsVisibleLines: Bool) {
+        grokTurnLineIDs.removeAll()
+        grokFinalizedItemIDs.removeAll()
+        grokItemOrder.removeAll()
+        if clearsVisibleLines { grokSavedTranscriptText = "" }
         nariTurnLineIDs.removeAll()
         nariFinalizedItemIDs.removeAll()
         nariItemOrder.removeAll()
@@ -3421,7 +3682,13 @@ final class TranslationSessionStore {
         let restoredNariModel = defaults.string(forKey: SettingsKey.nariTranscriptionModelID)
             .flatMap(NariTranscriptionModel.init(rawValue:)) ?? .off
         isNariSourceAutoDetectionEnabled = defaults.bool(forKey: SettingsKey.nariSourceAutoDetectionEnabled)
-        if restoredNariModel.isEnabled {
+        let restoredGrokModel = defaults.string(forKey: SettingsKey.grokTranscriptionModelID)
+            .flatMap(GrokTranscriptionModel.init(rawValue:)) ?? .off
+        isGrokSourceAutoDetectionEnabled = defaults.object(forKey: SettingsKey.grokSourceAutoDetectionEnabled) as? Bool ?? true
+        if restoredGrokModel.isEnabled {
+            grokTranscriptionModel = restoredGrokModel
+            if selectedModel == .appleSpeechOnly { prepareTranscribeOnlyPresentation() }
+        } else if restoredNariModel.isEnabled {
             nariTranscriptionModel = restoredNariModel
             if selectedModel == .appleSpeechOnly { prepareTranscribeOnlyPresentation() }
         } else if restoredAzureMode {
@@ -3457,7 +3724,7 @@ final class TranslationSessionStore {
         } else if openAITranscriptionModel == .gptRealtimeWhisper {
             openAITranscriptionModel = .off
         }
-        if (restoredNariModel.isEnabled && isTranscribeOnlyMode) || restoredGPTTranscriptionMode || restoredGeminiTranscriptionMode {
+        if ((restoredNariModel.isEnabled || restoredGrokModel.isEnabled) && isTranscribeOnlyMode) || restoredGPTTranscriptionMode || restoredGeminiTranscriptionMode {
             applyVoiceOutputDefault(false)
         } else {
             applyRestoredVoiceOutputPreference()
@@ -3484,6 +3751,8 @@ final class TranslationSessionStore {
         defaults.set(isUsingAzureMAI, forKey: "azureMAIEnabled")
         defaults.set(azureSpeechEndpoint, forKey: "azureSpeechEndpoint")
         defaults.set(metaTranscriptionModel.id, forKey: SettingsKey.metaTranscriptionModelID)
+        defaults.set(grokTranscriptionModel.rawValue, forKey: SettingsKey.grokTranscriptionModelID)
+        defaults.set(isGrokSourceAutoDetectionEnabled, forKey: SettingsKey.grokSourceAutoDetectionEnabled)
         defaults.set(nariTranscriptionModel.rawValue, forKey: SettingsKey.nariTranscriptionModelID)
         defaults.set(isNariSourceAutoDetectionEnabled, forKey: SettingsKey.nariSourceAutoDetectionEnabled)
         defaults.set(isMetaSpeakerLabelsEnabled, forKey: SettingsKey.metaSpeakerLabelsEnabled)
@@ -3712,8 +3981,8 @@ final class TranslationSessionStore {
                 activeAutosaveTranslatedText = translatedText
             }
         }
-        if isUsingNariSTT {
-            activeAutosaveSourceText = nariSavedTranscriptText
+        if isUsingGrokSTT || isUsingNariSTT {
+            activeAutosaveSourceText = isUsingGrokSTT ? grokSavedTranscriptText : nariSavedTranscriptText
             activeAutosaveTranslatedText = lines.filter {
                 $0.isFinal && $0.translatedSourceText == $0.sourceText
                     && !$0.translatedText.isEmpty && $0.translatedText != AppText.translating
@@ -5244,6 +5513,9 @@ final class TranslationSessionStore {
         progress: @escaping @MainActor @Sendable (String) -> Void = { _ in }
     ) async throws -> String {
 #if DEBUG
+        if isUsingGrokSTT, let grokTranslationForTesting {
+            return try await grokTranslationForTesting(text)
+        }
         if isUsingNariSTT, let nariTranslationForTesting {
             return try await nariTranslationForTesting(text)
         }
@@ -5654,6 +5926,61 @@ final class TranslationSessionStore {
         }
     }
 
+    private func receiveGrokTranscript(_ update: GrokTranscriptUpdate, service: GrokRealtimeTranscriber?, generation: UInt64) {
+        guard let service, service === grokTranscriber,
+              pipelineLifecycle.acceptsSample(generation: generation), isRunning, isUsingGrokSTT,
+              !grokFinalizedItemIDs.contains(update.itemID) else { return }
+        let text = update.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let detectedLanguage = update.languageCode.flatMap { code in
+            LanguageOption.supported.first { GrokTranscriptionModel.languageCode(for: $0) == code }
+        }
+        let language = detectedLanguage ?? sourceLanguage
+        let unknownDetectedLanguage = isGrokSourceAutoDetectionEnabled && update.isFinal && detectedLanguage == nil
+        let existingIndex = grokTurnLineIDs[update.itemID].flatMap { id in lines.firstIndex { $0.id == id } }
+        if grokTurnLineIDs[update.itemID] == nil && !grokItemOrder.contains(update.itemID) {
+            grokItemOrder.append(update.itemID)
+        }
+        if update.isFinal { grokFinalizedItemIDs.insert(update.itemID) }
+
+        // 오래된 완료 ID만 비워 늦은 중복과 현재 진행 중 발화를 구분한다.
+        while grokItemOrder.count > 256,
+              let oldest = grokItemOrder.first, grokFinalizedItemIDs.contains(oldest) {
+            grokItemOrder.removeFirst()
+            grokFinalizedItemIDs.remove(oldest)
+            grokTurnLineIDs.removeValue(forKey: oldest)
+        }
+        if text.isEmpty {
+            if let index = existingIndex {
+                let removed = lines.remove(at: index)
+                sourceLanguageByLineID.removeValue(forKey: removed.id)
+                grokTurnLineIDs.removeValue(forKey: update.itemID)
+                rehydrateFloatingCaptionDisplayFromCurrentLine()
+            }
+            return
+        }
+        let previous = existingIndex.map { lines[$0] }
+        let line = CaptionLine(
+            id: previous?.id ?? UUID(), sourceText: text,
+            translatedText: isTranscribeOnlyMode ? "" : (unknownDetectedLanguage ? GrokCopy.translationLanguageUnavailable : AppText.translating),
+            createdAt: previous?.createdAt ?? Date(), isFinal: update.isFinal,
+            revision: (previous?.revision ?? 0) + 1, usesLongSessionDisplay: usesLongSessionMode
+        )
+        if let index = existingIndex { lines[index] = line } else { lines.append(line) }
+        grokTurnLineIDs[update.itemID] = line.id
+        sourceLanguageByLineID[line.id] = isGrokSourceAutoDetectionEnabled ? detectedLanguage : language
+        lastRecognizedText = text
+        lastRecognizedWasFinal = update.isFinal
+        lastRecognitionAt = Date()
+        presentFloatingSourceText(text)
+        if update.isFinal {
+            grokSavedTranscriptText = grokSavedTranscriptText.isEmpty ? text : grokSavedTranscriptText + "\n" + text
+            stageTranscriptForSave(grokSavedTranscriptText)
+            if !isTranscribeOnlyMode, !unknownDetectedLanguage {
+                requestTranslation(for: line, source: language, target: targetLanguage, preservesOrdering: true)
+            }
+        }
+    }
+
     private func receiveAzureMAI(_ result: Result<String, AzureMAIError>, service: AzureMAITranscriber?, generation: UInt64) {
         guard let service, service === azureMAITranscriber,
               pipelineLifecycle.acceptsSample(generation: generation), isRunning, isUsingAzureMAI else { return }
@@ -5961,7 +6288,7 @@ final class TranslationSessionStore {
         }
 
         let sourceText = line.sourceText
-        let preservesOrdering = preservesOrdering ?? (isUsingMetaScribe || isUsingAzureMAI || isUsingNariSTT)
+        let preservesOrdering = preservesOrdering ?? (isUsingMetaScribe || isUsingAzureMAI || isUsingNariSTT || isUsingGrokSTT)
         if !preservesOrdering {
             guard force || pendingTranslationSourceText != sourceText else { return }
             pendingTranslationSourceText = sourceText
@@ -6202,7 +6529,7 @@ final class TranslationSessionStore {
             pendingTranslationSourceText = ""
         }
         stageTranscriptForSave(
-            isUsingNariSTT ? nariSavedTranscriptText : (isUsingAzureMAI ? azureSavedTranscriptText : (isUsingMetaScribe ? metaSavedTranscriptText : currentSourceText)),
+            isUsingGrokSTT ? grokSavedTranscriptText : isUsingNariSTT ? nariSavedTranscriptText : (isUsingAzureMAI ? azureSavedTranscriptText : (isUsingMetaScribe ? metaSavedTranscriptText : currentSourceText)),
             translatedText: organizedTranslatedText
         )
 
@@ -6717,6 +7044,24 @@ final class TranslationSessionStore {
         completeCaptureStartAttempt(generation: generation)
         return generation
     }
+
+    func deliverGrokTranscriptForTesting(_ update: GrokTranscriptUpdate, generation: UInt64) {
+        receiveGrokTranscript(update, service: grokTranscriber, generation: generation)
+    }
+
+    func finishGrokPipelineForTesting() {
+        pipelineLifecycle.stop()
+        finishPipeline(statusOverride: nil)
+    }
+
+    func drainGrokTranslationsForTesting() async throws {
+        try await drainGrokTranslations()
+    }
+
+    func stopGrokFromSystemMenuForTesting(generation: UInt64) {
+        handleSystemAudioCaptureStoppedByUser(generation: generation)
+    }
+
 #endif
 }
 

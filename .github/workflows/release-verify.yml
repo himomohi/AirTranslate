@@ -148,7 +148,7 @@ jobs:
             exit 1
           fi
 
-          secret_pattern='(sk-[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{35}|OPENAI_API_KEY[[:space:]]*=[[:space:]]*[A-Za-z0-9_-]+|GEMINI_API_KEY[[:space:]]*=[[:space:]]*[A-Za-z0-9_-]+|ghp_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN (RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----)'
+          secret_pattern='(xai-[A-Za-z0-9_-]{20,}|XAI_API_KEY[[:space:]]*=[[:space:]]*[A-Za-z0-9_-]+|sk-[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{35}|OPENAI_API_KEY[[:space:]]*=[[:space:]]*[A-Za-z0-9_-]+|GEMINI_API_KEY[[:space:]]*=[[:space:]]*[A-Za-z0-9_-]+|ghp_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN (RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----)'
           set +e
           /usr/bin/grep -aERq \
             "$secret_pattern" \

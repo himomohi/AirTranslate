@@ -35,6 +35,7 @@ enum ProcessingEngine: String, CaseIterable, Identifiable {
     case meta
     case azure
     case nari
+    case grok
 
     var id: String { rawValue }
 
@@ -45,6 +46,7 @@ enum ProcessingEngine: String, CaseIterable, Identifiable {
         case .gptTranscription: AppText.gptTranscriptionMode
         case .gemini: AppText.geminiModels
         case .azure: AzureMAICopy.title
+        case .grok: GrokCopy.title
         case .nari: NariCopy.title
         case .meta: AppText.metaScribe
         }
@@ -52,6 +54,7 @@ enum ProcessingEngine: String, CaseIterable, Identifiable {
 
     @MainActor
     static func current(for session: TranslationSessionStore) -> ProcessingEngine {
+        if session.isUsingGrokSTT { return .grok }
         if session.isUsingNariSTT { return .nari }
         if session.isUsingAzureMAI { return .azure }
         if session.isUsingMetaScribe { return .meta }
@@ -132,6 +135,7 @@ struct StageHeaderView: View {
         case .gpt, .gptTranscription: !session.hasOpenAIAPIKey
         case .gemini: !session.hasGeminiAPIKey
         case .azure: !session.hasAzureSpeechAPIKey || (try? AzureMAITranscriber.endpointURL(session.azureSpeechEndpoint)) == nil
+        case .grok: !session.hasGrokAPIKey
         case .nari: !session.hasNariAPIKey
         case .meta: !session.hasMetaAPIKey
         case .apple: false
@@ -143,6 +147,7 @@ struct StageHeaderView: View {
         case .gpt, .gptTranscription: AppText.openAIAPIKeyNotConfigured
         case .gemini: AppText.geminiAPIKeyNotConfigured
         case .azure: AzureMAICopy.configurationRequired
+        case .grok: GrokCopy.configurationRequired
         case .nari: NariCopy.configurationRequired
         case .meta: AppText.metaAPIKeyNotConfigured
         case .apple: AppText.configureTranslationSettings
@@ -254,7 +259,7 @@ struct ConsoleBarView: View {
         }
         .buttonStyle(AirIconButton())
         .airFocusRing(cornerRadius: 18)
-        .disabled(!session.isRunning || session.isFinishingNariSTT)
+        .disabled(!session.isRunning || session.isFinishingNariSTT || session.isFinishingGrokSTT)
         .help(session.isPaused ? AppText.resume : AppText.pause)
         .accessibilityLabel(session.isPaused ? AppText.resume : AppText.pause)
     }
@@ -376,7 +381,7 @@ struct ConsoleBarView: View {
 
     @ViewBuilder
     private var outputControl: some View {
-        if session.isUsingNariSTT && segmentedControlPresentation != .lockedSummary {
+        if (session.isUsingNariSTT || session.isUsingGrokSTT) && segmentedControlPresentation != .lockedSummary {
             Menu {
                 Picker(AppText.model, selection: nariWorkflowBinding) {
                     ForEach(IntelligenceModel.allCases) { model in
@@ -510,7 +515,7 @@ struct ConsoleBarView: View {
             }
 
             Section(AppText.output) {
-                if session.isUsingNariSTT && segmentedControlPresentation != .lockedSummary {
+                if (session.isUsingNariSTT || session.isUsingGrokSTT) && segmentedControlPresentation != .lockedSummary {
                     Picker(AppText.model, selection: nariWorkflowBinding) {
                         ForEach(IntelligenceModel.allCases) { model in
                             Text(model.title).tag(model)
@@ -713,6 +718,7 @@ struct ConsoleBarView: View {
     }
 
     private var usesAutomaticSource: Bool {
+        if session.isUsingGrokSTT { return session.isGrokSourceAutoDetectionEnabled }
         if session.isUsingNariSTT { return session.isNariSourceAutoDetectionEnabled }
         return session.isAppleSourceAutoDetectionEnabled
             || usesOpenAIAutoLanguageFlow
@@ -725,7 +731,7 @@ struct ConsoleBarView: View {
     }
 
     private var sourceOnlyOutputTitle: String {
-        session.isUsingGeminiTranscriptionMode || session.isUsingNariSTT ? AppText.originalOnly : AppText.gptTranscriptionSourceOnly
+        session.isUsingGeminiTranscriptionMode || session.isUsingNariSTT || session.isUsingGrokSTT ? AppText.originalOnly : AppText.gptTranscriptionSourceOnly
     }
 
     private var selectedMicrophoneName: String {

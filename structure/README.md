@@ -35,7 +35,7 @@ right files before changing the app.
 - `Sources/AirTranslate/Views/SettingsView.swift`
   - Settings navigation, provider mode selection, and floating-caption settings.
 - `Sources/AirTranslate/Views/APIKeySettingsView.swift`
-  - Unified OpenAI, Gemini, Meta, Azure, and Nari credential list. Expanding a
+  - Unified OpenAI, Gemini, Meta, Azure, Nari, and SpaceXAI (xAI) credential list. Expanding a
     provider does not select it as the active engine; Apple mode has no key row.
 - `Sources/AirTranslate/Views/ProviderCredentialRow.swift`
   - Shared secure input, icon actions, removal confirmation, and details popover.
@@ -146,6 +146,17 @@ Azure 리소스의 지원 지역·권한·과금 및 실제 음성 정확도는 
 | 종료·재개·저장 | 중지/일시정지/재개 | `finishNariCapture`, `pauseNariCapture`, `resumeNariCapture`, `receiveNariTranscript` | 마지막 commit drain, 새 연결 세대, 기존 번역 FIFO와 선택형 파일 저장 | `NariSessionTests`, `NariRealtimeTranscriberTests` |
 
 사용 방법·제한·공식 계약은 [Nari STT 안내](../docs/nari-stt.md)에 있다.
+
+## Optional Grok STT
+
+| 기능 | 진입점 | 핵심 파일·심볼 | 데이터·외부 의존성 | 검증 |
+| --- | --- | --- | --- | --- |
+| 전사 모델 선택 | 설정/콘솔 → Grok STT | `GrokTranscriptionModel`, `TranslationSessionStore.useGrokSTTMode` | `grok-voice-transcribe-2.0`, 기존 엔진 기본값 보존 | `GrokSessionTests` |
+| API 키 | 설정 → API 키 → SpaceXAI (xAI) | `GrokAPIKeyStore`, `APIKeySettingsView`, `ProviderCredentialRow` | 별도 Keychain 항목 `AirTranslate.Grok` / `XAI_API_KEY`, 비밀값을 읽지 않는 존재 확인 | `swift test --filter Grok` |
+| 실시간 음성 전사 | PC 소리/마이크 → 시작 | `GrokRealtimeTranscriber` | 16 kHz 모노 PCM16 바이너리 → 고정 xAI STT WebSocket; 준비 응답 후 전송, 부분/확정 결과 처리 | `swift test --filter Grok` |
+| 종료·취소 | 중지/일시정지/재개 | `GrokRealtimeTranscriber.finish`, `stop`, `finishGrokCapture`, `pauseGrokCapture`, `resumeGrokCapture` | `audio.done` → `transcript.done`, 이전 연결의 늦은 결과 차단 | `GrokRealtimeTranscriberTests`, `GrokSessionTests` |
+
+사용·과금·언어 표기·실서비스 검증 범위는 [Grok STT 안내](../docs/grok-stt.md)에 있다.
 
 ## Apple 번역 언어팩 다운로드
 

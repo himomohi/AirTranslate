@@ -217,6 +217,9 @@ struct SettingsView: View {
             if processingModeSelection.wrappedValue == .nari {
                 nariGeneralSettings
             }
+            if processingModeSelection.wrappedValue == .grok {
+                grokGeneralSettings
+            }
             if processingModeSelection.wrappedValue == .meta {
                 SettingsControlRow(
                     title: AppText.metaScribe,
@@ -860,7 +863,50 @@ struct SettingsView: View {
         }
     }
 
+    @ViewBuilder
+    private var grokGeneralSettings: some View {
+        SettingsControlRow(
+            title: GrokCopy.modelLabel,
+            detail: GrokCopy.detail,
+            systemImage: "waveform.badge.mic"
+        ) {
+            Picker(GrokCopy.modelLabel, selection: lockedSessionConfigurationBinding($session.grokTranscriptionModel)) {
+                ForEach(GrokTranscriptionModel.selectableCases) { model in
+                    Text(model.title).tag(model)
+                }
+            }
+            .labelsHidden()
+            .frame(minWidth: 210, idealWidth: 250, maxWidth: 300)
+            .disabled(isSessionConfigurationLocked)
+            .accessibilityLabel(GrokCopy.modelLabel)
+            .accessibilityValue(session.grokTranscriptionModel.title)
+        }
+
+        SettingsControlRow(
+            title: AppText.autoDetectInput,
+            detail: GrokCopy.autoDetectDetail,
+            systemImage: "globe"
+        ) {
+            Toggle("", isOn: lockedSessionConfigurationBinding($session.isGrokSourceAutoDetectionEnabled))
+                .labelsHidden()
+                .disabled(isSessionConfigurationLocked)
+                .accessibilityLabel(AppText.autoDetectInput)
+        }
+
+        SettingsNoticeRow(text: GrokCopy.detail, systemImage: "waveform")
+        if !session.hasGrokAPIKey {
+            SettingsNoticeActionRow(
+                text: GrokCopy.configurationRequired,
+                systemImage: "key",
+                actionTitle: GrokCopy.configureSpeech
+            ) {
+                selectedCategory.wrappedValue = .apiKeys
+            }
+        }
+    }
+
     private var selectedProcessingMode: SettingsProcessingMode {
+        if session.isUsingGrokSTT { return .grok }
         if session.isUsingNariSTT { return .nari }
         if session.isUsingAzureMAI { return .azure }
         if session.isUsingMetaScribe {
@@ -893,6 +939,7 @@ struct SettingsView: View {
     }
 
     private var autoDetectionDetail: String {
+        if session.isUsingGrokSTT { return GrokCopy.autoDetectDetail }
         if session.isUsingNariSTT { return NariCopy.autoDetectDetail }
         if session.isUsingMetaScribe { return SettingsCopy.metaAutoDetectDetail }
         if session.isUsingGeminiTranscriptionMode { return SettingsCopy.geminiAutoDetectDetail }
@@ -900,6 +947,7 @@ struct SettingsView: View {
     }
 
     private var autoDetectionStatus: String {
+        if session.isUsingGrokSTT { return session.isGrokSourceAutoDetectionEnabled ? SettingsCopy.enabled : SettingsCopy.disabled }
         if session.isUsingNariSTT {
             return session.isNariSourceAutoDetectionEnabled ? SettingsCopy.enabled : SettingsCopy.disabled
         }
@@ -991,6 +1039,8 @@ struct SettingsView: View {
                 session.usePreferredGeminiMode()
             case .azure:
                 session.useAzureMAIMode()
+            case .grok:
+                session.useGrokSTTMode()
             case .nari:
                 session.useNariSTTMode()
             case .meta:
@@ -1096,6 +1146,7 @@ private enum SettingsProcessingMode: String, CaseIterable, Identifiable {
     case meta
     case azure
     case nari
+    case grok
 
     var id: String { rawValue }
 
@@ -1121,6 +1172,8 @@ private enum SettingsProcessingMode: String, CaseIterable, Identifiable {
             "Gemini"
         case .azure:
             "Azure MAI"
+        case .grok:
+            GrokCopy.title
         case .nari:
             NariCopy.title
         case .meta:
@@ -1264,10 +1317,10 @@ private enum SettingsCopy {
     static let modeSettings = AppText.localized(english: "Mode Settings", korean: "모드 설정")
     static let processingEngine = AppText.localized(english: "Processing Mode", korean: "처리 방식")
     static let processingEngineDetail = AppText.localized(
-        english: "Choose exactly one active engine: local Apple mode, GPT Realtime, GPT Transcription, Gemini Live, Meta Scribe, Azure MAI, or Nari STT.",
-        korean: "Apple 기본 모드, GPT Realtime, GPT 전사, Gemini Live, Meta 스크라이브, Azure MAI, Nari STT 중 하나만 활성화합니다.",
-        japanese: "Appleローカルモード、GPT Realtime、GPT文字起こし、Gemini Live、Meta Scribe、Azure MAI、Nari STTから1つだけ有効にします。",
-        chineseSimplified: "仅启用一种处理方式：Apple 本地模式、GPT Realtime、GPT 转写、Gemini Live、Meta Scribe、Azure MAI 或 Nari STT。"
+        english: "Choose exactly one active engine: local Apple mode, GPT Realtime, GPT Transcription, Gemini Live, Meta Scribe, Azure MAI, Nari STT, or Grok STT.",
+        korean: "Apple 기본 모드, GPT Realtime, GPT 전사, Gemini Live, Meta 스크라이브, Azure MAI, Nari STT, Grok STT 중 하나만 활성화합니다.",
+        japanese: "Appleローカルモード、GPT Realtime、GPT文字起こし、Gemini Live、Meta Scribe、Azure MAI、Nari STT、Grok STTから1つだけ有効にします。",
+        chineseSimplified: "仅启用一种处理方式：Apple 本地模式、GPT Realtime、GPT 转写、Gemini Live、Meta Scribe、Azure MAI、Nari STT 或 Grok STT。"
     )
     static let enterOpenAIAPIKey = AppText.localized(
         english: "Enter OpenAI API key",
