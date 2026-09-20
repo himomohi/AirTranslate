@@ -53,6 +53,13 @@ private struct CaptureCommands: Commands {
             }
             .keyboardShortcut(.space, modifiers: [.command, .shift])
             .disabled(!session.isRunning)
+
+            Divider()
+
+            Button(CaptionStyleCopy.toggleCaptions) {
+                FloatingCaptionWindowController.toggle(session: session)
+            }
+            .keyboardShortcut("c", modifiers: [.command, .shift])
         }
     }
 }

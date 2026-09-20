@@ -23,24 +23,22 @@
 
 AirTranslate 会捕获 Mac 正在播放的音频，实时转写；当你选择翻译流程时，它会进行翻译，并可将字幕悬浮在其他应用上方。Apple Mode 仍然是默认的本地优先流程。云端引擎为可选项，配置对应提供方密钥后即可使用。
 
-AirTranslate **1.10.0/build1100** 新增 **Grok STT**，使用 Grok Voice Transcribe 2.0 转写麦克风或 Mac 音频。
+AirTranslate **1.11.0/build1110** 新增 **Qwen LiveTranslate**，使用 `qwen3.8-livetranslate-flash-realtime` 翻译麦克风或 Mac 音频。
 
-在**设置 > API 密钥 > SpaceXAI (xAI)**中保存自己的密钥，然后在常规设置中选择 **Grok STT**。密钥单独保存在 macOS Keychain 中，开始捕获时音频会直接发送到 xAI。提供方的费用和账户限制适用。
+请在设置 > API 密钥 > Qwen 中输入 **阿里云新加坡 API 密钥和工作空间 ID**。密钥单独保存在 macOS Keychain 中，开始捕获后会将所选音频直接发送到阿里云新加坡。Qwen 自动检测语音语言并返回原文转写和译文。**语音输出为可选项，默认关闭**，后续选择由 Qwen 单独保存。参见 [Qwen 设置与价格](docs/qwen-livetranslate.md)。真实账户认证、计费、翻译质量和延迟尚未验证。
 
-Grok 默认以**仅原文字幕和自动识别语音语言**开始。Apple Mode 仍为默认模式，可另行启用 Apple Translation 翻译。尚未使用真实 xAI 账户验证认证、转写准确度和延迟。
+**反映 API 密钥状态的模式选择器**将没有密钥的提供方显示为灰色，并在每行提供设置入口。信息图标说明模型及其计费依据。**OpenAI 语音统一翻译与原文转写**，并保留语言和输出偏好。
 
-最终响应不会重复添加已确认的语句，也支持无空格连接的日语。保存文件会排除临时字幕和翻译状态提示。切换到其他引擎后会清除 Grok 密钥缺失提示。
+**悬浮字幕只显示文字**，不显示窗口背景、边框、工具栏、状态文字或悬停缩放控件。可在设置中调整五种文字样式、字体、颜色、宽度、行距、顺序及示例预览，通过主界面、菜单栏或 ⌘⇧C 切换显示。
 
-悬浮字幕支持双向调整大小、hover 移动和缩放提示、自定义字号、文本颜色、背景颜色和背景透明度、偏好保存和重置。
-
-文字和背景颜色也可通过直接输入 **#RRGGBB 颜色代码** 并使用键盘应用。
+**Qwen 停止前会等待最终字幕**。空的最终响应会撤回临时字幕，Qwen 记录仅保存已确认的结果，包括定期保存。Apple Mode 仍为默认模式，记录文件保存仍需主动启用。
 
 ## 下载
 
-当前公开最新版：**v1.10.0**。
+当前公开最新版：**v1.11.0**。
 
 - [下载 AirTranslate.dmg](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [下载 AirTranslate-1.10.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.10.0/AirTranslate-1.10.0.zip)
+- [下载 AirTranslate-1.11.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.11.0/AirTranslate-1.11.0.zip)
 - [下载 AirTranslate.dmg.sha256](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [查看版本历史](Release/VERSION-HISTORY.md)
 
@@ -50,6 +48,7 @@ Grok 默认以**仅原文字幕和自动识别语音语言**开始。Apple Mode 
 shasum -a 256 AirTranslate.dmg
 cat AirTranslate.dmg.sha256
 ```
+
 
 ## 真实应用
 
@@ -80,7 +79,7 @@ API 驱动的引擎在 **Settings > API Keys** 中配置密钥后即可使用。
 - 以 Apple Speech 转写和 Apple Translation 翻译作为默认本地优先路径。
 - 无需翻译时可使用只显示原文字幕的转写模式。
 - 悬浮字幕、已保存记录库、可选译文朗读和一键切换语言方向。
-- 悬浮字幕窗口双向调整大小、移动和缩放提示、自定义字号、文本颜色、背景颜色、不影响文字的背景透明度、偏好保存和重置。
+- 只显示文字的悬浮字幕，以及设置中的五种样式、字体、颜色、宽度、行距、顺序、预览、保存和重置。
 - 记录文件保存默认关闭。需要在 Application Support 中保存普通 `.txt` 文件时，请开启 **Save Transcript Files**。
 - 英语、韩语、日语和简体中文应用语言。
 
@@ -89,13 +88,13 @@ API 驱动的引擎在 **Settings > API Keys** 中配置密钥后即可使用。
 | 引擎 | 作用 | 需要 |
 | --- | --- | --- |
 | Apple Mode | 默认本地优先转写与翻译。 | 无 |
-| GPT Mode | 通过 OpenAI Realtime 输出实时译文。 | OpenAI |
-| GPT Transcription | 通过 OpenAI 生成原文字幕。 | OpenAI |
+| OpenAI 语音 | 在同一提供方内选择翻译或原文转写。通过输出图标切换 `gpt-realtime-translate` 与 `gpt-live-transcribe`，并在提示中查看模型和费用。 | OpenAI |
 | Gemini Live | Gemini 实时翻译，或带自动口语检测的原文转写。 | Gemini |
 | Meta Scribe | 在 AirTranslate 翻译前生成带说话人标签的多语言转写。 | Meta |
 | Azure MAI | 与 Apple Translation 字幕配合使用的预览云端转写。 | Azure Speech 密钥和终结点 |
-| Nari STT | 1.9.0 源码中准备的 Nari Qwen3-ASR 原文转写，可使用麦克风或 Mac 音频。 | Nari |
+| Nari STT | Nari Qwen3-ASR 原文转写，可使用麦克风或 Mac 音频。 | Nari |
 | Grok STT | 使用 Grok Voice Transcribe 2.0 转写麦克风或 Mac 音频的原文。 | SpaceXAI (xAI) |
+| Qwen LiveTranslate | Qwen3.8 实时原文、翻译字幕及可选语音输出。 | 阿里云新加坡 API 密钥和工作空间 ID |
 
 Grok STT 自 1.10.0 起提供。首次选择会以原文转写开始，并使用你自己的 xAI API 密钥。设置、语言处理及验证范围请参阅 [Grok STT 说明](docs/grok-stt.md)。
 
@@ -107,18 +106,20 @@ Nari 支持手动选择输入语言及自动检测语音语言，包括韩语。
 
 ## 悬浮字幕
 
-悬浮字幕窗口可同时调整宽度和高度，并在 hover 状态显示移动和缩放提示。字幕样式在现有预设字号之外支持自定义字号、文本颜色、背景颜色、不影响文字的背景透明度、偏好保存和重置。Caption Stability 仍作为独立设置保留。
+悬浮字幕仅在画面上显示原文或译文文字。窗口背景、边框、工具栏、状态文字和缩放标记均不显示，悬停时也不会出现。没有字幕时不显示任何内容。请在设置、主界面或菜单栏中操作，使用 ⌘⇧C 显示或隐藏字幕。
+
+提供日常、影院、讲座、高对比度和明亮画面五种文字样式，以及四种字体、字重、行距、阴影/描边、文字颜色、对齐、行数和译文置顶选项。预览可在明暗示例画面中显示实际18–72pt字号，也可在不录音的情况下显示示例字幕。在设置中调整宽度和置顶状态。已有外观偏好仍会恢复，但旧背景设置不会显示为窗口背景。
 
 ## API 密钥
 
-API 密钥页面通过一个提供方列表管理 **OpenAI**、**Gemini**、**Meta**、**Azure**、**Nari** 和 **SpaceXAI (xAI)**。每行会显示配置/准备状态、提供方图标、密钥控制台链接，以及说明“已配置密钥并不代表提供方授权已验证”的信息弹窗。
+API 密钥页面通过一个提供方列表管理 **OpenAI**、**Gemini**、**Meta**、**Azure**、**Nari** 和 **SpaceXAI (xAI)** · **Alibaba Cloud (Qwen)**。每行会显示配置/准备状态、提供方图标、密钥控制台链接，以及说明“已配置密钥并不代表提供方授权已验证”的信息弹窗。
 
 密钥保存在 macOS 钥匙串中。AirTranslate 不包含账号系统、开发者运营的中继服务器，也不包含硬编码的提供方密钥。
 
 ## 隐私
 
 - Apple Mode 使用 macOS 框架和 Apple 管理的语言资源。
-- GPT、Gemini、Meta、Azure、Nari 和 Grok 模式只会把所选功能需要的音频或文本，使用你的密钥直接发送给对应提供方。
+- GPT、Gemini、Meta、Azure、Nari、Grok 和 Qwen 模式只会把所选功能需要的音频或文本，使用你的密钥直接发送给对应提供方。
 - 只有开启文件保存后，已保存记录才会作为普通文本文件留在你的 Mac 上。
 - 更长的提供方和存储说明见 [Release/PRIVACY-NOTICE.md](Release/PRIVACY-NOTICE.md)。
 
@@ -128,7 +129,7 @@ API 密钥页面通过一个提供方列表管理 **OpenAI**、**Gemini**、**Me
 - 源码构建需要 Swift 6.2 或更高版本
 - 支持系统音频捕获的 Mac
 - 可使用 Apple Speech 和 Apple Translation 框架
-- 可选：OpenAI、Gemini、Meta、Azure Speech、Nari 或 xAI 提供方密钥
+- 可选：OpenAI、Gemini、Meta、Azure Speech、Nari、xAI 或阿里云 提供方密钥
 
 ## 文档
 
@@ -159,4 +160,4 @@ swift test
 
 AirTranslate 以 [Apache License 2.0](LICENSE) 发布。版权归属见 [NOTICE](NOTICE)。
 
-AirTranslate 是独立开源项目，与 Apple、OpenAI、Google、Meta、Microsoft、Nari 或 SpaceXAI (xAI) 没有关联。
+AirTranslate 是独立开源项目，与 Apple、OpenAI、Google、Meta、Microsoft、Nari、SpaceXAI (xAI) 或阿里云没有关联。

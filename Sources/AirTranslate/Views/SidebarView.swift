@@ -29,23 +29,23 @@ enum SidebarSegmentedControlPresentation: Equatable {
 
 enum ProcessingEngine: String, CaseIterable, Identifiable {
     case apple
-    case gpt
-    case gptTranscription
+    case openAI
     case gemini
     case meta
     case azure
     case nari
     case grok
+    case qwen
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .apple: AppText.appleProcessingMode
-        case .gpt: AppText.gptMode
-        case .gptTranscription: AppText.gptTranscriptionMode
+        case .openAI: AppText.openAIAudio
         case .gemini: AppText.geminiModels
         case .azure: AzureMAICopy.title
+        case .qwen: QwenCopy.title
         case .grok: GrokCopy.title
         case .nari: NariCopy.title
         case .meta: AppText.metaScribe
@@ -54,13 +54,13 @@ enum ProcessingEngine: String, CaseIterable, Identifiable {
 
     @MainActor
     static func current(for session: TranslationSessionStore) -> ProcessingEngine {
+        if session.isUsingQwenTranslation { return .qwen }
         if session.isUsingGrokSTT { return .grok }
         if session.isUsingNariSTT { return .nari }
         if session.isUsingAzureMAI { return .azure }
         if session.isUsingMetaScribe { return .meta }
-        if session.isUsingGPTTranscriptionMode { return .gptTranscription }
         if session.openAITranscriptionModel.isEnabled || session.openAITranslationModel.isEnabled {
-            return .gpt
+            return .openAI
         }
         if session.isUsingGemini { return .gemini }
         return .apple
@@ -132,9 +132,10 @@ struct StageHeaderView: View {
 
     private var needsAPIKey: Bool {
         switch ProcessingEngine.current(for: session) {
-        case .gpt, .gptTranscription: !session.hasOpenAIAPIKey
+        case .openAI: !session.hasOpenAIAPIKey
         case .gemini: !session.hasGeminiAPIKey
         case .azure: !session.hasAzureSpeechAPIKey || (try? AzureMAITranscriber.endpointURL(session.azureSpeechEndpoint)) == nil
+        case .qwen: !session.hasQwenConfiguration
         case .grok: !session.hasGrokAPIKey
         case .nari: !session.hasNariAPIKey
         case .meta: !session.hasMetaAPIKey
@@ -144,9 +145,10 @@ struct StageHeaderView: View {
 
     private var missingAPIKeyTitle: String {
         switch ProcessingEngine.current(for: session) {
-        case .gpt, .gptTranscription: AppText.openAIAPIKeyNotConfigured
+        case .openAI: AppText.openAIAPIKeyNotConfigured
         case .gemini: AppText.geminiAPIKeyNotConfigured
         case .azure: AzureMAICopy.configurationRequired
+        case .qwen: QwenCopy.configurationRequired
         case .grok: GrokCopy.configurationRequired
         case .nari: NariCopy.configurationRequired
         case .meta: AppText.metaAPIKeyNotConfigured
@@ -259,7 +261,7 @@ struct ConsoleBarView: View {
         }
         .buttonStyle(AirIconButton())
         .airFocusRing(cornerRadius: 18)
-        .disabled(!session.isRunning || session.isFinishingNariSTT || session.isFinishingGrokSTT)
+        .disabled(!session.isRunning || session.isFinishingQwenTranslation || session.isReconnectingQwenTranslation || session.isFinishingNariSTT || session.isFinishingGrokSTT)
         .help(session.isPaused ? AppText.resume : AppText.pause)
         .accessibilityLabel(session.isPaused ? AppText.resume : AppText.pause)
     }
@@ -359,7 +361,7 @@ struct ConsoleBarView: View {
 
             if !session.isTranscribeOnlyMode {
                 Picker(AppText.to, selection: targetLanguageBinding) {
-                    ForEach(LanguageOption.supported.filter { $0 != session.sourceLanguage }) { language in
+                    ForEach(LanguageOption.supported.filter { usesAutomaticSource || $0 != session.sourceLanguage }) { language in
                         Text(language.localizedTitle).tag(language)
                     }
                 }
@@ -381,7 +383,9 @@ struct ConsoleBarView: View {
 
     @ViewBuilder
     private var outputControl: some View {
-        if (session.isUsingNariSTT || session.isUsingGrokSTT) && segmentedControlPresentation != .lockedSummary {
+        if session.isUsingOpenAIRealtime {
+            OpenAIOutputPicker(session: session)
+        } else if (session.isUsingNariSTT || session.isUsingGrokSTT) && segmentedControlPresentation != .lockedSummary {
             Menu {
                 Picker(AppText.model, selection: nariWorkflowBinding) {
                     ForEach(IntelligenceModel.allCases) { model in
@@ -506,7 +510,7 @@ struct ConsoleBarView: View {
                     }
                     if !session.isTranscribeOnlyMode {
                         Picker(AppText.to, selection: targetLanguageBinding) {
-                            ForEach(LanguageOption.supported.filter { $0 != session.sourceLanguage }) { language in
+                            ForEach(LanguageOption.supported.filter { usesAutomaticSource || $0 != session.sourceLanguage }) { language in
                                 Text(language.localizedTitle).tag(language)
                             }
                         }
@@ -515,7 +519,14 @@ struct ConsoleBarView: View {
             }
 
             Section(AppText.output) {
-                if (session.isUsingNariSTT || session.isUsingGrokSTT) && segmentedControlPresentation != .lockedSummary {
+                if session.isUsingOpenAIRealtime {
+                    Picker(AppText.outputMode, selection: liveOutputModeBinding) {
+                        ForEach(LiveOutputMode.allCases) { mode in
+                            Label(mode.title, systemImage: mode.systemImage).tag(mode)
+                        }
+                    }
+                    .disabled(!isConfigurationAvailable)
+                } else if (session.isUsingNariSTT || session.isUsingGrokSTT) && segmentedControlPresentation != .lockedSummary {
                     Picker(AppText.model, selection: nariWorkflowBinding) {
                         ForEach(IntelligenceModel.allCases) { model in
                             Text(model.title).tag(model)
@@ -568,20 +579,7 @@ struct ConsoleBarView: View {
     }
 
     private var engineButton: some View {
-        Button {
-            openSettings()
-        } label: {
-            AirChip(
-                text: ProcessingEngine.current(for: session).title,
-                systemImage: "cpu",
-                tint: AirTranslateDesign.Palette.textSecondary
-            )
-        }
-        .buttonStyle(.plain)
-        .airFocusRing(cornerRadius: 12)
-        .help(AppText.configureTranslationSettings)
-        .accessibilityLabel(AppText.translationSettings)
-        .accessibilityValue(ProcessingEngine.current(for: session).title)
+        ProcessingModePicker(session: session)
     }
 
     private var volumePopover: some View {
@@ -714,10 +712,11 @@ struct ConsoleBarView: View {
     }
 
     private var usesOpenAIAutoLanguageFlow: Bool {
-        ProcessingEngine.current(for: session) == .gpt && session.isUsingOpenAIRealtimeTranslation
+        ProcessingEngine.current(for: session) == .openAI && session.isUsingOpenAIRealtimeTranslation
     }
 
     private var usesAutomaticSource: Bool {
+        if session.isUsingQwenTranslation { return true }
         if session.isUsingGrokSTT { return session.isGrokSourceAutoDetectionEnabled }
         if session.isUsingNariSTT { return session.isNariSourceAutoDetectionEnabled }
         return session.isAppleSourceAutoDetectionEnabled

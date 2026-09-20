@@ -22,8 +22,8 @@ enum FloatingCaptionAppearance {
         return min(max(value, opacityRange.lowerBound), opacityRange.upperBound)
     }
 
-    static func blockHeight(lineHeight: CGFloat, lineCount: Int) -> CGFloat {
-        lineHeight * CGFloat(lineCount) + CGFloat(max(0, lineCount - 1)) * captionLineSpacing
+    static func blockHeight(lineHeight: CGFloat, lineCount: Int, lineSpacing: CGFloat = captionLineSpacing) -> CGFloat {
+        lineHeight * CGFloat(lineCount) + CGFloat(max(0, lineCount - 1)) * lineSpacing
     }
 
     static func secondaryPointSize(for primaryPointSize: CGFloat) -> CGFloat {

@@ -15,7 +15,7 @@ This folder contains reproducible release materials for the Apache 2.0 open-sour
 - The bundle identifier is `dev.appcaster.AirTranslate`.
 - The current release-candidate version comes from `script/app_metadata.sh`.
 - The project is published as Apache 2.0 open source.
-- AirTranslate is an independent project and is not affiliated with Apple, OpenAI, Google, Meta, or Microsoft.
+- AirTranslate is an independent project and is not affiliated with Apple, OpenAI, Google, Meta, Microsoft, Nari, SpaceXAI (xAI), or Alibaba Cloud.
 - The release bundle must never include user API keys, bearer tokens, signing private keys, provisioning profiles, or local `.env` files.
 
 Override the defaults when needed:
@@ -103,7 +103,7 @@ git diff -- . ':(exclude).build/**' ':(exclude)Release/product/**' | \
 - Confirm the release DMG opens and contains `AirTranslate.app` plus the Applications shortcut.
 - Confirm `AirTranslate.dmg.sha256` matches the uploaded DMG.
 - Confirm the release ZIP does not contain API keys, tokens, private keys, provisioning profiles, or `.env` files.
-- Confirm OpenAI GPT mode still requires a user-provided key at runtime and does not bundle one.
+- Confirm optional cloud providers require user-provided keys at runtime and do not bundle credentials. Qwen also requires a Singapore workspace ID.
 - Confirm Gemini Live mode still requires a user-provided key at runtime and does not bundle one.
 - Confirm Meta Scribe mode still requires a user-provided key at runtime and does not bundle one.
 - Confirm Azure MAI still requires a user-provided Azure Speech endpoint and API key at runtime and does not bundle one.

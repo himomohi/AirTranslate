@@ -37,8 +37,9 @@ When troubleshooting permissions, check which app copy is running. Older or diff
 
 - **Apple Mode:** default local-first transcription and translation path. Choose the source language manually; Apple source-language auto-detection is currently disabled while language-switch handling is improved.
 - **Transcribe Only:** source captions without translation.
-- **GPT, Gemini, Meta, Azure, or Nari:** optional provider modes that require user-supplied keys.
+- **OpenAI Audio, Gemini, Meta, Azure, or Nari:** optional provider modes that require user-supplied keys.
 - **Grok STT (1.10.0+):** Grok Voice Transcribe 2.0 transcription with your own SpaceXAI (xAI) key. Select Grok STT after adding the key in API Keys. See [Grok STT notes](grok-stt.md).
+- **Qwen LiveTranslate (1.11.0+):** Add your Alibaba Cloud Singapore API key and workspace ID, then choose Qwen LiveTranslate in the mode picker. Original transcripts and translations arrive directly from Qwen. Speech output is optional and initially off; Apple language packs are not needed for this mode. See [Qwen setup and pricing](qwen-livetranslate.md).
 
 Provider keys are managed in **Settings > API Keys**. A configured key means AirTranslate has local provider settings; it does not prove provider account authorization until a session starts.
 
@@ -50,9 +51,9 @@ If a system download cannot finish, check your connection and use **System Setti
 
 ## Floating Captions
 
-Open floating captions from the main window or menu bar while a session is running. The floating caption window can be resized in both width and height and shows hover affordances for moving and resizing.
+Show or hide floating captions from the main window, menu bar, or ⌘⇧C. The overlay displays caption text only and stays invisible when empty; it has no background, toolbar, status text, or hover resize controls.
 
-Caption style controls include preset sizes, custom font size, text color, background color, background opacity that does not fade caption text, persistent preferences, and reset. Caption Stability remains a separate readability timing control.
+Use Settings > Floating Captions for five text styles, font and color, width, line spacing, ordering, persistence, and reset. Preview sample captions without recording. Caption Stability remains a separate readability timing control.
 
 ## Transcript Files
 

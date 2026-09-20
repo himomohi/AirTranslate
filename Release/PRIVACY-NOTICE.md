@@ -2,7 +2,7 @@
 
 AirTranslate transcribes and translates audio playing on the user's Mac.
 
-AirTranslate is an independent open-source project and is not affiliated with Apple, OpenAI, Google, Meta, Microsoft, Nari Labs, or SpaceXAI (xAI).
+AirTranslate is an independent open-source project and is not affiliated with Apple, OpenAI, Google, Meta, Microsoft, Nari Labs, SpaceXAI (xAI), or Alibaba Cloud.
 
 ## Data Handling
 
@@ -77,6 +77,14 @@ remains off by default. The provider's account access, retention, quotas, billin
 and service terms apply; AirTranslate does not operate a relay or bundle a shared
 credential. See [Grok STT notes](../docs/grok-stt.md) for the implementation and
 verification boundaries. Grok STT is included from version 1.10.0.
+
+## Optional Qwen LiveTranslate (1.11.0+)
+
+When Qwen is selected and capture starts, AirTranslate sends the selected microphone or system audio directly to the user's Alibaba Cloud Singapore workspace for `qwen3.8-livetranslate-flash-realtime`. It receives original transcripts, translated text, and optional translated speech. It does not send screen images or enable voice cloning.
+
+The user supplies a Singapore API key and workspace ID. The key is stored in a dedicated device-local macOS Keychain item and sent only in the authorization header. The workspace ID and output preferences are stored locally. Speech output starts off and its preference is saved independently. Transcript files remain opt-in and contain confirmed Qwen results only.
+
+Alibaba Cloud's account permissions, retention, quotas, pricing, and service terms apply. AirTranslate provides no shared credential or developer-operated relay. Local tests do not verify live authentication, billing, translation quality, or latency. See [Qwen setup and pricing](../docs/qwen-livetranslate.md).
 
 ## Permissions
 

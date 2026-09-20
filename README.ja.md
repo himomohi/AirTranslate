@@ -23,24 +23,22 @@
 
 AirTranslateはMacで再生中の音声を取り込み、ライブで文字起こしし、翻訳ワークフローを選んだ場合は翻訳し、必要に応じて他のアプリの上にフローティング字幕を表示します。Apple Modeは引き続きローカル優先の標準ワークフローです。クラウドエンジンは任意で、対応するプロバイダーキーを設定すると利用できます。
 
-AirTranslate **1.10.0/build1100** は、マイクやMac音声をGrok Voice Transcribe 2.0で文字起こしする **Grok STT** を追加します。
+AirTranslate **1.11.0/build1110** は、`qwen3.8-livetranslate-flash-realtime` でマイクやMac音声を翻訳する **Qwen LiveTranslate** を追加します。
 
-**設定 > APIキー > SpaceXAI (xAI)** に自分のキーを保存し、一般設定で **Grok STT** を選択します。キーはmacOS Keychainの専用項目に保存され、キャプチャ開始時に音声がxAIへ直接送信されます。プロバイダーの利用料金とアカウント制限が適用されます。
+設定 > APIキー > Qwenに **Alibaba CloudシンガポールのAPIキーとワークスペースID** を入力してください。キーはmacOS Keychainの専用項目に保存し、キャプチャ開始時に選択した音声をAlibaba Cloudシンガポールへ直接送信します。Qwenは音声言語を自動検出し、原文と翻訳を返します。**音声出力は任意で、初期状態ではオフです**。選択はQwen専用に保存します。[Qwenの設定と料金](docs/qwen-livetranslate.md)をご覧ください。実アカウントの認証・課金・翻訳品質・遅延は未検証です。
 
-Grokは **原文のみの字幕と音声言語の自動認識** で開始します。Apple Modeは標準のままで、Apple Translationによる翻訳を別途有効にできます。実際のxAIアカウントでの認証・認識精度・遅延は未検証です。
+**APIキー状態を反映するモード選択**では、キーのないプロバイダーをグレー表示し、各行に設定へのショートカットを用意します。情報アイコンでモデルと料金基準を確認できます。**OpenAI音声は翻訳と原文文字起こしを統合**し、言語・出力の設定を保持します。
 
-最後の応答で確定済み発話を重複追加せず、空白なしで連結された日本語も処理します。保存ファイルから暫定字幕と翻訳状態の案内を除外します。別のエンジンへ切り替えるとGrokのキー未設定案内が解除されます。
+**フローティング字幕は文字だけを表示**します。背景・枠・ツールバー・状態表示・hover時のリサイズ操作は表示しません。5種類の文字スタイル、フォント・色・幅・行間・順序・サンプルプレビューは設定で調整し、メイン画面・メニューバー・⌘⇧Cで表示を切り替えます。
 
-フローティング字幕は双方向リサイズ、hover時の移動・リサイズ表示、カスタム文字サイズ、テキスト色、背景色と背景の不透明度、設定保存とリセットに対応しています。
-
-文字色と背景色は **#RRGGBB カラーコード** を直接入力し、キーボードで適用することもできます。
+**Qwenは停止前に最終字幕の受信を待ちます**。空の最終応答は暫定字幕を取り消し、定期保存を含むQwenの記録には確定結果だけを保存します。Apple Modeを標準とし、記録ファイル保存は任意のままです。
 
 ## ダウンロード
 
-現在の公開最新版: **v1.10.0**。
+現在の公開最新版: **v1.11.0**。
 
 - [AirTranslate.dmgをダウンロード](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [AirTranslate-1.10.0.zipをダウンロード](https://github.com/himomohi/AirTranslate/releases/download/v1.10.0/AirTranslate-1.10.0.zip)
+- [AirTranslate-1.11.0.zipをダウンロード](https://github.com/himomohi/AirTranslate/releases/download/v1.11.0/AirTranslate-1.11.0.zip)
 - [AirTranslate.dmg.sha256をダウンロード](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [バージョン履歴を見る](Release/VERSION-HISTORY.md)
 
@@ -50,6 +48,7 @@ Grokは **原文のみの字幕と音声言語の自動認識** で開始しま�
 shasum -a 256 AirTranslate.dmg
 cat AirTranslate.dmg.sha256
 ```
+
 
 ## 実際のアプリ
 
@@ -80,7 +79,7 @@ API連携エンジンは、**Settings > API Keys**でキーを設定すると利
 - ローカル優先の標準経路であるApple Speech文字起こしとApple Translation翻訳。
 - 翻訳なしで原文字幕だけを見る文字起こし専用モード。
 - フローティング字幕、保存済み記録ライブラリ、任意の翻訳音声、ワンクリック言語入れ替え。
-- フローティング字幕ウィンドウの双方向リサイズ、移動・リサイズ表示、カスタム文字サイズ、テキスト色、背景色、文字を薄くしない背景の不透明度、設定保存とリセット。
+- 文字だけのフローティング字幕と、設定での5スタイル・フォント・色・幅・行間・順序・プレビュー・保存・リセット。
 - 記録ファイル保存はデフォルトでオフです。Application Supportに通常の`.txt`ファイルを残す場合は**Save Transcript Files**を有効にします。
 - 英語、韓国語、日本語、簡体字中国語のアプリ言語。
 
@@ -89,13 +88,13 @@ API連携エンジンは、**Settings > API Keys**でキーを設定すると利
 | エンジン | 役割 | 必要なもの |
 | --- | --- | --- |
 | Apple Mode | 標準のローカル優先文字起こしと翻訳です。 | なし |
-| GPT Mode | OpenAI Realtimeによるライブ翻訳出力です。 | OpenAI |
-| GPT Transcription | OpenAIによる原文字幕です。 | OpenAI |
+| OpenAI 音声 | 1つのプロバイダー内で翻訳または原文文字起こしを選びます。出力アイコンで `gpt-realtime-translate`・`gpt-live-transcribe` を切り替え、ツールチップでモデルと料金を確認できます。 | OpenAI |
 | Gemini Live | Geminiライブ翻訳、または音声言語を自動検出する原文文字起こしです。 | Gemini |
 | Meta Scribe | AirTranslate翻訳の前段にある、話者ラベル付き多言語文字起こしです。 | Meta |
 | Azure MAI | Apple Translation字幕と組み合わせるプレビューのクラウド文字起こしです。 | Azure Speechキーとエンドポイント |
-| Nari STT | 1.9.0ソースで準備されたNari Qwen3-ASR原文文字起こしです。マイクまたはMac音声を使えます。 | Nari |
+| Nari STT | Nari Qwen3-ASR原文文字起こしです。マイクまたはMac音声を使えます。 | Nari |
 | Grok STT | マイクまたはMac音声をGrok Voice Transcribe 2.0で原文に文字起こしします。 | SpaceXAI (xAI) |
+| Qwen LiveTranslate | Qwen3.8の原文・翻訳字幕と任意の音声出力。 | Alibaba CloudシンガポールのAPIキーとワークスペースID |
 
 Grok STTは1.10.0から含まれます。初回選択は原文文字起こしで、自分のxAI APIキーを使用します。設定、言語処理、検証範囲は[Grok STTの説明](docs/grok-stt.md)をご確認ください。
 
@@ -107,18 +106,20 @@ Nariを新しく選択すると、Nariクレジットが必要なGA Fastモデ�
 
 ## フローティング字幕
 
-フローティング字幕ウィンドウは横方向と縦方向の両方でリサイズでき、hover状態で移動とリサイズの表示を出します。字幕スタイルには既存のプリセット文字サイズに加えてカスタムサイズ、テキスト色、背景色、文字を薄くしない背景の不透明度、設定保存とリセットがあります。Caption Stabilityは別の設定として維持されます。
+フローティング字幕は、画面に原文・翻訳の文字だけを重ねます。背景・枠・ツールバー・状態表示・サイズ変更の印は、ポインタを重ねても表示しません。字幕がないときは何も表示しません。設定・メイン画面・メニューバーで操作し、⌘⇧Cで字幕の表示を切り替えます。
+
+標準・映画・講義・高コントラスト・明るい画面用の5つの文字スタイル、4種類のフォント、太さ・行間・影/縁取り・文字色・配置・行数・翻訳を上に表示する設定を用意しています。明暗のサンプル画面で実際の18–72ptサイズを確認し、録音せずにサンプル字幕を表示できます。幅と最前面表示は設定で変更します。既存の外観設定は復元しますが、以前の背景設定が残っていてもウインドウ背景は表示しません。
 
 ## APIキー
 
-APIキー画面は、**OpenAI**、**Gemini**、**Meta**、**Azure**、**Nari**、**SpaceXAI (xAI)**を1つのプロバイダー一覧で管理します。各行には、設定/準備状態、プロバイダーアイコン、キー管理コンソールへのリンク、設定済みキーがプロバイダー権限の検証を意味しないことを説明する情報ポップオーバーが表示されます。
+APIキー画面は、**OpenAI**、**Gemini**、**Meta**、**Azure**、**Nari**、**SpaceXAI (xAI)** · **Alibaba Cloud (Qwen)**を1つのプロバイダー一覧で管理します。各行には、設定/準備状態、プロバイダーアイコン、キー管理コンソールへのリンク、設定済みキーがプロバイダー権限の検証を意味しないことを説明する情報ポップオーバーが表示されます。
 
 キーはmacOS Keychainに保存されます。AirTranslateにはアカウントシステム、開発者運用の中継サーバー、ハードコードされたプロバイダーキーは含まれていません。
 
 ## プライバシー
 
 - Apple ModeはmacOSフレームワークとApple管理の言語アセットを使います。
-- GPT、Gemini、Meta、Azure、Nari、Grokモードは、選択した機能に必要な音声またはテキストだけを、ユーザーのキーで該当プロバイダーへ直接送信します。
+- GPT、Gemini、Meta、Azure、Nari、Grok、Qwenモードは、選択した機能に必要な音声またはテキストだけを、ユーザーのキーで該当プロバイダーへ直接送信します。
 - 保存済み記録は、ファイル保存を有効にした場合にだけMac上の通常のテキストファイルとして残ります。
 - より詳しいプロバイダーと保存の説明は[Release/PRIVACY-NOTICE.md](Release/PRIVACY-NOTICE.md)を参照してください。
 
@@ -128,7 +129,7 @@ APIキー画面は、**OpenAI**、**Gemini**、**Meta**、**Azure**、**Nari**�
 - ソースビルド用Swift 6.2以降
 - システムオーディオ取り込みに対応したMac
 - Apple SpeechとApple Translationフレームワークが利用できる環境
-- 任意: OpenAI、Gemini、Meta、Azure Speech、Nari、xAIのプロバイダーキー
+- 任意: OpenAI、Gemini、Meta、Azure Speech、Nari、xAI、Alibaba Cloudのプロバイダーキー
 
 ## ドキュメント
 
@@ -159,4 +160,4 @@ swift test
 
 AirTranslateは[Apache License 2.0](LICENSE)で公開されています。著作権表記は[NOTICE](NOTICE)にあります。
 
-AirTranslateは独立したオープンソースプロジェクトであり、Apple、OpenAI、Google、Meta、Microsoft、Nari、SpaceXAI (xAI)とは提携していません。
+AirTranslateは独立したオープンソースプロジェクトであり、Apple、OpenAI、Google、Meta、Microsoft、Nari、SpaceXAI (xAI)、Alibaba Cloudとは提携していません。

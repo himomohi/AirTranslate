@@ -133,11 +133,14 @@ enum AppText {
         japanese: "話者ラベル オン",
         chineseSimplified: "说话人标签已开启"
     )
-    static let gptMode = localized(
-        english: "GPT Mode",
-        korean: "GPT 모드",
-        japanese: "GPTモード",
-        chineseSimplified: "GPT 模式"
+    static let openAIAudio = localized(
+        english: "OpenAI Audio", korean: "OpenAI 음성", japanese: "OpenAI 音声", chineseSimplified: "OpenAI 语音"
+    )
+    static let openAIAudioDescription = localized(
+        english: "Streams audio to the OpenAI API for translated or source-language captions.",
+        korean: "음성을 OpenAI API로 보내 번역 자막 또는 원문 자막을 만듭니다.",
+        japanese: "音声をOpenAI APIへ送り、翻訳字幕または原文字幕を作成します。",
+        chineseSimplified: "将音频发送至 OpenAI API，生成翻译字幕或原文字幕。"
     )
     static let ready = localized(english: "Ready", korean: "준비됨", japanese: "準備完了", chineseSimplified: "就绪")
     static let stopped = localized(english: "Stopped", korean: "중지됨", japanese: "停止中", chineseSimplified: "已停止")
@@ -239,10 +242,10 @@ enum AppText {
     )
     static let openAIAPIKey = localized(english: "OpenAI API Key", korean: "OpenAI API 키")
     static let openAIAPIKeyDescription = localized(
-        english: "Enter your API key in the app. AirTranslate stores it in macOS Keychain and uses it only for OpenAI translation and GPT transcription.",
-        korean: "앱에서 API 키를 입력하세요. AirTranslate는 키를 macOS Keychain에 저장하고 OpenAI 번역과 GPT 전사에만 사용합니다.",
-        japanese: "アプリでAPIキーを入力してください。AirTranslateはキーをmacOS Keychainに保存し、OpenAI翻訳とGPT文字起こしにのみ使用します。",
-        chineseSimplified: "请在应用中输入 API key。AirTranslate 会将密钥保存在 macOS Keychain 中，并且仅用于 OpenAI 翻译和 GPT 转写。"
+        english: "Enter your API key in the app. AirTranslate stores it in macOS Keychain and uses it only for OpenAI audio translation and transcription.",
+        korean: "앱에서 API 키를 입력하세요. AirTranslate는 키를 macOS Keychain에 저장하고 OpenAI 음성 번역과 원문 전사에만 사용합니다.",
+        japanese: "アプリでAPIキーを入力してください。AirTranslateはキーをmacOS Keychainに保存し、OpenAI音声翻訳と文字起こしにのみ使用します。",
+        chineseSimplified: "请在应用中输入 API key。AirTranslate 会将密钥保存在 macOS Keychain 中，并且仅用于 OpenAI 语音翻译和转写。"
     )
     static let openAIAPIKeyPlaceholder = localized(
         english: "Paste API key",
@@ -408,10 +411,10 @@ enum AppText {
         )
     }
     static let openAIAPIKeyRequiredForGPTMode = localized(
-        english: "Enter an OpenAI API key to use GPT translation or GPT transcription.",
-        korean: "GPT 번역 또는 GPT 전사를 사용하려면 OpenAI API 키를 입력하세요.",
-        japanese: "GPT翻訳またはGPT文字起こしを使うにはOpenAI APIキーを入力してください。",
-        chineseSimplified: "要使用 GPT 翻译或 GPT 转写，请输入 OpenAI API key。"
+        english: "Enter an OpenAI API key to use OpenAI audio translation or transcription.",
+        korean: "OpenAI 음성 번역 또는 원문 전사를 사용하려면 OpenAI API 키를 입력하세요.",
+        japanese: "OpenAI音声翻訳または文字起こしを使うにはOpenAI APIキーを入力してください。",
+        chineseSimplified: "要使用 OpenAI 语音翻译或转写，请输入 OpenAI API key。"
     )
     static let openAIAPIKeyEmpty = localized(
         english: "Enter an OpenAI API key before saving.",
@@ -503,10 +506,7 @@ enum AppText {
         japanese: "原文文字起こしのみ",
         chineseSimplified: "仅原文转写"
     )
-    static let gptModelsDescription = localized(
-        english: "GPT mode streams audio through OpenAI Realtime Translation and shows the returned translated stream.",
-        korean: "GPT 모드는 오디오를 OpenAI Realtime Translation으로 스트리밍하고 반환된 실시간 번역 흐름을 표시합니다."
-    )
+    static let gptModelsDescription = openAIAudioDescription
     static let geminiModelsDescription = localized(
         english: "Gemini Live streams audio directly to Gemini and shows source-only or translated captions for the selected mode.",
         korean: "Gemini Live는 오디오를 Gemini로 직접 스트리밍하고 선택한 모드에 따라 원문 또는 번역 자막을 표시합니다.",
@@ -520,10 +520,10 @@ enum AppText {
         chineseSimplified: "OpenAI 原生输出"
     )
     static let openAINativeOutputDescription = localized(
-        english: "Transcript cleanup is disabled in GPT mode so the realtime API output is shown as-is.",
-        korean: "GPT 모드에서는 실시간 API 결과를 그대로 보여주도록 기록 다듬기를 사용하지 않습니다.",
-        japanese: "GPTモードではリアルタイムAPIの出力をそのまま表示するため、記録の整形は使いません。",
-        chineseSimplified: "GPT 模式会直接显示实时 API 输出，不使用记录润色。"
+        english: "Transcript cleanup is disabled in OpenAI audio so the realtime API output is shown as-is.",
+        korean: "OpenAI 음성에서는 실시간 API 결과를 그대로 보여주도록 기록 다듬기를 사용하지 않습니다.",
+        japanese: "OpenAI音声ではリアルタイムAPIの出力をそのまま表示するため、記録の整形は使いません。",
+        chineseSimplified: "OpenAI 语音会直接显示实时 API 输出，不使用记录润色。"
     )
     static let openAILanguageModeDescription = localized(
         english: "OpenAI detects the input language and translates it to your preferred language.",
@@ -1061,10 +1061,10 @@ enum AppText {
         chineseSimplified: "正在连接 Meta Scribe..."
     )
     static let connectingGPTTranscription = localized(
-        english: "Connecting to GPT transcription...",
-        korean: "GPT 전사에 연결 중...",
-        japanese: "GPT文字起こしに接続中...",
-        chineseSimplified: "正在连接 GPT 转写..."
+        english: "Connecting to OpenAI transcription...",
+        korean: "OpenAI 원문 전사에 연결 중...",
+        japanese: "OpenAI文字起こしに接続中...",
+        chineseSimplified: "正在连接 OpenAI 转写..."
     )
     static func startingCapture(for source: AudioInputSource) -> String {
         switch source {

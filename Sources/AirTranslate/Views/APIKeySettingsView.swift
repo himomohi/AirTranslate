@@ -2,6 +2,7 @@ import SwiftUI
 
 struct APIKeySettingsView: View {
     @Bindable var session: TranslationSessionStore
+    var onExpandProvider: (CredentialProvider) -> Void = { _ in }
     @State private var expandedProvider: CredentialProvider?
     @State private var showsStorageInfo = false
 
@@ -16,16 +17,16 @@ struct APIKeySettingsView: View {
                 Text(CredentialsCopy.providers)
                     .font(AirTranslateDesign.Typography.sectionLabel)
                 Spacer()
-                Text(CredentialsCopy.summary(saved: CredentialProvider.allCases.filter(hasKey).count, total: CredentialProvider.allCases.count))
-                    .font(.caption.monospacedDigit())
+                if isLocked {
+                    InlineHelpIcon(symbol: "lock.fill", help: CredentialsCopy.locked)
+                }
+                InlineHelpIcon(
+                    symbol: "checkmark.shield",
+                    help: CredentialsCopy.summary(saved: CredentialProvider.allCases.filter(hasKey).count, total: CredentialProvider.allCases.count)
+                )
+                storageInfoButton
             }
             .foregroundStyle(.secondary)
-
-            if isLocked {
-                Label(CredentialsCopy.locked, systemImage: "lock")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
 
             VStack(spacing: 0) {
                 ForEach(CredentialProvider.allCases) { provider in
@@ -36,7 +37,7 @@ struct APIKeySettingsView: View {
                         detail: detail(for: provider),
                         consoleURL: provider.consoleURL,
                         hasKey: hasKey(provider),
-                        needsConfiguration: provider == .azure && !validAzureEndpoint,
+                        needsConfiguration: (provider == .azure && !validAzureEndpoint) || (provider == .qwen && !QwenTranslationModel.isValidWorkspaceID(session.qwenWorkspaceID)),
                         isCurrent: activeProvider == provider,
                         isLocked: isLocked,
                         isExpanded: Binding(
@@ -47,7 +48,9 @@ struct APIKeySettingsView: View {
                         removeKey: { try remove(provider) }
                     ) {
                         if provider == .azure { azureConfiguration }
+                        if provider == .qwen { qwenConfiguration }
                     }
+                    .id(provider.rawValue)
                     if provider != CredentialProvider.allCases.last {
                         Rectangle()
                             .fill(AirTranslateDesign.Palette.hairline)
@@ -58,37 +61,63 @@ struct APIKeySettingsView: View {
                 }
             }
             .airTranslateSurface()
-
-            HStack(spacing: 6) {
-                Label(CredentialsCopy.keychain, systemImage: "lock.shield")
-                    .font(.caption)
-                Button { showsStorageInfo.toggle() } label: {
-                    Image(systemName: "info.circle").frame(width: 28, height: 28)
-                }
-                .buttonStyle(.borderless)
-                .help(CredentialsCopy.savedDoesNotVerify)
-                .accessibilityLabel(CredentialsCopy.storageInfo)
-                .popover(isPresented: $showsStorageInfo) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text(CredentialsCopy.keychain).font(.headline)
-                        Text(CredentialsCopy.savedDoesNotVerify).font(.callout)
-                        Text(CredentialsCopy.keyHint).font(.caption).foregroundStyle(.secondary)
-                        HStack {
-                            Spacer()
-                            Button(CredentialsCopy.done) { showsStorageInfo = false }
-                                .keyboardShortcut(.cancelAction)
-                        }
-                    }
-                    .padding(20)
-                    .frame(width: 330)
-                }
-                Spacer(minLength: 0)
-            }
-            .foregroundStyle(.secondary)
         }
-        .onAppear { expandedProvider = activeProvider ?? .openAI }
+        .onAppear {
+            expandedProvider = session.requestedAPIKeyProvider ?? activeProvider ?? .openAI
+            session.requestedAPIKeyProvider = nil
+            if let expandedProvider { onExpandProvider(expandedProvider) }
+        }
+        .onChange(of: session.requestedAPIKeyProvider) { _, provider in
+            guard let provider else { return }
+            expandedProvider = provider
+            session.requestedAPIKeyProvider = nil
+            onExpandProvider(provider)
+        }
+        .onChange(of: expandedProvider) { _, provider in
+            if let provider { onExpandProvider(provider) }
+        }
         .onChange(of: activeProvider) { _, provider in
             if let provider { expandedProvider = provider }
+        }
+    }
+
+    private var storageInfoButton: some View {
+        Button { showsStorageInfo.toggle() } label: {
+            Image(systemName: "lock.shield").frame(width: 28, height: 28)
+        }
+        .buttonStyle(.borderless)
+        .help("\(CredentialsCopy.keychain)\n\(CredentialsCopy.savedDoesNotVerify)")
+        .accessibilityLabel(CredentialsCopy.storageInfo)
+        .popover(isPresented: $showsStorageInfo) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(CredentialsCopy.keychain).font(.headline)
+                Text(CredentialsCopy.savedDoesNotVerify).font(.callout)
+                Text(CredentialsCopy.keyHint).font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Spacer()
+                    Button(CredentialsCopy.done) { showsStorageInfo = false }
+                        .keyboardShortcut(.cancelAction)
+                }
+            }
+            .padding(20)
+            .frame(width: 330)
+        }
+    }
+
+    private var qwenConfiguration: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(QwenCopy.workspaceLabel).font(.caption.weight(.medium))
+            TextField("Workspace ID", text: Binding(
+                get: { session.qwenWorkspaceID },
+                set: { if !isLocked { session.qwenWorkspaceID = $0.trimmingCharacters(in: .whitespacesAndNewlines) } }
+            ))
+            .textFieldStyle(.roundedBorder)
+            .disabled(isLocked)
+            .accessibilityLabel(QwenCopy.workspaceLabel)
+            .accessibilityIdentifier("qwenWorkspaceID")
+            .help(QwenCopy.workspaceHint)
+            Text(QwenCopy.workspaceHint).font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -113,6 +142,7 @@ struct APIKeySettingsView: View {
     }
 
     private var activeProvider: CredentialProvider? {
+        if session.isUsingQwenTranslation { return .qwen }
         if session.isUsingGrokSTT { return .grok }
         if session.isUsingNariSTT { return .nari }
         if session.isUsingAzureMAI { return .azure }
@@ -129,6 +159,7 @@ struct APIKeySettingsView: View {
         case .meta: session.hasMetaAPIKey
         case .azure: session.hasAzureSpeechAPIKey
         case .nari: session.hasNariAPIKey
+        case .qwen: session.hasQwenAPIKey
         case .grok: session.hasGrokAPIKey
         }
     }
@@ -136,24 +167,24 @@ struct APIKeySettingsView: View {
     private func model(for provider: CredentialProvider) -> String {
         switch provider {
         case .openAI:
-            session.isUsingGPTTranscriptionMode
-                ? OpenAIRealtimeTranscriptionModel.gptLiveTranscribe.title
-                : (session.openAITranslationModel.isEnabled ? session.openAITranslationModel.title : OpenAIRealtimeTranslationModel.gptRealtimeTranslate.title)
+            ProcessingEngine.openAI.information(in: session).modelID
         case .gemini: (session.geminiTranslationModel.isEnabled ? session.geminiTranslationModel : session.preferredGeminiModel).title
         case .meta: MetaTranscriptionModel.museVoiceTranscribe.title
         case .azure: "MAI-Transcribe-2"
         case .nari: "Qwen3-ASR"
+        case .qwen: QwenTranslationModel.liveTranslateFlashRealtime.rawValue
         case .grok: GrokTranscriptionModel.voiceTranscribe2.title
         }
     }
 
     private func detail(for provider: CredentialProvider) -> String {
         switch provider {
-        case .openAI: AppText.openAIAPIKeyDescription
+        case .openAI: AppText.openAIAudioDescription
         case .gemini: AppText.geminiAPIKeyDescription
         case .meta: AppText.metaScribeDetail
         case .azure: AzureMAICopy.detail
         case .nari: NariCopy.detail + "\n\n" + NariCopy.modelDetail
+        case .qwen: QwenCopy.detail + "\n\n" + QwenCopy.price
         case .grok: GrokCopy.detail
         }
     }
@@ -166,6 +197,7 @@ struct APIKeySettingsView: View {
         case .meta: try session.saveMetaAPIKey(key)
         case .azure: try session.saveAzureSpeechAPIKey(key)
         case .nari: try session.saveNariAPIKey(key)
+        case .qwen: try session.saveQwenAPIKey(key)
         case .grok: try session.saveGrokAPIKey(key)
         }
     }
@@ -178,13 +210,14 @@ struct APIKeySettingsView: View {
         case .meta: try session.removeMetaAPIKey()
         case .azure: try session.removeAzureSpeechAPIKey()
         case .nari: try session.removeNariAPIKey()
+        case .qwen: try session.removeQwenAPIKey()
         case .grok: try session.removeGrokAPIKey()
         }
     }
 }
 
-private enum CredentialProvider: String, CaseIterable, Identifiable {
-    case openAI, gemini, meta, azure, nari, grok
+enum CredentialProvider: String, CaseIterable, Identifiable {
+    case openAI, gemini, meta, azure, nari, grok, qwen
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -193,6 +226,7 @@ private enum CredentialProvider: String, CaseIterable, Identifiable {
         case .meta: "Meta"
         case .azure: "Azure"
         case .nari: "Nari"
+        case .qwen: QwenCopy.provider
         case .grok: GrokCopy.provider
         }
     }
@@ -203,6 +237,7 @@ private enum CredentialProvider: String, CaseIterable, Identifiable {
         case .meta: "person.2.wave.2"
         case .azure: "cloud"
         case .nari: "waveform.badge.mic"
+        case .qwen: "globe"
         case .grok: "waveform"
         }
     }
@@ -213,6 +248,7 @@ private enum CredentialProvider: String, CaseIterable, Identifiable {
         case .meta: "https://dev.meta.ai"
         case .azure: "https://portal.azure.com"
         case .nari: "https://app.narilabs.com/keys"
+        case .qwen: "https://modelstudio.console.alibabacloud.com"
         case .grok: "https://console.x.ai"
         }
         return URL(string: address)!

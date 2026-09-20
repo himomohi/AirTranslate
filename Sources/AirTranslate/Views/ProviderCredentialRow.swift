@@ -49,18 +49,7 @@ struct ProviderCredentialRow<Configuration: View>: View {
                         Text(name)
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(.primary)
-                        if isCurrent {
-                            Text(CredentialsCopy.inUse)
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(AirTranslateDesign.Palette.accent)
-                        }
                         Spacer(minLength: 4)
-                        Label(status, systemImage: statusSymbol)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(hasKey && !needsConfiguration ? AirTranslateDesign.Palette.live : .secondary)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 5)
-                            .background(AirTranslateDesign.Palette.raisedHover, in: Capsule())
                         Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(.secondary)
@@ -72,7 +61,14 @@ struct ProviderCredentialRow<Configuration: View>: View {
                 .buttonStyle(.plain)
                 .help(CredentialsCopy.edit(name))
                 .accessibilityLabel(CredentialsCopy.edit(name))
-                .accessibilityValue("\(status), \(isExpanded ? CredentialsCopy.expanded : CredentialsCopy.collapsed)")
+                .accessibilityValue("\(isCurrent ? CredentialsCopy.inUse + ", " : "")\(status), \(isExpanded ? CredentialsCopy.expanded : CredentialsCopy.collapsed)")
+
+                if isCurrent {
+                    InlineHelpIcon(symbol: "checkmark.seal.fill", help: "\(name) · \(CredentialsCopy.inUse)",
+                                   tint: AirTranslateDesign.Palette.accent)
+                }
+                InlineHelpIcon(symbol: statusSymbol, help: "\(name) · \(status)",
+                               tint: hasKey && !needsConfiguration ? AirTranslateDesign.Palette.live : AirTranslateDesign.Palette.textSecondary)
 
                 Button { showsDetails.toggle() } label: {
                     Image(systemName: "info.circle")

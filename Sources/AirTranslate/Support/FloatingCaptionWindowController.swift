@@ -13,7 +13,8 @@ final class FloatingCaptionWindowController: NSObject, NSWindowDelegate {
         isOpen ? close() : open(session: session)
     }
 
-    static func open(session: TranslationSessionStore) {
+    static func open(session: TranslationSessionStore, preview: Bool = false) {
+        session.isPreviewingFloatingCaptions = preview && !session.isRunning && !session.isStarting
         shared.open(session: session)
     }
 
@@ -25,6 +26,17 @@ final class FloatingCaptionWindowController: NSObject, NSWindowDelegate {
         shared.resetSize()
     }
 
+    static func setWidth(_ width: CGFloat) {
+        guard width.isFinite, let panel = shared.window else { return }
+        var frame = panel.frame
+        frame.origin.x = frame.midX - width / 2
+        frame.size.width = width
+        if let visibleFrame = (panel.screen ?? NSScreen.main)?.visibleFrame {
+            frame = clampedFrame(frame, within: visibleFrame, minimumSize: panel.minSize)
+        }
+        panel.setFrame(frame, display: true)
+    }
+
     private static let shared = FloatingCaptionWindowController()
     private static let frameDefaultsKey = "floatingCaptionWindowFrame"
     nonisolated static let defaultWindowSize = NSSize(width: 720, height: 170)
@@ -32,8 +44,10 @@ final class FloatingCaptionWindowController: NSObject, NSWindowDelegate {
     nonisolated static let screenInset: CGFloat = 16
 
     private var window: NSPanel?
+    private weak var currentSession: TranslationSessionStore?
 
     private func open(session: TranslationSessionStore) {
+        currentSession = session
         let isFirstOpen = window == nil
         let panel = window ?? makeWindow(session: session)
         configure(panel, session: session)
@@ -48,6 +62,7 @@ final class FloatingCaptionWindowController: NSObject, NSWindowDelegate {
     }
 
     private func close() {
+        currentSession?.isPreviewingFloatingCaptions = false
         guard let panel = window else { return }
         persistFrame(of: panel)
         panel.orderOut(nil)
@@ -56,6 +71,7 @@ final class FloatingCaptionWindowController: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         guard notification.object as? NSWindow === window else { return }
+        currentSession?.isPreviewingFloatingCaptions = false
         if let panel = window {
             persistFrame(of: panel)
         }

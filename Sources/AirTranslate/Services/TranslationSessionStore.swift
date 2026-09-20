@@ -61,7 +61,7 @@ enum CaptureStartRecoveryAction: Equatable {
 
     static func forReadiness(_ readiness: StartReadinessAssessment) -> Self? {
         switch readiness.issue {
-        case .openAIAPIKeyMissing, .geminiAPIKeyMissing, .metaAPIKeyMissing, .azureConfigurationMissing, .nariAPIKeyMissing, .grokAPIKeyMissing:
+        case .openAIAPIKeyMissing, .geminiAPIKeyMissing, .metaAPIKeyMissing, .azureConfigurationMissing, .nariAPIKeyMissing, .grokAPIKeyMissing, .qwenConfigurationMissing:
             .apiKeys
         case .nariLegacyFreeModelSelected:
             .generalSettings
@@ -80,6 +80,7 @@ private enum SettingsKey {
     static let openAITranscriptionModelID = "openAITranscriptionModelID"
     static let openAITranslationModelID = "openAITranslationModelID"
     static let geminiTranslationModelID = "geminiTranslationModelID"
+    static let preferredOpenAIOutputMode = "preferredOpenAIOutputMode"
     static let preferredGeminiModelID = "preferredGeminiModelID"
     static let metaTranscriptionModelID = "metaTranscriptionModelID"
     static let nariTranscriptionModelID = "nariTranscriptionModelID"
@@ -103,6 +104,7 @@ private enum SettingsKey {
     static let floatingCaptionTextColorHex = "floatingCaptionTextColorHex"
     static let floatingCaptionBackgroundColorHex = "floatingCaptionBackgroundColorHex"
     static let floatingCaptionBackgroundOpacity = "floatingCaptionBackgroundOpacity"
+    static let floatingCaptionStyle = "floatingCaptionStyle"
     static let paragraphBreakSilenceInterval = "paragraphBreakSilenceInterval"
     static let savedTranscriptContentMode = "savedTranscriptContentMode"
     static let sessionDurationMode = "sessionDurationMode"
@@ -150,6 +152,9 @@ struct StartConfiguration: Equatable {
     let metaTranscriptionModel: MetaTranscriptionModel
     let nariTranscriptionModel: NariTranscriptionModel
     let grokTranscriptionModel: GrokTranscriptionModel
+    let qwenTranslationModel: QwenTranslationModel
+    let qwenWorkspaceID: String
+    let qwenAudioOutputEnabled: Bool
     let usesNariSourceAutoDetection: Bool
     let usesGrokSourceAutoDetection: Bool
     let azureMAIEnabled: Bool
@@ -167,6 +172,9 @@ struct StartConfiguration: Equatable {
         openAITranslationModel: OpenAIRealtimeTranslationModel,
         geminiTranslationModel: GeminiTranslationModel,
         metaTranscriptionModel: MetaTranscriptionModel = .off,
+        qwenTranslationModel: QwenTranslationModel = .off,
+        qwenWorkspaceID: String = "",
+        qwenAudioOutputEnabled: Bool = false,
         grokTranscriptionModel: GrokTranscriptionModel = .off,
         usesGrokSourceAutoDetection: Bool = true,
         nariTranscriptionModel: NariTranscriptionModel = .off,
@@ -185,6 +193,9 @@ struct StartConfiguration: Equatable {
         self.openAITranslationModel = openAITranslationModel
         self.geminiTranslationModel = geminiTranslationModel
         self.metaTranscriptionModel = metaTranscriptionModel
+        self.qwenTranslationModel = qwenTranslationModel
+        self.qwenWorkspaceID = qwenWorkspaceID
+        self.qwenAudioOutputEnabled = qwenAudioOutputEnabled
         self.grokTranscriptionModel = grokTranscriptionModel
         self.usesGrokSourceAutoDetection = usesGrokSourceAutoDetection
         self.nariTranscriptionModel = nariTranscriptionModel
@@ -336,6 +347,7 @@ private final class AudioSamplePipelineRegistry: @unchecked Sendable {
         let metaVoiceTranscriber: MetaVoiceTranscribeService
         let grokTranscriber: GrokRealtimeTranscriber
         let nariTranscriber: NariRealtimeTranscriber
+        let qwenTranslator: QwenRealtimeTranslationService
     }
 
     private let lock = NSLock()
@@ -349,7 +361,8 @@ private final class AudioSamplePipelineRegistry: @unchecked Sendable {
         metaVoiceTranscriber: MetaVoiceTranscribeService,
         azureMAITranscriber: AzureMAITranscriber,
         grokTranscriber: GrokRealtimeTranscriber,
-        nariTranscriber: NariRealtimeTranscriber
+        nariTranscriber: NariRealtimeTranscriber,
+        qwenTranslator: QwenRealtimeTranslationService
     ) {
         lock.lock()
         pipeline = Pipeline(
@@ -360,7 +373,8 @@ private final class AudioSamplePipelineRegistry: @unchecked Sendable {
             azureMAITranscriber: azureMAITranscriber,
             metaVoiceTranscriber: metaVoiceTranscriber,
             grokTranscriber: grokTranscriber,
-            nariTranscriber: nariTranscriber
+            nariTranscriber: nariTranscriber,
+            qwenTranslator: qwenTranslator
         )
         lock.unlock()
     }
@@ -385,6 +399,7 @@ private final class AudioSamplePipelineRegistry: @unchecked Sendable {
         pipeline.azureMAITranscriber.append(sampleBuffer)
         pipeline.grokTranscriber.append(sampleBuffer)
         pipeline.nariTranscriber.append(sampleBuffer)
+        pipeline.qwenTranslator.append(sampleBuffer)
     }
 }
 
@@ -539,6 +554,7 @@ final class TranslationSessionStore {
     var nariTranscriptionModel = NariTranscriptionModel.off {
         didSet {
             if nariTranscriptionModel.isEnabled {
+                qwenTranslationModel = .off
                 grokTranscriptionModel = .off
                 isUsingAzureMAI = false
                 openAITranscriptionModel = .off
@@ -572,10 +588,53 @@ final class TranslationSessionStore {
     private var nariFinalizedItemIDs: Set<String> = []
     private var nariItemOrder: [String] = []
     private var nariSavedTranscriptText = ""
+    var hasQwenAPIKey = QwenAPIKeyStore.hasAPIKey()
+    var qwenWorkspaceID = "" {
+        didSet { persistSelectedSettings() }
+    }
+    var qwenTranslationModel = QwenTranslationModel.off {
+        didSet {
+            if qwenTranslationModel.isEnabled {
+                grokTranscriptionModel = .off
+                nariTranscriptionModel = .off
+                isUsingAzureMAI = false
+                openAITranscriptionModel = .off
+                openAITranslationModel = .off
+                geminiTranslationModel = .off
+                metaTranscriptionModel = .off
+                selectedModel = .appleSystem
+                isTranscriptLintEnabled = false
+                restoreFloatingCaptionDisplayModeAfterTranscribeOnly()
+            }
+            persistSelectedSettings()
+            resetTranslationCache()
+            resetDubbingProgress()
+            refreshModelAvailability()
+            if oldValue.isEnabled, !qwenTranslationModel.isEnabled,
+               !isRunning, !isStarting, captureStartFailureMessage == QwenCopy.configurationRequired {
+                dismissCaptureStartFailure()
+                if statusMessage == QwenCopy.configurationRequired { statusMessage = AppText.ready }
+            }
+        }
+    }
+    var isFinishingQwenTranslation = false
+    var isReconnectingQwenTranslation = false
+    private var qwenVoiceOutputEnabled = false
+    @ObservationIgnored private var qwenTranslator = QwenRealtimeTranslationService()
+    @ObservationIgnored private var qwenTransitionTask: Task<Void, Never>?
+    private var qwenSourceTranscript = QwenCaptionTranscript()
+    private var qwenTranslationTranscript = QwenCaptionTranscript()
+
+    var isUsingQwenTranslation: Bool { qwenTranslationModel.isEnabled }
+    var hasQwenConfiguration: Bool {
+        hasQwenAPIKey && QwenTranslationModel.isValidWorkspaceID(qwenWorkspaceID)
+    }
+
     var hasGrokAPIKey = GrokAPIKeyStore.hasAPIKey()
     var grokTranscriptionModel = GrokTranscriptionModel.off {
         didSet {
             if grokTranscriptionModel.isEnabled {
+                qwenTranslationModel = .off
                 nariTranscriptionModel = .off
                 isUsingAzureMAI = false
                 openAITranscriptionModel = .off
@@ -617,6 +676,7 @@ final class TranslationSessionStore {
     var isUsingAzureMAI = false {
         didSet {
             if isUsingAzureMAI {
+                qwenTranslationModel = .off
                 grokTranscriptionModel = .off
                 nariTranscriptionModel = .off
                 selectedModel = .appleSystem
@@ -636,9 +696,19 @@ final class TranslationSessionStore {
     private var azureSavedTranscriptText = ""
     var hasMetaAPIKey = MetaAPIKeyStore.hasAPIKey()
     var requestedSettingsCategoryID: String?
+    var requestedAPIKeyProvider: CredentialProvider?
+    private(set) var preferredOpenAIOutputMode = LiveOutputMode.translation {
+        didSet { persistSelectedSettings() }
+    }
+
+    var openAIOutputMode: LiveOutputMode {
+        isUsingOpenAIRealtime ? liveOutputMode : preferredOpenAIOutputMode
+    }
+
     var openAITranscriptionModel = OpenAIRealtimeTranscriptionModel.off {
         didSet {
             if openAITranscriptionModel.isEnabled {
+                qwenTranslationModel = .off
                 grokTranscriptionModel = .off
                 nariTranscriptionModel = .off
                 isUsingAzureMAI = false
@@ -654,6 +724,7 @@ final class TranslationSessionStore {
     var openAITranslationModel = OpenAIRealtimeTranslationModel.off {
         didSet {
             if openAITranslationModel.isEnabled {
+                qwenTranslationModel = .off
                 grokTranscriptionModel = .off
                 nariTranscriptionModel = .off
                 isUsingAzureMAI = false
@@ -674,6 +745,7 @@ final class TranslationSessionStore {
     var geminiTranslationModel = GeminiTranslationModel.off {
         didSet {
             if geminiTranslationModel.isEnabled {
+                qwenTranslationModel = .off
                 grokTranscriptionModel = .off
                 nariTranscriptionModel = .off
                 isUsingAzureMAI = false
@@ -699,6 +771,7 @@ final class TranslationSessionStore {
     var metaTranscriptionModel = MetaTranscriptionModel.off {
         didSet {
             if metaTranscriptionModel.isEnabled {
+                qwenTranslationModel = .off
                 grokTranscriptionModel = .off
                 nariTranscriptionModel = .off
                 isUsingAzureMAI = false
@@ -767,6 +840,10 @@ final class TranslationSessionStore {
     var floatingCaptionTextAlignment = FloatingCaptionTextAlignment.center {
         didSet { persistSelectedSettings() }
     }
+    var floatingCaptionStyle = FloatingCaptionStyle.standard {
+        didSet { persistSelectedSettings() }
+    }
+    var isPreviewingFloatingCaptions = false
     var floatingCaptionTextColorHex = FloatingCaptionAppearance.defaultTextColorHex {
         didSet { persistSelectedSettings() }
     }
@@ -1042,6 +1119,7 @@ final class TranslationSessionStore {
             && !isUsingAzureMAI
             && !isUsingNariSTT
             && !isUsingGrokSTT
+            && !isUsingQwenTranslation
     }
 
     var isUsingProviderTranscriptionMode: Bool {
@@ -1049,7 +1127,7 @@ final class TranslationSessionStore {
     }
 
     var isUsingProviderRealtimeTranslation: Bool {
-        isUsingOpenAIRealtimeTranslation || isUsingGeminiTranslation
+        isUsingQwenTranslation || isUsingOpenAIRealtimeTranslation || isUsingGeminiTranslation
     }
 
     var isTranscribeOnlyMode: Bool {
@@ -1143,6 +1221,7 @@ final class TranslationSessionStore {
     }
 
     func start() {
+        isPreviewingFloatingCaptions = false
         guard !isRunning, !isStarting else { return }
 
         let readiness = startReadinessAssessment()
@@ -1192,6 +1271,8 @@ final class TranslationSessionStore {
                     statusMessage = AppText.connectingGeminiLiveTranslation
                 } else if configuration.metaTranscriptionModel.isEnabled {
                     statusMessage = AppText.connectingMetaScribe
+                } else if configuration.qwenTranslationModel.isEnabled {
+                    statusMessage = QwenCopy.connecting
                 } else if configuration.grokTranscriptionModel.isEnabled {
                     statusMessage = GrokCopy.connecting
                 } else if configuration.nariTranscriptionModel.isEnabled {
@@ -1212,7 +1293,8 @@ final class TranslationSessionStore {
                     metaVoiceTranscriber: metaVoiceTranscriber,
                     azureMAITranscriber: azureMAITranscriber,
                     grokTranscriber: grokTranscriber,
-                    nariTranscriber: nariTranscriber
+                    nariTranscriber: nariTranscriber,
+                    qwenTranslator: qwenTranslator
                 )
 
                 statusMessage = AppText.startingCapture(for: configuration.audioInputSource)
@@ -1271,6 +1353,10 @@ final class TranslationSessionStore {
 
     func stop() {
         guard isRunning || isStarting else { return }
+        if isUsingQwenTranslation, isRunning {
+            finishQwenCapture()
+            return
+        }
         if isUsingGrokSTT, isRunning {
             finishGrokCapture()
             return
@@ -1302,6 +1388,8 @@ final class TranslationSessionStore {
     }
 
     private func finishPipeline(statusOverride: String?) {
+        isFinishingQwenTranslation = false
+        isReconnectingQwenTranslation = false
         isFinishingGrokSTT = false
         isReconnectingGrokSTT = false
         isFinishingNariSTT = false
@@ -1421,6 +1509,9 @@ final class TranslationSessionStore {
             openAITranslationModel: openAITranslationModel,
             geminiTranslationModel: geminiTranslationModel,
             metaTranscriptionModel: metaTranscriptionModel,
+            qwenTranslationModel: qwenTranslationModel,
+            qwenWorkspaceID: qwenWorkspaceID,
+            qwenAudioOutputEnabled: isUsingQwenTranslation && isDubbingEnabled,
             grokTranscriptionModel: grokTranscriptionModel,
             usesGrokSourceAutoDetection: isGrokSourceAutoDetectionEnabled,
             nariTranscriptionModel: nariTranscriptionModel,
@@ -1471,6 +1562,10 @@ final class TranslationSessionStore {
     }
 
     private func handleSystemAudioCaptureStoppedByUser(generation: UInt64) {
+        if isUsingQwenTranslation, isRunning, pipelineLifecycle.acceptsSample(generation: generation) {
+            finishQwenCapture()
+            return
+        }
         if isUsingGrokSTT, isRunning, pipelineLifecycle.acceptsSample(generation: generation) {
             finishGrokCapture()
             return
@@ -1514,6 +1609,9 @@ final class TranslationSessionStore {
     }
 
     func startReadinessAssessment() -> StartReadinessAssessment {
+        if isUsingQwenTranslation, !hasQwenConfiguration {
+            return .init(issue: .qwenConfigurationMissing)
+        }
         if isUsingGrokSTT {
             if !hasGrokAPIKey { return .init(issue: .grokAPIKeyMissing) }
             if !isGrokSourceAutoDetectionEnabled, GrokTranscriptionModel.languageCode(for: sourceLanguage) == nil {
@@ -1547,6 +1645,7 @@ final class TranslationSessionStore {
     }
 
     private var requiredLocalModelForStart: IntelligenceModel? {
+        if isUsingQwenTranslation { return nil }
         if isUsingNariSTT || isUsingGrokSTT {
             return isTranscribeOnlyMode ? nil : .appleOnDevice
         }
@@ -1577,6 +1676,8 @@ final class TranslationSessionStore {
             return AzureMAICopy.configurationRequired
         case .metaAPIKeyMissing:
             return AppText.metaAPIKeyMissing
+        case .qwenConfigurationMissing:
+            return QwenCopy.configurationRequired
         case .grokAPIKeyMissing:
             return GrokCopy.configurationRequired
         case .grokLanguageUnsupported:
@@ -1615,8 +1716,12 @@ final class TranslationSessionStore {
     }
 
     func pause() {
-        guard isRunning, !isPaused, !isFinishingAzureMAI, !isFinishingNariSTT, !isFinishingGrokSTT else { return }
+        guard isRunning, !isPaused, !isFinishingAzureMAI, !isFinishingNariSTT, !isFinishingGrokSTT, !isFinishingQwenTranslation, !isReconnectingQwenTranslation else { return }
 
+        if isUsingQwenTranslation {
+            pauseQwenCapture()
+            return
+        }
         if isUsingGrokSTT {
             pauseGrokCapture()
             return
@@ -1640,7 +1745,11 @@ final class TranslationSessionStore {
     }
 
     func resume() {
-        guard isRunning, isPaused, !isFinishingAzureMAI, !isFinishingNariSTT, !isReconnectingNariSTT, !isFinishingGrokSTT, !isReconnectingGrokSTT else { return }
+        guard isRunning, isPaused, !isFinishingAzureMAI, !isFinishingNariSTT, !isReconnectingNariSTT, !isFinishingGrokSTT, !isReconnectingGrokSTT, !isFinishingQwenTranslation, !isReconnectingQwenTranslation else { return }
+        if isUsingQwenTranslation {
+            resumeQwenCapture()
+            return
+        }
         if isUsingGrokSTT {
             resumeGrokCapture()
             return
@@ -1791,6 +1900,7 @@ final class TranslationSessionStore {
     }
 
     var languageSummary: String {
+        if isUsingQwenTranslation { return AppText.openAILanguageSummary(target: targetLanguage.localizedTitle) }
         if isUsingGeminiTranscriptionMode || (isUsingNariSTT && isNariSourceAutoDetectionEnabled) || (isUsingGrokSTT && isGrokSourceAutoDetectionEnabled) {
             return AppText.localized(
                 english: "Automatic language detection",
@@ -1817,6 +1927,7 @@ final class TranslationSessionStore {
             && !openAITranscriptionModel.isEnabled
             && !openAITranslationModel.isEnabled
             && !isUsingGeminiTranslation
+            && !isUsingQwenTranslation
     }
 
     var isAppleSourceAutoDetectionAvailable: Bool {
@@ -1847,7 +1958,7 @@ final class TranslationSessionStore {
     func useQuickTargetLanguage(_ language: LanguageOption) {
         guard !isRunning else { return }
         guard !isTranscribeOnlyMode else { return }
-        guard language != sourceLanguage else {
+        guard isUsingQwenTranslation || language != sourceLanguage else {
             showToast(AppText.sameLanguageTranslationUnavailable)
             return
         }
@@ -1864,15 +1975,18 @@ final class TranslationSessionStore {
         )
     }
 
-    func requestAPIKeySettings() {
+    func requestAPIKeySettings(provider: CredentialProvider? = nil) {
+        requestedAPIKeyProvider = provider
         requestedSettingsCategoryID = "apiKeys"
     }
 
     func requestGeneralSettings() {
+        requestedAPIKeyProvider = nil
         requestedSettingsCategoryID = "general"
     }
 
     func useAppleDefaultMode() {
+        qwenTranslationModel = .off
         grokTranscriptionModel = .off
         nariTranscriptionModel = .off
         isUsingAzureMAI = false
@@ -1886,11 +2000,29 @@ final class TranslationSessionStore {
         restoreFloatingCaptionDisplayModeAfterTranscribeOnly()
     }
 
+    // 제공자는 OpenAI로 유지하고 출력 목적에 맞는 기존 음성 모델을 선택한다.
+    func useOpenAIMode(_ mode: LiveOutputMode? = nil) {
+        guard !isRunning, !isStarting else { return }
+        let mode = mode ?? openAIOutputMode
+        let wasUsingOpenAI = isUsingOpenAIRealtime
+        if preferredOpenAIOutputMode != mode {
+            preferredOpenAIOutputMode = mode
+        }
+        guard !wasUsingOpenAI || liveOutputMode != mode else { return }
+        switch mode {
+        case .translation:
+            useGPTRealtimeMode(model: .gptRealtimeTranslate, preservePreferences: wasUsingOpenAI)
+        case .transcription:
+            useGPTTranscriptionMode()
+        }
+    }
+
     func useGPTRealtimeMode() {
         useGPTRealtimeMode(model: openAITranslationModel.isEnabled ? openAITranslationModel : .gptRealtimeTranslate)
     }
 
-    func useGPTRealtimeMode(model: OpenAIRealtimeTranslationModel) {
+    func useGPTRealtimeMode(model: OpenAIRealtimeTranslationModel, preservePreferences: Bool = false) {
+        preferredOpenAIOutputMode = .translation
         let selectedOpenAIModel = model.isSupportedLiveTranslationModel ? model : .gptRealtimeTranslate
         clearTranscribeOnlyNotice(resetActivation: true)
         selectedModel = .appleSystem
@@ -1901,12 +2033,17 @@ final class TranslationSessionStore {
         if openAITranslationModel != selectedOpenAIModel {
             openAITranslationModel = selectedOpenAIModel
         }
-        applyProviderVoiceOutputDefault()
+        if preservePreferences {
+            applyRestoredVoiceOutputPreference()
+        } else {
+            applyProviderVoiceOutputDefault()
+        }
         restoreFloatingCaptionDisplayModeAfterTranscribeOnly()
-        usePreferredLanguageForOpenAIOutput()
+        if !preservePreferences { usePreferredLanguageForOpenAIOutput() }
     }
 
     func useGPTTranscriptionMode() {
+        preferredOpenAIOutputMode = .transcription
         if floatingCaptionDisplayModeBeforeTranscribeOnly == nil {
             floatingCaptionDisplayModeBeforeTranscribeOnly = floatingCaptionDisplayMode
         }
@@ -1984,6 +2121,25 @@ final class TranslationSessionStore {
         hasNariAPIKey = false
     }
 
+    func useQwenTranslationMode() {
+        guard !isRunning, !isStarting else { return }
+        qwenTranslationModel = .liveTranslateFlashRealtime
+        clearTranscribeOnlyNotice(resetActivation: true)
+        applyVoiceOutputDefault(qwenVoiceOutputEnabled)
+    }
+
+    func saveQwenAPIKey(_ key: String) throws {
+        guard !isRunning, !isStarting else { return }
+        try QwenAPIKeyStore.saveAPIKey(key)
+        hasQwenAPIKey = true
+    }
+
+    func removeQwenAPIKey() throws {
+        guard !isRunning, !isStarting else { return }
+        try QwenAPIKeyStore.deleteAPIKey()
+        hasQwenAPIKey = false
+    }
+
     func useGrokSTTMode() {
         guard !isRunning, !isStarting else { return }
         selectedModel = .appleSpeechOnly
@@ -2031,6 +2187,11 @@ final class TranslationSessionStore {
     }
 
     func useLiveOutputMode(_ mode: LiveOutputMode) {
+        guard !isRunning, !isStarting else { return }
+        if isUsingOpenAIRealtime {
+            useOpenAIMode(mode)
+            return
+        }
         switch mode {
         case .translation:
             useTranslationMode()
@@ -2058,6 +2219,7 @@ final class TranslationSessionStore {
     }
 
     func useTranscribeOnlyMode() {
+        qwenTranslationModel = .off
         isUsingAzureMAI = false
         if floatingCaptionDisplayModeBeforeTranscribeOnly == nil {
             floatingCaptionDisplayModeBeforeTranscribeOnly = floatingCaptionDisplayMode
@@ -2082,6 +2244,9 @@ final class TranslationSessionStore {
 
     private func syncLiveOutputModeWithLanguagePair() {
         guard !isRestoringSelectedSettings, !isUpdatingLanguagePair, !isRunning else { return }
+
+        // OpenAI 전사는 번역 대상 언어를 숨길 뿐, 다음 번역에 쓸 선택을 지우지 않는다.
+        guard !isUsingGPTTranscriptionMode else { return }
 
         if selectedModel == .appleSpeechOnly {
             if targetLanguage != sourceLanguage {
@@ -2124,7 +2289,7 @@ final class TranslationSessionStore {
     }
 
     private func applyRestoredVoiceOutputPreference() {
-        applyVoiceOutputDefault(isUsingProviderRealtimeTranslation ? providerVoiceOutputEnabled : appleVoiceOutputEnabled)
+        applyVoiceOutputDefault(isUsingQwenTranslation ? qwenVoiceOutputEnabled : (isUsingProviderRealtimeTranslation ? providerVoiceOutputEnabled : appleVoiceOutputEnabled))
     }
 
     private func applyVoiceOutputDefault(_ isEnabled: Bool) {
@@ -2134,6 +2299,10 @@ final class TranslationSessionStore {
     }
 
     private func rememberVoiceOutputPreference(_ isEnabled: Bool) {
+        if isUsingQwenTranslation {
+            qwenVoiceOutputEnabled = isEnabled
+            return
+        }
         if isUsingProviderRealtimeTranslation {
             providerVoiceOutputEnabled = isEnabled
         } else if !isTranscribeOnlyMode {
@@ -2384,19 +2553,19 @@ final class TranslationSessionStore {
     }
 
     var floatingCaptionPrimaryFont: Font {
-        .system(size: floatingCaptionPrimaryPointSize, weight: .semibold)
+        .system(size: floatingCaptionPrimaryPointSize, weight: floatingCaptionStyle.fontWeight.primary, design: floatingCaptionStyle.fontFamily.design)
     }
 
     var floatingCaptionSecondaryFont: Font {
-        .system(size: floatingCaptionSecondaryPointSize, weight: .medium)
+        .system(size: floatingCaptionSecondaryPointSize, weight: floatingCaptionStyle.fontWeight.secondary, design: floatingCaptionStyle.fontFamily.design)
     }
 
     var floatingCaptionPrimaryLineHeight: CGFloat {
-        floatingCaptionPrimaryPointSize * 1.24
+        floatingCaptionPrimaryPointSize * floatingCaptionStyle.fontFamily.lineHeightScale
     }
 
     var floatingCaptionSecondaryLineHeight: CGFloat {
-        floatingCaptionSecondaryPointSize * 1.28
+        floatingCaptionSecondaryPointSize * max(1.28, floatingCaptionStyle.fontFamily.lineHeightScale)
     }
 
     var floatingCaptionEffectiveLineCount: Int {
@@ -2406,15 +2575,16 @@ final class TranslationSessionStore {
         else { return configured }
 
         let usesTwoBlocks = floatingCaptionDisplayMode == .originalAndTranslation
-            || !(floatingNoticeText?.isEmpty ?? true)
         if usesTwoBlocks {
             for candidate in stride(from: configured, through: 1, by: -1) {
                 let height = FloatingCaptionAppearance.blockHeight(
                     lineHeight: floatingCaptionPrimaryLineHeight,
-                    lineCount: candidate
+                    lineCount: candidate,
+                    lineSpacing: floatingCaptionStyle.lineSpacing.points
                 ) + FloatingCaptionAppearance.blockHeight(
                     lineHeight: floatingCaptionSecondaryLineHeight,
-                    lineCount: candidate
+                    lineCount: candidate,
+                    lineSpacing: floatingCaptionStyle.lineSpacing.points
                 ) + FloatingCaptionAppearance.captionBlockSpacing
                 if height <= floatingCaptionMeasuredContentHeight {
                     return candidate
@@ -2424,14 +2594,13 @@ final class TranslationSessionStore {
         }
 
         let lineHeight = floatingCaptionPrimaryLineHeight
-        let spacing = FloatingCaptionAppearance.captionLineSpacing
+        let spacing = floatingCaptionStyle.lineSpacing.points
         let possibleLines = Int(floor((floatingCaptionMeasuredContentHeight + spacing) / (lineHeight + spacing)))
         return min(configured, max(1, possibleLines))
     }
 
     var floatingCaptionMinimumWindowHeight: CGFloat {
         let usesTwoBlocks = floatingCaptionDisplayMode == .originalAndTranslation
-            || !(floatingNoticeText?.isEmpty ?? true)
         let textHeight = usesTwoBlocks
             ? FloatingCaptionAppearance.blockHeight(lineHeight: floatingCaptionPrimaryLineHeight, lineCount: 1)
                 + FloatingCaptionAppearance.blockHeight(lineHeight: floatingCaptionSecondaryLineHeight, lineCount: 1)
@@ -2459,6 +2628,7 @@ final class TranslationSessionStore {
     }
 
     func resetFloatingCaptionAppearance() {
+        floatingCaptionStyle = .standard
         floatingCaptionTextSize = .medium
         floatingCaptionLineCount = .three
         floatingCaptionStability = .balanced
@@ -2472,6 +2642,35 @@ final class TranslationSessionStore {
     func selectFloatingCaptionTextSizePreset(_ size: FloatingCaptionTextSize) {
         floatingCaptionTextSize = size
         floatingCaptionCustomPointSize = FloatingCaptionAppearance.defaultCustomPointSize
+    }
+
+    var selectedFloatingCaptionPreset: FloatingCaptionPreset? {
+        FloatingCaptionPreset.allCases.first {
+            floatingCaptionStyle.captionTextMatches($0.style) && floatingCaptionTextSize == $0.textSize
+                && floatingCaptionCustomPointSize == 0 && floatingCaptionLineCount == $0.lineCount
+                && floatingCaptionTextAlignment == $0.alignment
+                && floatingCaptionTextColorHex.uppercased() == $0.textColorHex
+        }
+    }
+
+    func applyFloatingCaptionPreset(_ preset: FloatingCaptionPreset) {
+        let wasRestoring = isRestoringSelectedSettings
+        isRestoringSelectedSettings = true
+        defer {
+            isRestoringSelectedSettings = wasRestoring
+            persistSelectedSettings()
+        }
+        let retainedBackgroundShape = floatingCaptionStyle.backgroundShape
+        floatingCaptionStyle = preset.style
+        floatingCaptionStyle.backgroundShape = retainedBackgroundShape
+        selectFloatingCaptionTextSizePreset(preset.textSize)
+        floatingCaptionLineCount = preset.lineCount
+        floatingCaptionTextAlignment = preset.alignment
+        floatingCaptionTextColorHex = preset.textColorHex
+    }
+
+    func requestFloatingCaptionSettings() {
+        requestedSettingsCategoryID = "floatingCaptions"
     }
 
     var effectiveSavedTranscriptContentMode: SavedTranscriptContentMode {
@@ -2738,6 +2937,11 @@ final class TranslationSessionStore {
                 configuration: configuration,
                 generation: generation
             )
+        } else if configuration.qwenTranslationModel.isEnabled {
+            qwenTranslator = QwenRealtimeTranslationService()
+            configureQwenCallbacks(service: qwenTranslator, generation: generation)
+            try await qwenTranslator.start(workspaceID: configuration.qwenWorkspaceID,
+                targetLanguage: configuration.targetLanguage, audioOutputEnabled: configuration.qwenAudioOutputEnabled)
         } else if configuration.nariTranscriptionModel.isEnabled {
             nariTranscriber = NariRealtimeTranscriber()
             configureNariCallbacks(service: nariTranscriber, generation: generation)
@@ -2797,6 +3001,7 @@ final class TranslationSessionStore {
             && !configuration.geminiTranslationModel.isEnabled
             && !configuration.metaTranscriptionModel.isEnabled
             && !configuration.nariTranscriptionModel.isEnabled
+            && !configuration.qwenTranslationModel.isEnabled
             && !configuration.grokTranscriptionModel.isEnabled
             && !configuration.azureMAIEnabled
             && !configuration.openAITranslationModel.usesRealtimeAudioTranslation
@@ -2861,6 +3066,13 @@ final class TranslationSessionStore {
     }
 
     private func stopCaptioners(openAITranscriberAlreadyStopped: Bool = false) {
+        qwenTransitionTask?.cancel()
+        qwenTransitionTask = nil
+        qwenTranslator.onSourceTranscript = nil
+        qwenTranslator.onTranslation = nil
+        qwenTranslator.onAudio = nil
+        qwenTranslator.onError = nil
+        qwenTranslator.stop()
         grokTransitionTask?.cancel()
         grokTransitionTask = nil
         nariTransitionTask?.cancel()
@@ -3096,6 +3308,7 @@ final class TranslationSessionStore {
         azureMAITranscriber.setPaused(isPaused)
         grokTranscriber.setPaused(isPaused)
         nariTranscriber.setPaused(isPaused)
+        qwenTranslator.setPaused(isPaused)
     }
 
     private func configureNariCallbacks(service: NariRealtimeTranscriber, generation: UInt64) {
@@ -3163,7 +3376,8 @@ final class TranslationSessionStore {
                     openAITranscriber: openAITranscriber, geminiLiveTranslator: geminiLiveTranslator,
                     metaVoiceTranscriber: metaVoiceTranscriber, azureMAITranscriber: azureMAITranscriber,
                     grokTranscriber: grokTranscriber,
-                    nariTranscriber: service
+                    nariTranscriber: service,
+                    qwenTranslator: qwenTranslator
                 )
                 isReconnectingNariSTT = false
                 isPaused = false
@@ -3228,6 +3442,180 @@ final class TranslationSessionStore {
         }
     }
 
+    private func configureQwenCallbacks(service: QwenRealtimeTranslationService, generation: UInt64) {
+        service.onSourceTranscript = { [weak self, weak service] text, isFinal in
+            await self?.receiveQwenText(text, isFinal: isFinal, isTranslation: false, service: service, generation: generation)
+        }
+        service.onTranslation = { [weak self, weak service] text, isFinal in
+            await self?.receiveQwenText(text, isFinal: isFinal, isTranslation: true, service: service, generation: generation)
+        }
+        service.onAudio = { [weak self, weak service] audio in
+            await self?.receiveQwenAudio(audio, service: service, generation: generation)
+        }
+        service.onError = { [weak self, weak service] error in
+            await self?.receiveQwenError(error, service: service, generation: generation)
+        }
+    }
+
+    private func receiveQwenText(_ text: String, isFinal: Bool, isTranslation: Bool,
+                                 service: QwenRealtimeTranslationService?, generation: UInt64) {
+        guard let service, service === qwenTranslator, isUsingQwenTranslation, isRunning,
+              pipelineLifecycle.acceptsSample(generation: generation) else { return }
+        // pause/stop 직전에 보낸 오디오의 마지막 응답도 보존한다.
+        if isTranslation { qwenTranslationTranscript.receive(text, isFinal: isFinal) }
+        else { qwenSourceTranscript.receive(text, isFinal: isFinal) }
+        refreshQwenCaptionLine()
+    }
+
+    private func receiveQwenAudio(_ audio: Data, service: QwenRealtimeTranslationService?, generation: UInt64) {
+        guard let service, service === qwenTranslator, isUsingQwenTranslation,
+              pipelineLifecycle.acceptsSample(generation: generation), isRunning, !isPaused, isDubbingEnabled else { return }
+        openAIRealtimeAudioOutput.playPCM16Base64(audio.base64EncodedString(), sampleRate: 24_000)
+    }
+
+    private func refreshQwenCaptionLine() {
+        let source = qwenSourceTranscript.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let translated = qwenTranslationTranscript.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // 빈 final이 이전 부분 결과를 철회하면 화면과 저장 대기도 갱신한다.
+        if source.isEmpty {
+            floatingPresentedSourceText = ""
+            floatingQueuedSourceText = ""
+        } else { presentFloatingSourceText(source) }
+        if translated.isEmpty || source.isEmpty {
+            setFloatingDisplayTranslation("", sourceText: "", resetsDwell: true)
+        } else { updateFloatingTranslationPresentation(translated, sourceText: source) }
+        // 임시 인식은 철회될 수 있으므로 기록 파일에는 확정 결과만 반영한다.
+        if isTranscriptPersistenceEnabled {
+            activeAutosaveSourceText = qwenSourceTranscript.completed
+            activeAutosaveTranslatedText = qwenTranslationTranscript.completed
+            scheduleTranscriptCheckpointIfNeeded()
+        }
+        if source.isEmpty && translated.isEmpty {
+            if let currentLineID { lines.removeAll { $0.id == currentLineID } }
+            currentLineID = nil
+            return
+        }
+        lastRecognizedText = source.isEmpty ? translated : source
+        lastRecognitionAt = Date()
+        transcriptCleanupTask?.cancel()
+        let final = qwenSourceTranscript.isFinal && qwenTranslationTranscript.isFinal
+        if let currentLineID, let index = lines.firstIndex(where: { $0.id == currentLineID }) {
+            let line = lines[index]
+            lines[index] = CaptionLine(id: line.id, sourceText: source, translatedText: translated,
+                translatedSourceText: source, createdAt: line.createdAt, isFinal: final,
+                revision: line.revision + 1, usesLongSessionDisplay: usesLongSessionMode)
+        } else {
+            let line = CaptionLine(sourceText: source, translatedText: translated,
+                translatedSourceText: source, createdAt: Date(), isFinal: final, revision: 1,
+                usesLongSessionDisplay: usesLongSessionMode)
+            currentLineID = line.id
+            lines.append(line)
+        }
+    }
+
+    private func receiveQwenError(_ error: Error, service: QwenRealtimeTranslationService?, generation: UInt64) {
+        guard let service, service === qwenTranslator else { return }
+        // 시작 오류는 start()의 throw 경로가 복구 버튼과 함께 표시한다.
+        guard !isStarting else { return }
+        handleFatalPipelineError(error, generation: generation)
+    }
+
+    private func pauseQwenCapture() {
+        audioSamplePipelineRegistry.clear()
+        qwenTranslator.setPaused(true)
+        isPaused = true
+        stopSpeaking()
+        statusMessage = AppText.paused
+        let service = qwenTranslator
+        let generation = pipelineLifecycle.generation
+        qwenTransitionTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await service.finish()
+                guard !Task.isCancelled, service === qwenTranslator,
+                      pipelineLifecycle.acceptsSample(generation: generation) else { return }
+                _ = checkpointPendingTranscriptSave()
+            } catch is CancellationError {
+            } catch {
+                receiveQwenError(error, service: service, generation: generation)
+            }
+        }
+    }
+
+    private func resumeQwenCapture() {
+        isReconnectingQwenTranslation = true
+        statusMessage = QwenCopy.reconnecting
+        let previousTransition = qwenTransitionTask
+        let service = qwenTranslator
+        let configuration = currentStartConfiguration()
+        let generation = pipelineLifecycle.generation
+        qwenTransitionTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            if let previousTransition { await previousTransition.value }
+            guard !Task.isCancelled, service === qwenTranslator, isPaused,
+                  pipelineLifecycle.acceptsSample(generation: generation),
+                  configuration == currentStartConfiguration() else { return }
+            do {
+                try await service.start(
+                    workspaceID: configuration.qwenWorkspaceID,
+                    targetLanguage: configuration.targetLanguage,
+                    audioOutputEnabled: configuration.qwenAudioOutputEnabled
+                )
+                guard !Task.isCancelled, service === qwenTranslator,
+                      pipelineLifecycle.acceptsSample(generation: generation),
+                      configuration == currentStartConfiguration() else { return }
+                audioSamplePipelineRegistry.publish(
+                    generation: generation, transcriber: transcriber,
+                    openAITranscriber: openAITranscriber, geminiLiveTranslator: geminiLiveTranslator,
+                    metaVoiceTranscriber: metaVoiceTranscriber, azureMAITranscriber: azureMAITranscriber,
+                    grokTranscriber: grokTranscriber,
+                    nariTranscriber: nariTranscriber,
+                    qwenTranslator: service
+                )
+                isReconnectingQwenTranslation = false
+                isPaused = false
+                statusMessage = AppText.listeningForSpeech(from: audioInputSource)
+            } catch is CancellationError {
+            } catch {
+                receiveQwenError(error, service: service, generation: generation)
+            }
+        }
+    }
+
+    private func finishQwenCapture() {
+        guard !isFinishingQwenTranslation else { return }
+        if isReconnectingQwenTranslation {
+            qwenTransitionTask?.cancel()
+            pipelineLifecycle.stop()
+            finishPipeline(statusOverride: nil)
+            return
+        }
+        isFinishingQwenTranslation = true
+        statusMessage = QwenCopy.finishing
+        audioSamplePipelineRegistry.clear()
+        qwenTranslator.setPaused(true)
+        let previousTransition = qwenTransitionTask
+        let service = qwenTranslator
+        let generation = pipelineLifecycle.generation
+        qwenTransitionTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await stopCapture()
+            if let previousTransition { await previousTransition.value }
+            guard !Task.isCancelled, service === qwenTranslator,
+                  pipelineLifecycle.acceptsSample(generation: generation) else { return }
+            do {
+                try await service.finish()
+                guard !Task.isCancelled, service === qwenTranslator,
+                      pipelineLifecycle.acceptsSample(generation: generation) else { return }
+                pipelineLifecycle.stop()
+                finishPipeline(statusOverride: nil)
+            } catch is CancellationError {
+            } catch {
+                receiveQwenError(error, service: service, generation: generation)
+            }
+        }
+    }
+
     private func receiveGrokError(_ error: Error, service: GrokRealtimeTranscriber?, generation: UInt64) {
         guard let service, service === grokTranscriber else { return }
         // 시작 오류는 start()의 throw 경로가 복구 버튼과 함께 표시한다.
@@ -3284,7 +3672,8 @@ final class TranslationSessionStore {
                     openAITranscriber: openAITranscriber, geminiLiveTranslator: geminiLiveTranslator,
                     metaVoiceTranscriber: metaVoiceTranscriber, azureMAITranscriber: azureMAITranscriber,
                     grokTranscriber: service,
-                    nariTranscriber: nariTranscriber
+                    nariTranscriber: nariTranscriber,
+                    qwenTranslator: qwenTranslator
                 )
                 isReconnectingGrokSTT = false
                 isPaused = false
@@ -3409,6 +3798,8 @@ final class TranslationSessionStore {
             clearPendingTranslationPlaceholders(message: AppText.translationCancelled)
         }
         resetTranslationCache()
+        qwenSourceTranscript = QwenCaptionTranscript()
+        qwenTranslationTranscript = QwenCaptionTranscript()
         realtimeTranslationSourceText = ""
         realtimeTranslationOnlyText = ""
         geminiLiveInputTranscriptText = ""
@@ -3461,7 +3852,7 @@ final class TranslationSessionStore {
 
     private func warmTranslationSession() {
         cancelTranslationSessionWarmup()
-        guard !openAITranslationModel.isEnabled, !geminiTranslationModel.isEnabled else { return }
+        guard !isUsingQwenTranslation, !openAITranslationModel.isEnabled, !geminiTranslationModel.isEnabled else { return }
 
         let warmSourceLanguage = sourceLanguage
         let warmTargetLanguage = targetLanguage
@@ -3628,6 +4019,10 @@ final class TranslationSessionStore {
            let alignment = FloatingCaptionTextAlignment(rawValue: alignmentID) {
             floatingCaptionTextAlignment = alignment
         }
+        if let data = defaults.data(forKey: SettingsKey.floatingCaptionStyle),
+           let style = try? JSONDecoder().decode(FloatingCaptionStyle.self, from: data) {
+            floatingCaptionStyle = style
+        }
         if defaults.object(forKey: SettingsKey.floatingCaptionCustomPointSize) != nil {
             floatingCaptionCustomPointSize = CGFloat(defaults.double(forKey: SettingsKey.floatingCaptionCustomPointSize))
         }
@@ -3685,7 +4080,13 @@ final class TranslationSessionStore {
         let restoredGrokModel = defaults.string(forKey: SettingsKey.grokTranscriptionModelID)
             .flatMap(GrokTranscriptionModel.init(rawValue:)) ?? .off
         isGrokSourceAutoDetectionEnabled = defaults.object(forKey: SettingsKey.grokSourceAutoDetectionEnabled) as? Bool ?? true
-        if restoredGrokModel.isEnabled {
+        qwenWorkspaceID = defaults.string(forKey: "qwenWorkspaceID") ?? ""
+        qwenVoiceOutputEnabled = defaults.bool(forKey: "qwenVoiceOutputEnabled")
+        let restoredQwenModel = defaults.string(forKey: "qwenTranslationModelID")
+            .flatMap(QwenTranslationModel.init(rawValue:)) ?? .off
+        if restoredQwenModel.isEnabled {
+            qwenTranslationModel = restoredQwenModel
+        } else if restoredGrokModel.isEnabled {
             grokTranscriptionModel = restoredGrokModel
             if selectedModel == .appleSpeechOnly { prepareTranscribeOnlyPresentation() }
         } else if restoredNariModel.isEnabled {
@@ -3724,7 +4125,16 @@ final class TranslationSessionStore {
         } else if openAITranscriptionModel == .gptRealtimeWhisper {
             openAITranscriptionModel = .off
         }
-        if ((restoredNariModel.isEnabled || restoredGrokModel.isEnabled) && isTranscribeOnlyMode) || restoredGPTTranscriptionMode || restoredGeminiTranscriptionMode {
+        if isUsingOpenAIRealtime {
+            preferredOpenAIOutputMode = liveOutputMode
+        } else {
+            preferredOpenAIOutputMode = defaults.string(forKey: SettingsKey.preferredOpenAIOutputMode)
+                .flatMap(LiveOutputMode.init(rawValue:))
+                ?? (restoredGPTTranscriptionMode ? .transcription : .translation)
+        }
+        if isUsingQwenTranslation {
+            applyVoiceOutputDefault(qwenVoiceOutputEnabled)
+        } else if ((restoredNariModel.isEnabled || restoredGrokModel.isEnabled) && isTranscribeOnlyMode) || restoredGPTTranscriptionMode || restoredGeminiTranscriptionMode {
             applyVoiceOutputDefault(false)
         } else {
             applyRestoredVoiceOutputPreference()
@@ -3747,10 +4157,14 @@ final class TranslationSessionStore {
         defaults.set(openAITranscriptionModel.id, forKey: SettingsKey.openAITranscriptionModelID)
         defaults.set(openAITranslationModel.id, forKey: SettingsKey.openAITranslationModelID)
         defaults.set(geminiTranslationModel.id, forKey: SettingsKey.geminiTranslationModelID)
+        defaults.set(preferredOpenAIOutputMode.rawValue, forKey: SettingsKey.preferredOpenAIOutputMode)
         defaults.set(preferredGeminiModel.id, forKey: SettingsKey.preferredGeminiModelID)
         defaults.set(isUsingAzureMAI, forKey: "azureMAIEnabled")
         defaults.set(azureSpeechEndpoint, forKey: "azureSpeechEndpoint")
         defaults.set(metaTranscriptionModel.id, forKey: SettingsKey.metaTranscriptionModelID)
+        defaults.set(qwenTranslationModel.rawValue, forKey: "qwenTranslationModelID")
+        defaults.set(qwenWorkspaceID, forKey: "qwenWorkspaceID")
+        defaults.set(qwenVoiceOutputEnabled, forKey: "qwenVoiceOutputEnabled")
         defaults.set(grokTranscriptionModel.rawValue, forKey: SettingsKey.grokTranscriptionModelID)
         defaults.set(isGrokSourceAutoDetectionEnabled, forKey: SettingsKey.grokSourceAutoDetectionEnabled)
         defaults.set(nariTranscriptionModel.rawValue, forKey: SettingsKey.nariTranscriptionModelID)
@@ -3771,6 +4185,9 @@ final class TranslationSessionStore {
         defaults.set(keepsFloatingCaptionAboveOtherWindows, forKey: SettingsKey.keepsFloatingCaptionAboveOtherWindows)
         defaults.set(floatingCaptionStability.id, forKey: SettingsKey.floatingCaptionStability)
         defaults.set(floatingCaptionTextAlignment.id, forKey: SettingsKey.floatingCaptionTextAlignment)
+        if let data = try? JSONEncoder().encode(floatingCaptionStyle) {
+            defaults.set(data, forKey: SettingsKey.floatingCaptionStyle)
+        }
         defaults.set(Double(floatingCaptionCustomPointSize), forKey: SettingsKey.floatingCaptionCustomPointSize)
         defaults.set(floatingCaptionTextColorHex, forKey: SettingsKey.floatingCaptionTextColorHex)
         defaults.set(floatingCaptionBackgroundColorHex, forKey: SettingsKey.floatingCaptionBackgroundColorHex)
@@ -3788,9 +4205,16 @@ final class TranslationSessionStore {
         await microphoneAudioCapture.stop()
     }
 
-    private func floatingCaptionText(from text: String?, usesPrimaryFont: Bool = true) -> String {
+    func floatingCaptionText(from text: String?, usesPrimaryFont: Bool = true) -> String {
         guard let text else { return "" }
-
+        if floatingCaptionMeasuredTextWidth > 0 {
+            let pointSize = usesPrimaryFont ? floatingCaptionPrimaryPointSize : floatingCaptionSecondaryPointSize
+            return text.floatingCaptionTail(
+                maxLines: floatingCaptionEffectiveLineCount,
+                availableWidth: floatingCaptionMeasuredTextWidth,
+                font: floatingCaptionStyle.nativeFont(size: pointSize, primary: usesPrimaryFont)
+            )
+        }
         return text.floatingCaptionTail(
             maxLines: floatingCaptionEffectiveLineCount,
             lineWidthUnits: floatingCaptionLineWidthUnits(usesPrimaryFont: usesPrimaryFont)
@@ -3802,7 +4226,7 @@ final class TranslationSessionStore {
         let pointSize = usesPrimaryFont ? floatingCaptionPrimaryPointSize : floatingCaptionSecondaryPointSize
         let measuredUnits = FloatingCaptionTextSize.lineWidthUnits(
             forAvailableWidth: floatingCaptionMeasuredTextWidth,
-            pointSize: pointSize
+            pointSize: pointSize * floatingCaptionStyle.fontFamily.widthScale
         )
         guard measuredUnits > 0 else {
             let fallback = textSize.floatingLineWidthUnits
@@ -3988,6 +4412,12 @@ final class TranslationSessionStore {
                     && !$0.translatedText.isEmpty && $0.translatedText != AppText.translating
                     && $0.translatedText != AppText.translationCancelled
             }.map(\.translatedText).joined(separator: "\n")
+        }
+
+        if isUsingQwenTranslation {
+            // 어떤 저장 진입점에서도 아직 철회 가능한 delta를 파일에 확정하지 않는다.
+            activeAutosaveSourceText = qwenSourceTranscript.completed
+            activeAutosaveTranslatedText = qwenTranslationTranscript.completed
         }
 
         let sourceText = activeAutosaveSourceText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -5267,7 +5697,7 @@ final class TranslationSessionStore {
     }
 
     private func organizeCurrentTranscript(sourceTextOverride: String? = nil) {
-        guard !isUsingOpenAIRealtime else { return }
+        guard !isUsingQwenTranslation, !isUsingOpenAIRealtime else { return }
 
         if sourceTextOverride == nil {
             flushPendingCaptionPresentation()
@@ -6271,7 +6701,7 @@ final class TranslationSessionStore {
         appleIdentity: AppleTranslationRequestIdentity? = nil
     ) {
         guard !openAITranslationModel.usesRealtimeAudioTranslation else { return }
-        guard !isUsingGeminiTranslation else { return }
+        guard !isUsingQwenTranslation, !isUsingGeminiTranslation else { return }
 
         guard !isTranscribeOnlyMode else {
             showTranscribeOnlyNoticeForCurrentActivation()
@@ -7043,6 +7473,24 @@ final class TranslationSessionStore {
         )
         completeCaptureStartAttempt(generation: generation)
         return generation
+    }
+
+    func deliverQwenTextForTesting(_ text: String, isFinal: Bool, isTranslation: Bool, generation: UInt64) {
+        receiveQwenText(text, isFinal: isFinal, isTranslation: isTranslation, service: qwenTranslator, generation: generation)
+    }
+
+    @discardableResult
+    func checkpointQwenTranscriptForTesting() -> Bool {
+        checkpointPendingTranscriptSave()
+    }
+
+    func stopQwenFromSystemMenuForTesting(generation: UInt64) {
+        handleSystemAudioCaptureStoppedByUser(generation: generation)
+    }
+
+    func finishQwenPipelineForTesting() {
+        pipelineLifecycle.stop()
+        finishPipeline(statusOverride: nil)
     }
 
     func deliverGrokTranscriptForTesting(_ update: GrokTranscriptUpdate, generation: UInt64) {

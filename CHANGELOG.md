@@ -2,6 +2,25 @@
 
 All notable changes to AirTranslate are documented in this file.
 
+## 1.11.0 - 2026-09-20
+
+### Added
+
+- Qwen LiveTranslate uses `qwen3.8-livetranslate-flash-realtime` for microphone or Mac-audio translation with a Singapore workspace API key and workspace ID. Keys stay in a dedicated macOS Keychain item; selected audio goes directly to Alibaba Cloud Singapore.
+- Qwen returns original transcripts and translated captions with automatic source-language detection. Speech output is optional, starts off, and has an independent saved preference.
+- Floating-caption Settings adds five text styles, typography and color controls, width, ordering, and sample previews without recording.
+
+### Changed
+
+- A key-aware mode picker shows provider availability, per-row settings shortcuts, and model/pricing information; the API-key screen uses consistent provider rows and concise information icons.
+- OpenAI Audio combines translation and source transcription in one provider entry while preserving language and output preferences.
+- Floating captions display text only, without background, border, toolbar, status text, or hover resize affordances. Controls remain in Settings, the main window, and the menu bar.
+
+### Fixed
+
+- Qwen stop and system-capture termination drain final captions before closing the active session.
+- Empty Qwen final results retract provisional text from the main and floating captions. File saves and periodic checkpoints contain confirmed Qwen results only.
+
 ## 1.10.0 - 2026-09-18
 
 ### Added

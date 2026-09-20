@@ -5,6 +5,7 @@ struct FloatingWindowConfigurator: NSViewRepresentable {
     let preferredContentHeight: CGFloat
     let minimumWindowSize: NSSize
     let keepsAboveOtherWindows: Bool
+    let hasCaptionText: Bool
 
     func makeNSView(context _: Context) -> NSView {
         NSView()
@@ -23,6 +24,7 @@ struct FloatingWindowConfigurator: NSViewRepresentable {
             window.backgroundColor = .clear
             window.isOpaque = false
             window.hasShadow = false
+            window.ignoresMouseEvents = !hasCaptionText
 
             let maximumSize = FloatingCaptionWindowController.maximumWindowSize(for: window.screen ?? NSScreen.main)
             window.maxSize = maximumSize

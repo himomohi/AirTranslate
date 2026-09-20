@@ -1,10 +1,9 @@
+import AppKit
 import SwiftUI
 
 struct FloatingCaptionWindowView: View {
     @Bindable var session: TranslationSessionStore
-    @State private var isHoveringChrome = false
 
-    private static let lineSpacing: CGFloat = 5
     private static let blockSpacing: CGFloat = 8
     private static let horizontalPadding: CGFloat = AirTranslateDesign.Spacing.lg * 2
     private static let verticalPadding: CGFloat = AirTranslateDesign.Spacing.md * 2
@@ -20,16 +19,6 @@ struct FloatingCaptionWindowView: View {
             .padding(.horizontal, AirTranslateDesign.Spacing.lg)
             .padding(.vertical, AirTranslateDesign.Spacing.md)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background {
-                if hasVisibleCaptionText {
-                    RoundedRectangle(cornerRadius: AirTranslateDesign.Radius.surface, style: .continuous)
-                        .fill(session.floatingCaptionBackgroundColor.opacity(session.floatingCaptionBackgroundOpacity))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: AirTranslateDesign.Radius.surface, style: .continuous)
-                                .strokeBorder(AirTranslateDesign.Palette.floatingOutline)
-                        }
-                }
-            }
         }
         .frame(
             minWidth: FloatingCaptionWindowController.minimumWindowSize.width,
@@ -53,85 +42,56 @@ struct FloatingCaptionWindowView: View {
         }
         .contentShape(Rectangle())
         .allowsWindowActivationEvents(true)
-        .onHover { isHoveringChrome = $0 }
         .overlay {
             FloatingCaptionDragSurface()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .overlay(alignment: .top) {
-            FloatingCaptionMoveAffordance(isVisible: isHoveringChrome)
-                .padding(.top, 8)
-        }
-        .overlay(alignment: .bottomTrailing) {
-            FloatingCaptionResizeHandle(minimumSize: session.floatingCaptionMinimumWindowSize)
-                .frame(width: 34, height: 34)
-                .padding(6)
         }
         .background(
             FloatingWindowConfigurator(
                 preferredContentHeight: preferredHeight,
                 minimumWindowSize: session.floatingCaptionMinimumWindowSize,
-                keepsAboveOtherWindows: session.keepsFloatingCaptionAboveOtherWindows
+                keepsAboveOtherWindows: session.keepsFloatingCaptionAboveOtherWindows,
+                hasCaptionText: hasVisibleCaptionText
             )
         )
     }
 
-    /// Every caption block reserves the full height for its configured line
-    /// count and anchors its text to the seam between blocks. Line-count changes
-    /// and roll-ups therefore never move the neighbouring block.
+    // 블록 경계를 고정해 자막이 갱신되어도 읽는 위치를 유지한다.
     @ViewBuilder
     private var content: some View {
         switch session.floatingCaptionDisplayMode {
         case .original:
-            primaryBlock(sourceText.isEmpty ? AppText.noFloatingCaptionsYet : sourceText, anchor: .bottom)
-            if !noticeText.isEmpty {
-                secondaryBlock(noticeText, anchor: .top)
-            }
+            primaryBlock(sourceText, anchor: .bottom)
         case .originalAndTranslation:
-            if sourceText.isEmpty, translationText.isEmpty, noticeText.isEmpty {
-                primaryBlock(AppText.noFloatingCaptionsYet, anchor: .bottom)
-                    .frame(height: primaryBlockHeight + secondaryBlockHeight + Self.blockSpacing)
+            if session.floatingCaptionStyle.translationFirst {
+                primaryBlock(translationText, anchor: .bottom)
+                secondaryBlock(sourceText, anchor: .top)
             } else {
                 secondaryBlock(sourceText, anchor: .bottom)
-                if !translationText.isEmpty {
-                    primaryBlock(translationText, anchor: .top)
-                } else if !noticeText.isEmpty {
-                    primaryBlock(noticeText, anchor: .top, font: session.floatingCaptionTextSize.secondaryFont)
-                } else {
-                    primaryBlock("", anchor: .top)
-                }
+                primaryBlock(translationText, anchor: .top)
             }
         case .translation:
-            if !translationText.isEmpty {
-                primaryBlock(translationText, anchor: .bottom)
-            } else if !noticeText.isEmpty {
-                primaryBlock(noticeText, anchor: .bottom, font: session.floatingCaptionTextSize.secondaryFont)
-            } else if sourceText.isEmpty {
-                primaryBlock(AppText.noFloatingCaptionsYet, anchor: .bottom)
-            } else {
-                primaryBlock(AppText.translating, anchor: .bottom, font: session.floatingCaptionTextSize.secondaryFont)
-            }
+            primaryBlock(translationText, anchor: .bottom)
         }
     }
 
     private var sourceText: String {
-        session.floatingSourceText
+        session.isPreviewingFloatingCaptions
+            ? session.floatingCaptionText(from: CaptionStyleCopy.sampleOriginal, usesPrimaryFont: session.floatingCaptionDisplayMode == .original)
+            : session.floatingSourceText
     }
 
     private var translationText: String {
-        session.floatingTranslationText
-    }
-
-    private var noticeText: String {
-        session.floatingNoticeText ?? ""
+        session.isPreviewingFloatingCaptions
+            ? session.floatingCaptionText(from: CaptionStyleCopy.sampleTranslation)
+            : session.floatingTranslationText
     }
 
     private var hasVisibleCaptionText: Bool {
         switch session.floatingCaptionDisplayMode {
-        case .original, .originalAndTranslation:
-            true
-        case .translation:
-            true
+        case .original: !sourceText.isEmpty
+        case .translation: !translationText.isEmpty
+        case .originalAndTranslation: !sourceText.isEmpty || !translationText.isEmpty
         }
     }
 
@@ -148,11 +108,11 @@ struct FloatingCaptionWindowView: View {
     }
 
     private var primaryBlockHeight: CGFloat {
-        Self.blockHeight(lineHeight: session.floatingCaptionPrimaryLineHeight, lineCount: lineLimit)
+        FloatingCaptionAppearance.blockHeight(lineHeight: session.floatingCaptionPrimaryLineHeight, lineCount: lineLimit, lineSpacing: session.floatingCaptionStyle.lineSpacing.points)
     }
 
     private var secondaryBlockHeight: CGFloat {
-        Self.blockHeight(lineHeight: session.floatingCaptionSecondaryLineHeight, lineCount: lineLimit)
+        FloatingCaptionAppearance.blockHeight(lineHeight: session.floatingCaptionSecondaryLineHeight, lineCount: lineLimit, lineSpacing: session.floatingCaptionStyle.lineSpacing.points)
     }
 
     private var preferredHeight: CGFloat {
@@ -160,21 +120,19 @@ struct FloatingCaptionWindowView: View {
 
         switch session.floatingCaptionDisplayMode {
         case .original, .translation:
-            textHeight = noticeText.isEmpty
-                ? primaryBlockHeight
-                : primaryBlockHeight + secondaryBlockHeight + Self.blockSpacing
+            textHeight = primaryBlockHeight
         case .originalAndTranslation:
             textHeight = primaryBlockHeight + secondaryBlockHeight + Self.blockSpacing
         }
 
-        return min(max(90, textHeight + 28), 720)
+        return min(max(90, textHeight + Self.verticalPadding), 720)
     }
 
-    private func primaryBlock(_ text: String, anchor: VerticalAlignment, font: Font? = nil) -> some View {
+    private func primaryBlock(_ text: String, anchor: VerticalAlignment) -> some View {
         captionBlock(
             text,
-            font: font ?? session.floatingCaptionPrimaryFont,
-            color: font == nil ? session.floatingCaptionTextColor : session.floatingCaptionTextColor.opacity(0.82),
+            font: session.floatingCaptionPrimaryFont,
+            color: session.floatingCaptionTextColor,
             height: primaryBlockHeight,
             anchor: anchor
         )
@@ -210,9 +168,9 @@ struct FloatingCaptionWindowView: View {
             replacementCrossfadeDuration: Self.replacementCrossfadeDuration
         )
         .multilineTextAlignment(alignment.textAlignment)
-        .lineSpacing(Self.lineSpacing)
+        .lineSpacing(session.floatingCaptionStyle.lineSpacing.points)
         .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: alignment.frameAlignment(vertical: anchor))
         .clipped()
-        .shadow(color: AirTranslateDesign.Palette.floatingShadow, radius: 8, x: 0, y: 2)
+        .modifier(CaptionTextEffectModifier(effect: session.floatingCaptionStyle.textEffect))
     }
 }

@@ -23,24 +23,22 @@ Live Mac audio captions and translation for meetings, videos, lectures, intervie
 
 AirTranslate captures audio playing on your Mac, transcribes it live, translates it when you choose a translation workflow, and can keep captions floating above other apps. Apple Mode remains the default local-first workflow. Cloud engines are optional and become available after you configure the matching provider key.
 
-AirTranslate **1.10.0/build1100** adds **Grok STT**: Grok Voice Transcribe 2.0 transcription for microphone or Mac audio.
+AirTranslate **1.11.0/build1110** adds **Qwen LiveTranslate** with `qwen3.8-livetranslate-flash-realtime` for microphone or Mac-audio translation.
 
-Add your own key under **Settings > API Keys > SpaceXAI (xAI)** and select **Grok STT** in General settings. The key is stored separately in macOS Keychain; audio is sent directly to xAI when capture starts. Provider charges and account limits apply.
+Configure an **Alibaba Cloud Singapore API key and workspace ID** in Settings > API Keys > Qwen. The key is stored separately in macOS Keychain; selected audio is sent directly to Alibaba Cloud Singapore when capture starts. Qwen automatically detects the spoken language and returns original transcripts and translations. **Speech output is optional and initially off**; its choice is remembered separately. See [Qwen setup and pricing](docs/qwen-livetranslate.md). Real-account authentication, billing, translation quality, and latency remain unverified.
 
-Grok starts with **original-only captions and automatic spoken-language recognition**. Apple Mode remains the default, and Apple Translation can be enabled separately. Live xAI authentication, transcription accuracy, and latency have not been verified with a real account.
+The **key-aware mode picker** shows unavailable providers in gray and provides a settings shortcut on each row. Information icons describe the selected model and its pricing basis. **OpenAI Audio unifies translation and source transcription** while preserving the selected language and output preferences.
 
-Completed Grok utterances are not duplicated by the final response, including Japanese text joined without spaces. Saved transcripts exclude provisional captions and translation-status messages. Switching to another engine clears the Grok missing-key notice.
+**Floating captions show text only**: no window background, border, toolbar, status text, or hover resize controls. Five text styles, font and color options, width, line spacing, ordering, and sample previews are available in Settings. Use the main window, menu bar, or ⌘⇧C to show or hide captions.
 
-Floating captions support two-axis resizing, visible hover controls, custom font sizing, text color, background color and opacity, persistent preferences, and reset.
-
-Text and background colors can also be entered precisely as **#RRGGBB color codes** and applied from the keyboard.
+**Qwen final captions are drained before stopping**. Empty final results retract provisional captions, and saved Qwen transcripts contain confirmed results only, including periodic checkpoints. Apple Mode remains the default; transcript file saving remains opt-in.
 
 ## Download
 
-Latest public release: **v1.10.0**.
+Latest public release: **v1.11.0**.
 
 - [Download AirTranslate.dmg](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [Download AirTranslate-1.10.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.10.0/AirTranslate-1.10.0.zip)
+- [Download AirTranslate-1.11.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.11.0/AirTranslate-1.11.0.zip)
 - [Download AirTranslate.dmg.sha256](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [View release history](Release/VERSION-HISTORY.md)
 
@@ -50,6 +48,7 @@ The open-source DMG and ZIP are ad-hoc signed and not Apple-notarized. If macOS 
 shasum -a 256 AirTranslate.dmg
 cat AirTranslate.dmg.sha256
 ```
+
 
 ## Real App
 
@@ -80,7 +79,7 @@ API-backed engines become available after you configure their keys in **Settings
 - Apple Speech transcription and Apple Translation output as the default local-first path.
 - Original-only transcription for source captions without translation.
 - Floating captions, saved transcript library, optional translated speech, and one-click language swap.
-- Floating-caption window resizing, drag and resize affordances, custom font size, text color, background color, background opacity that does not fade text, persistent preferences, and reset.
+- Text-only floating captions with five styles, font and color options, width, line spacing, ordering, previews, persistence, and reset in Settings.
 - Transcript file saving is off by default; enable **Save Transcript Files** when you want plain `.txt` files in Application Support.
 - Four app languages: English, Korean, Japanese, and Simplified Chinese.
 
@@ -89,13 +88,13 @@ API-backed engines become available after you configure their keys in **Settings
 | Engine | Role | Requires |
 | --- | --- | --- |
 | Apple Mode | Default local-first transcription and translation. Apple basic-mode source-language auto-detect remains disabled while language-switch handling is improved. | None |
-| GPT Mode | Live translated output through OpenAI Realtime. | OpenAI |
-| GPT Transcription | Source-only captions through OpenAI. | OpenAI |
+| OpenAI Audio | Choose translation or source transcription within one provider. The output icons select `gpt-realtime-translate` or `gpt-live-transcribe`; tooltips show the active model and rate. | OpenAI |
 | Gemini Live | Gemini live translation or source-only transcription with automatic spoken-language detection. | Gemini |
 | Meta Scribe | Speaker-labeled multilingual transcription before AirTranslate translation. | Meta |
 | Azure MAI | Preview cloud transcription with Apple Translation captions. | Azure Speech key and endpoint |
-| Nari STT | Prepared in 1.9.0 source for Qwen3-ASR source transcription from microphone or Mac audio. | Nari |
+| Nari STT | Nari Qwen3-ASR source transcription from microphone or Mac audio. | Nari |
 | Grok STT | Grok Voice Transcribe 2.0 source transcription from microphone or Mac audio. | SpaceXAI (xAI) |
+| Qwen LiveTranslate | Qwen3.8 realtime original transcripts, translated captions, and optional speech output. | Alibaba Cloud Singapore API key and workspace ID |
 
 Grok STT is included from version 1.10.0. It starts with original-only captions and uses your own xAI API key. See [Grok STT notes](docs/grok-stt.md) for setup, language behavior, and verification limits.
 
@@ -107,18 +106,20 @@ New Nari selections use the GA Fast model and require Nari credits. Saved Free P
 
 ## Floating Captions
 
-The floating caption window can be resized in both dimensions and shows hover affordances for moving and resizing. Caption style controls support preset sizes plus a custom font size, text color, background color, background opacity that does not fade caption text, persistent preferences, and reset. Caption Stability remains available separately.
+Floating captions show only the original and/or translated text over your content. There is no window background, border, toolbar, status label, or resize grip, including on hover. When there is no caption text, the overlay stays invisible. Caption controls remain in Settings, the main window, and the menu bar; ⌘⇧C shows or hides captions.
+
+Choose from five text styles (Everyday, Cinema, Lecture, High contrast, and Light scene), four font families, weight, line spacing, shadow or outline, text color, alignment, line count, and translation-first ordering. The preview uses the actual 18–72 pt text size over a light or dark sample scene. Preview sample captions without recording, and adjust their width and always-on-top behavior in Settings. Existing appearance preferences still load; legacy background settings do not create a visible window.
 
 ## API Keys
 
-The API Keys screen manages **OpenAI**, **Gemini**, **Meta**, **Azure**, **Nari**, and **SpaceXAI (xAI)** in one provider list. Rows show configured/setup state, provider icons, key console links, and an information popover explaining that configured keys do not prove provider authorization.
+The API Keys screen manages **OpenAI**, **Gemini**, **Meta**, **Azure**, **Nari**, and **SpaceXAI (xAI)** · **Alibaba Cloud (Qwen)** in one provider list. Rows show configured/setup state, provider icons, key console links, and an information popover explaining that configured keys do not prove provider authorization.
 
 Keys are stored in macOS Keychain. AirTranslate does not ship with an account system, a developer-operated relay server, or hardcoded provider keys.
 
 ## Privacy
 
 - Apple Mode uses macOS frameworks and locally managed Apple language assets.
-- GPT, Gemini, Meta, Azure, Nari, and Grok modes send only the audio or text needed for the selected feature directly to that provider using your key.
+- GPT, Gemini, Meta, Azure, Nari, Grok, and Qwen modes send only the audio or text needed for the selected feature directly to that provider using your key.
 - Saved transcripts are normal text files on your Mac only when file saving is enabled.
 - See [Release/PRIVACY-NOTICE.md](Release/PRIVACY-NOTICE.md) for the longer provider and storage guide.
 
@@ -128,7 +129,7 @@ Keys are stored in macOS Keychain. AirTranslate does not ship with an account sy
 - Swift 6.2 or later for source builds
 - A Mac that supports system-audio capture
 - Apple Speech and Apple Translation framework availability
-- Optional provider keys for OpenAI, Gemini, Meta, Azure Speech, Nari, or xAI
+- Optional provider keys for OpenAI, Gemini, Meta, Azure Speech, Nari, xAI, or Alibaba Cloud
 
 ## Documentation
 
@@ -159,4 +160,4 @@ Keep user-facing release chronology in [CHANGELOG.md](CHANGELOG.md). README file
 
 AirTranslate is released under the [Apache License 2.0](LICENSE). Copyright attribution is provided in [NOTICE](NOTICE).
 
-AirTranslate is an independent open-source project and is not affiliated with Apple, OpenAI, Google, Meta, Microsoft, Nari, or SpaceXAI (xAI).
+AirTranslate is an independent open-source project and is not affiliated with Apple, OpenAI, Google, Meta, Microsoft, Nari, SpaceXAI (xAI), or Alibaba Cloud.

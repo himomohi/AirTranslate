@@ -1,3 +1,5 @@
+import AppKit
+import CoreText
 import Foundation
 
 private enum FloatingCaptionTextLayout {
@@ -18,6 +20,32 @@ private enum FloatingCaptionTextLayout {
 }
 
 extension String {
+    /// 실제 렌더링 글꼴로 줄을 나눠 넓은 영문·CJK·이모지가 끝에서 잘리지 않게 한다.
+    func floatingCaptionTail(maxLines: Int, availableWidth: CGFloat, font: NSFont) -> String {
+        guard availableWidth.isFinite, availableWidth > 0 else {
+            return floatingCaptionTail(maxLines: maxLines)
+        }
+        let count = max(1, maxLines)
+        let text = trimmingCharacters(in: .whitespacesAndNewlines).floatingCaptionSentenceBreaks()
+        let bounded = String(text.boundedSuffix(maxCharacters: count * 72 * FloatingCaptionTextLayout.scanLineMultiplier))
+        var lines: [String] = []
+        for paragraph in bounded.components(separatedBy: .newlines) where !paragraph.isEmpty {
+            let string = paragraph as NSString
+            let attributed = NSAttributedString(string: paragraph, attributes: [.font: font])
+            let typesetter = CTTypesetterCreateWithAttributedString(attributed)
+            var offset = 0
+            while offset < string.length {
+                let proposed = CTTypesetterSuggestLineBreak(typesetter, offset, max(1, availableWidth - 4))
+                let length = proposed > 0 ? proposed : string.rangeOfComposedCharacterSequence(at: offset).length
+                let line = string.substring(with: NSRange(location: offset, length: length))
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !line.isEmpty { lines.append(line) }
+                offset += length
+            }
+        }
+        return lines.suffix(count).joined(separator: "\n")
+    }
+
     func floatingCaptionTail(
         maxLines: Int,
         lineWidthUnits: Double = FloatingCaptionTextLayout.defaultLineWidthUnits

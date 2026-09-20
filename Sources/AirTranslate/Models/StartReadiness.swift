@@ -4,6 +4,7 @@ enum StartReadinessIssue: Equatable {
     case openAIAPIKeyMissing
     case geminiAPIKeyMissing
     case azureConfigurationMissing
+    case qwenConfigurationMissing
     case grokAPIKeyMissing
     case grokLanguageUnsupported
     case nariAPIKeyMissing

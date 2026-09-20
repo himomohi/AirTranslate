@@ -172,14 +172,14 @@ struct MenuBarStatusView: View {
                 Menu {
                     ForEach(FloatingCaptionTextSize.allCases) { size in
                         Button(size.title) {
-                            session.floatingCaptionTextSize = size
+                            session.selectFloatingCaptionTextSizePreset(size)
                         }
                     }
                 } label: {
                     IconMenuLabel(
                         systemImage: "textformat.size",
                         title: AppText.size,
-                        value: session.floatingCaptionTextSize.title
+                        value: "\(Int(session.floatingCaptionPrimaryPointSize)) pt"
                     )
                 }
                 .menuStyle(.button)

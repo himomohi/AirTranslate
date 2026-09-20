@@ -79,6 +79,15 @@ right files before changing the app.
 - `Sources/AirTranslate/Models/FloatingCaptionAppearance.swift`
   - Custom caption color, background opacity, point-size clamp, and block-height sizing helpers.
 
+## 자막 스타일과 미리보기
+
+| 기능 | 진입점 | 핵심 파일·심볼 | 저장·의존성 | 검증 |
+| --- | --- | --- | --- | --- |
+| 스타일·상세 옵션 | 설정 → 플로팅 자막 | `FloatingCaptionSettingsView`, `FloatingCaptionStyle`, `FloatingCaptionPreset` | 기존 개별 설정 + `floatingCaptionStyle` JSON, 제공자/언어와 독립 | `FloatingCaptionStyleTests` |
+| 실제 크기 미리보기 | 설정 → 자막 창에서 미리보기 | `FloatingCaptionStylePreview`, `FloatingCaptionWindowController.open(preview:)` | `isPreviewingFloatingCaptions`는 저장하지 않음; 시작/닫기 시 해제 | 실앱 샘플·설정 복원 확인 |
+| 자막만 표시 | 투명 자막 오버레이; 조작은 설정·메인·메뉴바 | `FloatingCaptionWindowView`, `FloatingWindowConfigurator`, `FloatingCaptionWindowController.setWidth` | 창 배경·테두리·도구·상태·리사이즈 표시 없음; 빈 자막은 투명/클릭 통과; ⌘⇧C 표시 전환 | `FloatingCaptionOverlayRenderingTests`, 실앱 확인 |
+| 글꼴별 줄바꿈 | 자막 표시·설정 미리보기 | `floatingCaptionTail(maxLines:availableWidth:font:)` | CoreText 실제 글꼴 폭, 최신 줄 보존 | CJK·영문·이모지 폭 회귀 검사 |
+
 ## Release And Site
 
 - `Release`
@@ -172,3 +181,27 @@ Azure 리소스의 지원 지역·권한·과금 및 실제 음성 정확도는 
 500ms 간격의 취소 가능한 상태 확인을 유지한다. 음성인식팩은 기존 Speech
 `AssetInventory` 설치 경로를 사용한다. 테스트의 주입된 다운로드/창 경계는
 수명과 상태 전이를 검증하며, 실제 macOS 언어팩 설치 성공의 증거는 아니다.
+
+## 콘솔 모드 빠른 선택
+
+| 기능 | 진입점 | 핵심 파일·심볼 | 데이터·외부 의존성 | 검증 |
+| --- | --- | --- | --- | --- |
+| 모드 목록·키 상태 | 하단 콘솔 → 현재 모드 버튼 | `ProcessingModePicker`, `ProcessingEngine+Selection` | 기존 `has*APIKey` 상태만 사용; Apple은 키 불필요, 캡처 중 전환 잠금 | `swift test --filter ProcessingModePickerTests`, 실제 앱 목록·키보드 확인 |
+| 제공자 설정 바로가기 | 각 모드 행 → 톱니바퀴 | `ProcessingEngine.requestSettings`, `TranslationSessionStore.requestedAPIKeyProvider`, `APIKeySettingsView` | 모드 변경 없이 해당 API 키 행 펼침·스크롤; Apple은 일반 설정 | `ProcessingModePickerTests`, 실제 앱 설정 이동 확인 |
+
+모드 행의 짧은 툴팁은 `ProcessingModeInfo`에서 설명·요금을 제공한다. Gemini의 현재/선호 모델과 Nari의 현재/선택 예정 모델에 맞춰 표시하며, 키 없는 행에서도 도움말을 읽을 수 있다. 공식 요금과 확인일·과금 조건은 [모드 요금 근거](../docs/processing-mode-pricing.md)를 참조한다. 검증은 `ProcessingModePickerTests`의 세부 모델 선택·스트리밍 요금·무료 베타 종료 사례와 실제 앱 접근성 도움말 확인으로 수행한다.
+
+모드 목록과 API 키 설정의 반복 상태 문구는 `InlineHelpIcon`으로 표시한다. 모드 목록은 이름·키 상태·정보·설정 아이콘을 한 줄에 배치하고, 제공자 설정은 사용 중·저장 상태·저장 개수·Keychain 설명을 아이콘으로 제공한다. 도움말은 각 아이콘에만 연결해 인접 설정 버튼의 도움말을 덮지 않으며 접근성 이름·선택 값에 상태 의미를 보존한다.
+
+OpenAI는 `ProcessingEngine.openAI` 단일 제공자로 표시한다. `OpenAIOutputPicker`는 콘솔·일반·출력 설정에서 `TranslationSessionStore.useOpenAIMode`를 공유하고, 좁은 콘솔 메뉴도 `useLiveOutputMode`의 같은 OpenAI 분기로 연결된다. 현재/마지막 출력은 `openAIOutputMode`·`preferredOpenAIOutputMode`로 가격 정보와 동기화한다. 기존 GPT 전사/번역 모델 ID 복원은 유지하며 `OpenAIUnifiedModeTests`가 모델 상호 배타성·선호 저장·기존 설정 복원·대상 언어/음성/자막 보존·캡처 잠금을 검증한다.
+
+## Qwen3.8 LiveTranslate
+
+| 기능 | 진입점 | 핵심 파일·심볼 | 데이터·외부 의존성 | 검증 |
+| --- | --- | --- | --- | --- |
+| 제공자·출력 선택 | 모드 선택 → Qwen LiveTranslate, 설정 → 출력 | `ProcessingEngine`, `QwenTranslationModel`, `TranslationSessionStore.useQwenTranslationMode` | 기존 제공자 기본값 유지; Qwen 음성 출력은 기본 꺼짐·독립 저장 | `QwenSessionTests`, `ProcessingModePickerTests` |
+| 인증·지역 | 설정 → API 키 → Alibaba Cloud · Qwen | `APIKeySettingsView`, `QwenAPIKeyStore`, `qwenWorkspaceID` | 키는 Keychain; ID는 UserDefaults; 싱가포르 고정 호스트 | `QwenSessionTests`, `QwenRealtimeTranslationServiceTests` |
+| 전사·번역·음성 | PC 소리/마이크 → 시작 | `QwenRealtimeTranslationService`, `AudioSamplePipelineRegistry`, `receiveQwenText`, `receiveQwenAudio` | 16 kHz PCM16 → WebSocket; 원문/번역 delta; 선택형 24 kHz 음성 | `swift test --no-parallel --filter Qwen` |
+| 일시정지·종료 | 일시정지/재개/중지 | `pauseQwenCapture`, `resumeQwenCapture`, `finishQwenCapture` | `session.finish` → `session.finished`; 마지막 결과 drain; 세대가 다른 콜백 차단 | 프로토콜 fake socket·세션 회귀 테스트 |
+
+설정과 실제 계정 검증 범위는 [Qwen LiveTranslate 안내](../docs/qwen-livetranslate.md)를 참고한다.
