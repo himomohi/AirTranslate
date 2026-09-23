@@ -23,7 +23,7 @@
 
 AirTranslateはMacで再生中の音声を取り込み、ライブで文字起こしし、翻訳ワークフローを選んだ場合は翻訳し、必要に応じて他のアプリの上にフローティング字幕を表示します。Apple Modeは引き続きローカル優先の標準ワークフローです。クラウドエンジンは任意で、対応するプロバイダーキーを設定すると利用できます。
 
-AirTranslate **1.12.0/build1120** では、**Qwen LiveTranslate** の追加モデル `qwen-audio-3.1-realtime-plus` と、設定 > 一般のQwen音声ファイル文字起こしツールを追加します。
+AirTranslate **1.12.1/build1121** では、アプリを一度に1つのインスタンスだけで実行します。AirTranslateをもう一度開いても2つ目のコピーは作られず、キャプチャ、字幕、権限の状態は1つのプロセスに保たれます。
 
 設定 > APIキー > Qwenに **Alibaba CloudシンガポールのAPIキー** を入力してください。Qwen3.8 LiveTranslateにはワークスペースIDも必要ですが、Qwen Audio 3.1 Realtime PlusとFiletransはキーだけで利用できます。キーはmacOS Keychainの専用項目に保存し、キャプチャ開始時に選択したリアルタイム音声をAlibaba Cloudシンガポールへ直接送信します。設定 > 一般で既定の `qwen3.8-livetranslate-flash-realtime` または `qwen-audio-3.1-realtime-plus` を選べます。選択したリアルタイムモデルは原文文字起こしと翻訳を返します。**音声出力は任意で、初期状態ではオフです**。Qwen Audioの料金はModel Studioで確認してください。
 
@@ -37,10 +37,10 @@ AirTranslate **1.12.0/build1120** では、**Qwen LiveTranslate** の追加モ�
 
 ## ダウンロード
 
-現在の公開最新版: **v1.12.0**。
+現在の公開最新版: **v1.12.1**。
 
 - [AirTranslate.dmgをダウンロード](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [AirTranslate-1.12.0.zipをダウンロード](https://github.com/himomohi/AirTranslate/releases/download/v1.12.0/AirTranslate-1.12.0.zip)
+- [AirTranslate-1.12.1.zipをダウンロード](https://github.com/himomohi/AirTranslate/releases/download/v1.12.1/AirTranslate-1.12.1.zip)
 - [AirTranslate.dmg.sha256をダウンロード](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [バージョン履歴を見る](Release/VERSION-HISTORY.md)
 

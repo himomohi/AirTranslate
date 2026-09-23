@@ -23,7 +23,7 @@ Live Mac audio captions and translation for meetings, videos, lectures, intervie
 
 AirTranslate captures audio playing on your Mac, transcribes it live, translates it when you choose a translation workflow, and can keep captions floating above other apps. Apple Mode remains the default local-first workflow. Cloud engines are optional and become available after you configure the matching provider key.
 
-AirTranslate **1.12.0/build1120** adds `qwen-audio-3.1-realtime-plus` as an alternate model for **Qwen LiveTranslate** and adds a Qwen Audio file-transcription tool in Settings > General.
+AirTranslate **1.12.1/build1121** keeps the app to a single running instance. Launching AirTranslate again does not create a second copy, so capture, captions, and permissions stay tied to one process.
 
 Configure an **Alibaba Cloud Singapore API key** in Settings > API Keys > Qwen. Qwen3.8 LiveTranslate also requires a workspace ID; Qwen Audio 3.1 Realtime Plus and Filetrans use the key without one. The key is stored separately in macOS Keychain; selected realtime audio is sent directly to Alibaba Cloud Singapore when capture starts. Choose the existing `qwen3.8-livetranslate-flash-realtime` default or `qwen-audio-3.1-realtime-plus` in Settings > General. The selected realtime model returns original transcripts and translated text; **speech output is optional and initially off**. Current Qwen Audio pricing is shown in Model Studio.
 
@@ -37,10 +37,10 @@ The **key-aware mode picker** shows unavailable providers in gray and provides a
 
 ## Download
 
-Latest public release: **v1.12.0**.
+Latest public release: **v1.12.1**.
 
 - [Download AirTranslate.dmg](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [Download AirTranslate-1.12.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.12.0/AirTranslate-1.12.0.zip)
+- [Download AirTranslate-1.12.1.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.12.1/AirTranslate-1.12.1.zip)
 - [Download AirTranslate.dmg.sha256](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [View release history](Release/VERSION-HISTORY.md)
 

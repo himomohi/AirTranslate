@@ -55,8 +55,15 @@ SIGNING_IDENTITY="${SIGNING_IDENTITY:--}"
 
 cd "$ROOT_DIR"
 
-rm -rf "$BUILD_DIR" "$PRODUCT_DIR"
-mkdir -p "$BUILD_DIR" "$APP_MACOS" "$APP_RESOURCES"
+rm -rf "$BUILD_DIR" "$APP_BUNDLE"
+mkdir -p "$BUILD_DIR" "$PRODUCT_DIR" "$APP_MACOS" "$APP_RESOURCES"
+rm -f \
+  "$ZIP_PATH" \
+  "$STABLE_ZIP_PATH" \
+  "$DMG_PATH" \
+  "$DMG_SHA256_PATH" \
+  "$VERSIONED_DMG_PATH" \
+  "$VERSIONED_DMG_SHA256_PATH"
 
 swift build -c release
 BUILD_BINARY="$(swift build -c release --show-bin-path)/$APP_NAME"

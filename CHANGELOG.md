@@ -2,6 +2,16 @@
 
 All notable changes to AirTranslate are documented in this file.
 
+## 1.12.1 - 2026-09-23
+
+### Fixed
+
+- AirTranslate now declares itself as a single-instance macOS app so launching it again does not create parallel app processes.
+
+### Changed
+
+- The local build-and-run harness no longer kills a running AirTranslate process or force-opens a second copy; it asks the operator to quit the app before rebuilding.
+
 ## 1.12.0 - 2026-09-23
 
 ### Added

@@ -1,5 +1,15 @@
 # AirTranslate Version History
 
+## 1.12.1 - 2026-09-23
+
+### Fixed
+
+- AirTranslate now launches as a single-instance macOS app, preventing duplicate running copies from the packaged app.
+
+### Changed
+
+- Release verification uses the current single running app bundle: the local harness refuses to rebuild while AirTranslate is still running instead of killing or force-spawning another copy.
+
 ## 1.12.0 - 2026-09-23
 
 ### Added

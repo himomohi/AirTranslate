@@ -23,7 +23,7 @@
 
 AirTranslate 会捕获 Mac 正在播放的音频，实时转写；当你选择翻译流程时，它会进行翻译，并可将字幕悬浮在其他应用上方。Apple Mode 仍然是默认的本地优先流程。云端引擎为可选项，配置对应提供方密钥后即可使用。
 
-AirTranslate **1.12.0/build1120** 为 **Qwen LiveTranslate** 增加可选模型 `qwen-audio-3.1-realtime-plus`，并在设置 > 通用中加入 Qwen 音频文件转写工具。
+AirTranslate **1.12.1/build1121** 让应用一次只运行一个实例。再次打开 AirTranslate 时不会创建第二个副本，因此采集、字幕和权限状态都会保持在同一个进程中。
 
 请在设置 > API 密钥 > Qwen 中输入 **阿里云新加坡 API 密钥**。Qwen3.8 LiveTranslate 还需要工作空间 ID；Qwen Audio 3.1 Realtime Plus 和 Filetrans 仅使用密钥。密钥单独保存在 macOS Keychain 中，开始捕获后会将所选实时音频直接发送到阿里云新加坡。在设置 > 通用中，可选择默认模型 `qwen3.8-livetranslate-flash-realtime` 或 `qwen-audio-3.1-realtime-plus`。所选实时模型会返回原文转写和译文。**语音输出为可选项，默认关闭**。请在 Model Studio 中查看当前 Qwen Audio 价格。
 
@@ -37,10 +37,10 @@ AirTranslate **1.12.0/build1120** 为 **Qwen LiveTranslate** 增加可选模型 
 
 ## 下载
 
-当前公开最新版：**v1.12.0**。
+当前公开最新版：**v1.12.1**。
 
 - [下载 AirTranslate.dmg](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [下载 AirTranslate-1.12.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.12.0/AirTranslate-1.12.0.zip)
+- [下载 AirTranslate-1.12.1.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.12.1/AirTranslate-1.12.1.zip)
 - [下载 AirTranslate.dmg.sha256](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [查看版本历史](Release/VERSION-HISTORY.md)
 

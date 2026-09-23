@@ -23,7 +23,7 @@
 
 AirTranslate는 Mac에서 재생되는 소리를 캡처해 실시간으로 전사하고, 번역 흐름을 선택하면 번역하며, 필요하면 다른 앱 위에 플로팅 자막을 유지합니다. Apple 기본 모드는 계속 로컬 우선 기본 경로입니다. 클라우드 엔진은 선택형이며 해당 제공자 키를 설정하면 사용할 수 있습니다.
 
-AirTranslate **1.12.0/build1120**은 **Qwen LiveTranslate**의 대체 모델 `qwen-audio-3.1-realtime-plus`와 설정 > 일반의 Qwen 오디오 파일 전사 도구를 추가합니다.
+AirTranslate **1.12.1/build1121**은 앱이 한 번에 하나의 인스턴스만 실행되도록 합니다. AirTranslate를 다시 열어도 두 번째 사본을 만들지 않아 캡처, 자막, 권한 상태가 하나의 프로세스에 묶입니다.
 
 설정 > API 키 > Qwen에 **Alibaba Cloud 싱가포르 API 키**를 입력하세요. Qwen3.8 LiveTranslate는 워크스페이스 ID도 필요하지만 Qwen Audio 3.1 Realtime Plus와 Filetrans는 키만 사용합니다. 키는 macOS Keychain의 전용 항목에 저장하며, 캡처를 시작하면 선택한 실시간 오디오를 Alibaba Cloud 싱가포르로 직접 전송합니다. 설정 > 일반에서 기존 기본 모델 `qwen3.8-livetranslate-flash-realtime` 또는 `qwen-audio-3.1-realtime-plus`를 선택할 수 있습니다. 선택한 실시간 모델은 원문 전사와 번역문을 반환합니다. **음성 출력은 선택 사항이며 처음에는 꺼져 있습니다**. Qwen Audio 요금은 Model Studio에서 확인하세요.
 
@@ -37,10 +37,10 @@ AirTranslate **1.12.0/build1120**은 **Qwen LiveTranslate**의 대체 모델 `qw
 
 ## 다운로드
 
-현재 공개 최신 릴리즈: **v1.12.0**.
+현재 공개 최신 릴리즈: **v1.12.1**.
 
 - [AirTranslate.dmg 다운로드](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [AirTranslate-1.12.0.zip 다운로드](https://github.com/himomohi/AirTranslate/releases/download/v1.12.0/AirTranslate-1.12.0.zip)
+- [AirTranslate-1.12.1.zip 다운로드](https://github.com/himomohi/AirTranslate/releases/download/v1.12.1/AirTranslate-1.12.1.zip)
 - [AirTranslate.dmg.sha256 다운로드](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [버전 이력 보기](Release/VERSION-HISTORY.md)
 

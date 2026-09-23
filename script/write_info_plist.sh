@@ -41,6 +41,8 @@ fi
   <string>$BUILD_NUMBER</string>
   <key>LSMinimumSystemVersion</key>
   <string>$MIN_SYSTEM_VERSION</string>
+  <key>LSMultipleInstancesProhibited</key>
+  <true/>
 PLIST
 
   if [[ "$PLIST_MODE" == "release" ]]; then

@@ -89,6 +89,13 @@ for signing_script in "$LOCAL_BUILD_SCRIPT" "$RELEASE_BUILD_SCRIPT"; do
   require_pattern '--entitlements "$ENTITLEMENTS_PATH"' "$signing_script"
 done
 
+require_pattern 'rm -rf "$BUILD_DIR" "$APP_BUNDLE"' "$RELEASE_BUILD_SCRIPT"
+require_pattern 'mkdir -p "$BUILD_DIR" "$PRODUCT_DIR"' "$RELEASE_BUILD_SCRIPT"
+if /usr/bin/grep -Fq 'rm -rf "$BUILD_DIR" "$PRODUCT_DIR"' "$RELEASE_BUILD_SCRIPT"; then
+  echo "release builds must preserve older files in Release/product" >&2
+  exit 1
+fi
+
 require_pattern 'DEBUG_ENTITLEMENTS_PATH=' "$LOCAL_BUILD_SCRIPT"
 require_pattern '--debug|debug)' "$LOCAL_BUILD_SCRIPT"
 require_pattern 'ENTITLEMENTS_PATH="$DEBUG_ENTITLEMENTS_PATH"' "$LOCAL_BUILD_SCRIPT"
@@ -100,7 +107,12 @@ fi
 require_pattern 'tccutil reset Microphone "$BUNDLE_ID"' "$LOCAL_BUILD_SCRIPT"
 require_pattern 'defaults delete "$BUNDLE_ID" "AirTranslate.screenRecordingAccessRequestAttempted"' "$LOCAL_BUILD_SCRIPT"
 require_pattern 'Microphone (when selected)' "$LOCAL_BUILD_SCRIPT"
-require_pattern '/usr/bin/open -n --stdout' "$LOCAL_BUILD_SCRIPT"
+require_pattern 'pgrep -x "$APP_NAME"' "$LOCAL_BUILD_SCRIPT"
+require_pattern '/usr/bin/open --stdout' "$LOCAL_BUILD_SCRIPT"
+if /usr/bin/grep -Fq 'pkill -x "$APP_NAME"' "$LOCAL_BUILD_SCRIPT"; then
+  echo "the local launcher must not terminate an existing AirTranslate instance" >&2
+  exit 1
+fi
 require_pattern '"$APP_BUNDLE"' "$LOCAL_BUILD_SCRIPT"
 require_pattern 'verify_running_app' "$LOCAL_BUILD_SCRIPT"
 require_pattern 'Expected $APP_BINARY' "$LOCAL_BUILD_SCRIPT"
@@ -157,6 +169,10 @@ for mode in local release; do
   /usr/bin/plutil -lint "$plist_path" >/dev/null
   if ! /usr/libexec/PlistBuddy -c 'Print :NSMicrophoneUsageDescription' "$plist_path" >/dev/null; then
     echo "NSMicrophoneUsageDescription is missing from the $mode Info.plist" >&2
+    exit 1
+  fi
+  if [[ "$(/usr/libexec/PlistBuddy -c 'Print :LSMultipleInstancesProhibited' "$plist_path")" != "true" ]]; then
+    echo "LSMultipleInstancesProhibited must be true in the $mode Info.plist" >&2
     exit 1
   fi
 done
