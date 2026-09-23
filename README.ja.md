@@ -23,7 +23,7 @@
 
 AirTranslateはMacで再生中の音声を取り込み、ライブで文字起こしし、翻訳ワークフローを選んだ場合は翻訳し、必要に応じて他のアプリの上にフローティング字幕を表示します。Apple Modeは引き続きローカル優先の標準ワークフローです。クラウドエンジンは任意で、対応するプロバイダーキーを設定すると利用できます。
 
-AirTranslate **1.12.1/build1121** では、アプリを一度に1つのインスタンスだけで実行します。AirTranslateをもう一度開いても2つ目のコピーは作られず、キャプチャ、字幕、権限の状態は1つのプロセスに保たれます。
+AirTranslate **1.13.0/build1130** では、翻訳音声出力を選べます。標準のAppleシステム音声のまま使うか、Google Gemini 3.8 Flash TTSまたはGemini 3.8 Flash-Lite TTSを選択できます。Gemini音声出力はmacOS Keychainに保存されたGemini APIキーを使い、安定した翻訳テキストだけを読み上げ、すでに音声を合成するリアルタイム音声プロバイダーのセッションでは重複して合成しません。
 
 設定 > APIキー > Qwenに **Alibaba CloudシンガポールのAPIキー** を入力してください。Qwen3.8 LiveTranslateにはワークスペースIDも必要ですが、Qwen Audio 3.1 Realtime PlusとFiletransはキーだけで利用できます。キーはmacOS Keychainの専用項目に保存し、キャプチャ開始時に選択したリアルタイム音声をAlibaba Cloudシンガポールへ直接送信します。設定 > 一般で既定の `qwen3.8-livetranslate-flash-realtime` または `qwen-audio-3.1-realtime-plus` を選べます。選択したリアルタイムモデルは原文文字起こしと翻訳を返します。**音声出力は任意で、初期状態ではオフです**。Qwen Audioの料金はModel Studioで確認してください。
 
@@ -35,12 +35,14 @@ AirTranslate **1.12.1/build1121** では、アプリを一度に1つのインス
 
 **Qwenは停止前に最終字幕の受信を待ちます**。空の最終応答は暫定字幕を取り消し、定期保存を含むQwenの記録には確定結果だけを保存します。Apple Modeを標準とし、記録ファイル保存は任意のままです。
 
+**翻訳音声出力モデルを選択できます**。設定でローカルのAppleシステム音声、またはGemini 3.8 TTSモデルを選びます。Gemini TTSはユーザーのGeminiキーで、安定した翻訳テキストだけをGoogleへ送信します。
+
 ## ダウンロード
 
-現在の公開最新版: **v1.12.1**。
+現在の公開最新版: **v1.13.0**。
 
 - [AirTranslate.dmgをダウンロード](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [AirTranslate-1.12.1.zipをダウンロード](https://github.com/himomohi/AirTranslate/releases/download/v1.12.1/AirTranslate-1.12.1.zip)
+- [AirTranslate-1.13.0.zipをダウンロード](https://github.com/himomohi/AirTranslate/releases/download/v1.13.0/AirTranslate-1.13.0.zip)
 - [AirTranslate.dmg.sha256をダウンロード](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [バージョン履歴を見る](Release/VERSION-HISTORY.md)
 
@@ -120,10 +122,12 @@ APIキー画面は、**OpenAI**、**Gemini**、**Meta**、**Azure**、**Nari**�
 
 キーはmacOS Keychainに保存されます。AirTranslateにはアカウントシステム、開発者運用の中継サーバー、ハードコードされたプロバイダーキーは含まれていません。
 
+GeminiキーはGemini Liveと任意のGemini翻訳音声出力で共有します。Gemini TTSを選択しても、実アカウントの権限、課金、品質、遅延が検証済みであることは意味しません。
+
 ## プライバシー
 
 - Apple ModeはmacOSフレームワークとApple管理の言語アセットを使います。
-- GPT、Gemini、Meta、Azure、Nari、Grok、Qwenモードは、選択した機能に必要な音声またはテキストだけを、ユーザーのキーで該当プロバイダーへ直接送信します。
+- GPT、Gemini、Meta、Azure、Nari、Grok、Qwenモードは、選択した機能に必要な音声またはテキストだけを、ユーザーのキーで該当プロバイダーへ直接送信します。Gemini TTSはユーザーがGemini音声モデルを選んだ後、安定した翻訳テキストだけを送信します。
 - 保存済み記録は、ファイル保存を有効にした場合にだけMac上の通常のテキストファイルとして残ります。
 - より詳しいプロバイダーと保存の説明は[Release/PRIVACY-NOTICE.md](Release/PRIVACY-NOTICE.md)を参照してください。
 

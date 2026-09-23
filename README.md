@@ -23,7 +23,7 @@ Live Mac audio captions and translation for meetings, videos, lectures, intervie
 
 AirTranslate captures audio playing on your Mac, transcribes it live, translates it when you choose a translation workflow, and can keep captions floating above other apps. Apple Mode remains the default local-first workflow. Cloud engines are optional and become available after you configure the matching provider key.
 
-AirTranslate **1.12.1/build1121** keeps the app to a single running instance. Launching AirTranslate again does not create a second copy, so capture, captions, and permissions stay tied to one process.
+AirTranslate **1.13.0/build1130** adds selectable translated speech output: keep the default Apple system voice, or choose Google Gemini 3.8 Flash TTS or Gemini 3.8 Flash-Lite TTS. Gemini speech output uses the Gemini API key saved in macOS Keychain, speaks stable translated text, and stays out of realtime audio provider sessions that already synthesize speech.
 
 Configure an **Alibaba Cloud Singapore API key** in Settings > API Keys > Qwen. Qwen3.8 LiveTranslate also requires a workspace ID; Qwen Audio 3.1 Realtime Plus and Filetrans use the key without one. The key is stored separately in macOS Keychain; selected realtime audio is sent directly to Alibaba Cloud Singapore when capture starts. Choose the existing `qwen3.8-livetranslate-flash-realtime` default or `qwen-audio-3.1-realtime-plus` in Settings > General. The selected realtime model returns original transcripts and translated text; **speech output is optional and initially off**. Current Qwen Audio pricing is shown in Model Studio.
 
@@ -35,12 +35,14 @@ The **key-aware mode picker** shows unavailable providers in gray and provides a
 
 **Qwen final captions are drained before stopping**. Empty final results retract provisional captions, and saved Qwen transcripts contain confirmed results only, including periodic checkpoints. Apple Mode remains the default; transcript file saving remains opt-in.
 
+**Translated speech output is selectable**. In Settings, choose Apple system speech for local voice output or a Gemini 3.8 TTS model for cloud-generated translated speech. Gemini TTS sends only stable translated text to Google with your Gemini key.
+
 ## Download
 
-Latest public release: **v1.12.1**.
+Latest public release: **v1.13.0**.
 
 - [Download AirTranslate.dmg](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [Download AirTranslate-1.12.1.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.12.1/AirTranslate-1.12.1.zip)
+- [Download AirTranslate-1.13.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.13.0/AirTranslate-1.13.0.zip)
 - [Download AirTranslate.dmg.sha256](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [View release history](Release/VERSION-HISTORY.md)
 
@@ -120,10 +122,12 @@ The API Keys screen manages **OpenAI**, **Gemini**, **Meta**, **Azure**, **Nari*
 
 Keys are stored in macOS Keychain. AirTranslate does not ship with an account system, a developer-operated relay server, or hardcoded provider keys.
 
+The Gemini key is shared by Gemini Live and optional Gemini translated speech output. Selecting Gemini TTS does not verify account authorization, billing, quality, or latency until used with a real account.
+
 ## Privacy
 
 - Apple Mode uses macOS frameworks and locally managed Apple language assets.
-- GPT, Gemini, Meta, Azure, Nari, Grok, and Qwen modes send only the audio or text needed for the selected feature directly to that provider using your key.
+- GPT, Gemini, Meta, Azure, Nari, Grok, and Qwen modes send only the audio or text needed for the selected feature directly to that provider using your key. Gemini TTS sends stable translated text only after you choose a Gemini speech model.
 - Saved transcripts are normal text files on your Mac only when file saving is enabled.
 - See [Release/PRIVACY-NOTICE.md](Release/PRIVACY-NOTICE.md) for the longer provider and storage guide.
 

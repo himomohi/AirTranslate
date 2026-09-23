@@ -23,7 +23,7 @@
 
 AirTranslate 会捕获 Mac 正在播放的音频，实时转写；当你选择翻译流程时，它会进行翻译，并可将字幕悬浮在其他应用上方。Apple Mode 仍然是默认的本地优先流程。云端引擎为可选项，配置对应提供方密钥后即可使用。
 
-AirTranslate **1.12.1/build1121** 让应用一次只运行一个实例。再次打开 AirTranslate 时不会创建第二个副本，因此采集、字幕和权限状态都会保持在同一个进程中。
+AirTranslate **1.13.0/build1130** 可选择译文语音输出。你可以保留默认 Apple 系统语音，也可以选择 Google Gemini 3.8 Flash TTS 或 Gemini 3.8 Flash-Lite TTS。Gemini 语音输出使用保存在 macOS Keychain 中的 Gemini API 密钥，只朗读稳定的译文文本，并且在已自行合成语音的实时音频提供方会话中不会重复合成。
 
 请在设置 > API 密钥 > Qwen 中输入 **阿里云新加坡 API 密钥**。Qwen3.8 LiveTranslate 还需要工作空间 ID；Qwen Audio 3.1 Realtime Plus 和 Filetrans 仅使用密钥。密钥单独保存在 macOS Keychain 中，开始捕获后会将所选实时音频直接发送到阿里云新加坡。在设置 > 通用中，可选择默认模型 `qwen3.8-livetranslate-flash-realtime` 或 `qwen-audio-3.1-realtime-plus`。所选实时模型会返回原文转写和译文。**语音输出为可选项，默认关闭**。请在 Model Studio 中查看当前 Qwen Audio 价格。
 
@@ -35,12 +35,14 @@ AirTranslate **1.12.1/build1121** 让应用一次只运行一个实例。再次�
 
 **Qwen 停止前会等待最终字幕**。空的最终响应会撤回临时字幕，Qwen 记录仅保存已确认的结果，包括定期保存。Apple Mode 仍为默认模式，记录文件保存仍需主动启用。
 
+**可以选择译文语音输出模型**。在设置中选择本地 Apple 系统语音，或选择 Gemini 3.8 TTS 模型。Gemini TTS 会使用你的 Gemini 密钥，只将稳定的译文文本发送给 Google。
+
 ## 下载
 
-当前公开最新版：**v1.12.1**。
+当前公开最新版：**v1.13.0**。
 
 - [下载 AirTranslate.dmg](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [下载 AirTranslate-1.12.1.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.12.1/AirTranslate-1.12.1.zip)
+- [下载 AirTranslate-1.13.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.13.0/AirTranslate-1.13.0.zip)
 - [下载 AirTranslate.dmg.sha256](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [查看版本历史](Release/VERSION-HISTORY.md)
 
@@ -120,10 +122,12 @@ API 密钥页面通过一个提供方列表管理 **OpenAI**、**Gemini**、**Me
 
 密钥保存在 macOS 钥匙串中。AirTranslate 不包含账号系统、开发者运营的中继服务器，也不包含硬编码的提供方密钥。
 
+Gemini 密钥由 Gemini Live 和可选的 Gemini 译文语音输出共用。选择 Gemini TTS 并不表示真实账号权限、计费、质量或延迟已经过验证。
+
 ## 隐私
 
 - Apple Mode 使用 macOS 框架和 Apple 管理的语言资源。
-- GPT、Gemini、Meta、Azure、Nari、Grok 和 Qwen 模式只会把所选功能需要的音频或文本，使用你的密钥直接发送给对应提供方。
+- GPT、Gemini、Meta、Azure、Nari、Grok 和 Qwen 模式只会把所选功能需要的音频或文本，使用你的密钥直接发送给对应提供方。Gemini TTS 仅在你选择 Gemini 语音模型后发送稳定的译文文本。
 - 只有开启文件保存后，已保存记录才会作为普通文本文件留在你的 Mac 上。
 - 更长的提供方和存储说明见 [Release/PRIVACY-NOTICE.md](Release/PRIVACY-NOTICE.md)。
 

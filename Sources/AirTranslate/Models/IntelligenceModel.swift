@@ -212,6 +212,38 @@ enum GeminiTranslationModel: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+enum SpeechSynthesisModel: String, CaseIterable, Identifiable, Sendable {
+    case appleSystem = "apple-system"
+    case gemini38Flash = "gemini-3.8-flash-tts"
+    case gemini38FlashLite = "gemini-3.8-flash-lite-tts"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .appleSystem:
+            AppText.localized(
+                english: "Apple System Voice",
+                korean: "Apple 시스템 음성",
+                japanese: "Appleシステム音声",
+                chineseSimplified: "Apple 系统语音"
+            )
+        case .gemini38Flash:
+            "Gemini 3.8 Flash TTS"
+        case .gemini38FlashLite:
+            "Gemini 3.8 Flash-Lite TTS"
+        }
+    }
+
+    var isGeminiTTS: Bool {
+        self != .appleSystem
+    }
+
+    var apiModelID: String? {
+        isGeminiTTS ? rawValue : nil
+    }
+}
+
 enum MetaTranscriptionModel: String, CaseIterable, Identifiable, Sendable {
     case off
     case museVoiceTranscribe = "muse-voice-transcribe-1.0"

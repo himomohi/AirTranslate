@@ -317,10 +317,10 @@ enum AppText {
     )
     static let geminiAPIKey = localized(english: "Gemini API Key", korean: "Gemini API 키")
     static let geminiAPIKeyDescription = localized(
-        english: "AirTranslate stores this key in macOS Keychain and uses it only for the selected Gemini Live mode.",
-        korean: "AirTranslate는 이 키를 macOS Keychain에 저장하고 선택한 Gemini Live 모드에서만 사용합니다.",
-        japanese: "AirTranslateはこのキーをmacOS Keychainに保存し、選択したGemini Liveモードでのみ使用します。",
-        chineseSimplified: "AirTranslate 会将此密钥存储在 macOS Keychain 中，并且仅在所选 Gemini Live 模式下使用。"
+        english: "AirTranslate stores this key in macOS Keychain and uses it for Gemini Live or selected Gemini speech output.",
+        korean: "AirTranslate는 이 키를 macOS Keychain에 저장하고 Gemini Live 또는 선택한 Gemini 음성 출력에 사용합니다.",
+        japanese: "AirTranslateはこのキーをmacOS Keychainに保存し、Gemini Liveまたは選択したGemini音声出力に使用します。",
+        chineseSimplified: "AirTranslate 会将此密钥存储在 macOS Keychain 中，并用于 Gemini Live 或所选 Gemini 语音输出。"
     )
     static let geminiAPIKeySaved = localized(
         english: "Gemini API key saved in Keychain.",
@@ -347,6 +347,18 @@ enum AppText {
         korean: "Gemini Live를 사용하려면 설정에서 Gemini API 키를 먼저 입력하세요.",
         japanese: "Gemini Liveを使用する前に、設定でGemini APIキーを追加してください。",
         chineseSimplified: "使用 Gemini Live 前，请先在设置中添加 Gemini API key。"
+    )
+    static let geminiTTSAPIKeyMissing = localized(
+        english: "Add a Gemini API key in Settings to use Gemini speech output.",
+        korean: "Gemini 음성 출력을 사용하려면 설정에서 Gemini API 키를 입력하세요.",
+        japanese: "Gemini音声出力を使用するには、設定でGemini APIキーを追加してください。",
+        chineseSimplified: "要使用 Gemini 语音输出，请先在设置中添加 Gemini API key。"
+    )
+    static let geminiSpeechOutputFailed = localized(
+        english: "Gemini speech output failed. Check the API key and network connection.",
+        korean: "Gemini 음성 출력에 실패했습니다. API 키와 네트워크 연결을 확인하세요.",
+        japanese: "Gemini音声出力に失敗しました。APIキーとネットワーク接続を確認してください。",
+        chineseSimplified: "Gemini 语音输出失败。请检查 API key 和网络连接。"
     )
     static let metaAPIKey = localized(
         english: "Meta Model API Key",

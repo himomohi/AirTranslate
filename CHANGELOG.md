@@ -2,6 +2,16 @@
 
 All notable changes to AirTranslate are documented in this file.
 
+## 1.13.0 - 2026-09-24
+
+### Added
+
+- Translated speech output can now use Google Gemini 3.8 Flash TTS or Gemini 3.8 Flash-Lite TTS as user-selectable alternatives to the default Apple system voice.
+
+### Changed
+
+- Gemini speech output uses the saved Gemini API key from macOS Keychain, speaks only stable translated text, and stays disabled for realtime audio providers that already produce their own speech.
+
 ## 1.12.1 - 2026-09-23
 
 ### Fixed

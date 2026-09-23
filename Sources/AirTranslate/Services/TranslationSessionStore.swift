@@ -91,6 +91,7 @@ private enum SettingsKey {
     static let isDubbingEnabled = "isDubbingEnabled"
     static let appleVoiceOutputEnabled = "appleVoiceOutputEnabled"
     static let providerVoiceOutputEnabled = "providerVoiceOutputEnabled"
+    static let speechSynthesisModelID = "speechSynthesisModelID"
     static let translatedVoiceVolume = "translatedVoiceVolume"
     static let isTranscriptLintEnabled = "isTranscriptLintEnabled"
     static let isTranscriptPersistenceEnabled = "isTranscriptPersistenceEnabled"
@@ -491,6 +492,13 @@ final class TranslationSessionStore {
     var isRunning = false
     var isStarting = false
     var isPaused = false
+    var speechSynthesisModel = SpeechSynthesisModel.appleSystem {
+        didSet {
+            guard speechSynthesisModel != oldValue else { return }
+            persistSelectedSettings()
+            stopSpeaking()
+        }
+    }
     var isDubbingEnabled = false {
         didSet {
             if !isApplyingVoiceOutputDefault {
@@ -938,6 +946,7 @@ final class TranslationSessionStore {
     private let openAITranslator = OpenAITranslationService()
     private let foundationTranscriptPolisher = FoundationTranscriptPolisher()
     private let speechOutput = TranslatedSpeechOutput()
+    private let geminiSpeechOutput = GeminiSpeechOutput()
     private let openAIRealtimeAudioOutput = OpenAIRealtimeAudioOutput()
     private let spellChecker = NSSpellChecker.shared
     private let spellDocumentTag = NSSpellChecker.uniqueSpellDocumentTag()
@@ -1179,6 +1188,9 @@ final class TranslationSessionStore {
         self.transcriptsDirectoryOverride = transcriptsDirectoryURL
         self.transcriptCheckpointInterval = transcriptCheckpointInterval
         restoreSelectedSettings()
+        geminiSpeechOutput.onFailure = { [weak self] in
+            self?.statusMessage = AppText.geminiSpeechOutputFailed
+        }
         applyTranslatedVoiceVolume()
         syncLiveOutputModeWithLanguagePair()
         systemAudioCapture.delegate = self
@@ -3996,6 +4008,10 @@ final class TranslationSessionStore {
         } else if defaults.object(forKey: SettingsKey.isDubbingEnabled) != nil {
             providerVoiceOutputEnabled = defaults.bool(forKey: SettingsKey.isDubbingEnabled)
         }
+        if let modelID = defaults.string(forKey: SettingsKey.speechSynthesisModelID),
+           let model = SpeechSynthesisModel(rawValue: modelID) {
+            speechSynthesisModel = model
+        }
         if defaults.object(forKey: SettingsKey.translatedVoiceVolume) != nil {
             translatedVoiceVolume = Self.clampedVolume(defaults.double(forKey: SettingsKey.translatedVoiceVolume))
         }
@@ -4197,6 +4213,7 @@ final class TranslationSessionStore {
         defaults.set(isDubbingEnabled, forKey: SettingsKey.isDubbingEnabled)
         defaults.set(appleVoiceOutputEnabled, forKey: SettingsKey.appleVoiceOutputEnabled)
         defaults.set(providerVoiceOutputEnabled, forKey: SettingsKey.providerVoiceOutputEnabled)
+        defaults.set(speechSynthesisModel.rawValue, forKey: SettingsKey.speechSynthesisModelID)
         defaults.set(translatedVoiceVolume, forKey: SettingsKey.translatedVoiceVolume)
         defaults.set(isTranscriptLintEnabled, forKey: SettingsKey.isTranscriptLintEnabled)
         defaults.set(isTranscriptPersistenceEnabled, forKey: SettingsKey.isTranscriptPersistenceEnabled)
@@ -7222,7 +7239,12 @@ final class TranslationSessionStore {
 
     private func speak(_ text: String) {
         guard !text.isEmpty else { return }
-        speechOutput.speak(text, language: targetLanguage)
+        switch speechSynthesisModel {
+        case .appleSystem:
+            speechOutput.speak(text, language: targetLanguage)
+        case .gemini38Flash, .gemini38FlashLite:
+            geminiSpeechOutput.speak(text, model: speechSynthesisModel)
+        }
     }
 
     private func speakTranslatedDeltaIfNeeded(_ translatedText: String, isFinal: Bool = false, appleLineID: UUID? = nil) {
@@ -7281,11 +7303,13 @@ final class TranslationSessionStore {
 
     private func stopSpeaking() {
         speechOutput.stop()
+        geminiSpeechOutput.stop()
         openAIRealtimeAudioOutput.stop()
     }
 
     private func applyTranslatedVoiceVolume() {
         speechOutput.setVolume(translatedVoiceVolume)
+        geminiSpeechOutput.setVolume(translatedVoiceVolume)
         openAIRealtimeAudioOutput.setVolume(translatedVoiceVolume)
     }
 

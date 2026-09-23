@@ -35,6 +35,12 @@ When either Gemini mode is enabled, AirTranslate sends the audio needed for the 
 
 Gemini API keys are user-provided runtime data. AirTranslate stores them in macOS Keychain and does not include API keys in the source tree, release scripts, or generated release bundles.
 
+## Optional Gemini Speech Output (1.13.0+)
+
+When the user selects a Gemini 3.8 TTS model for translated speech output, AirTranslate sends stable translated text directly to the Google Gemini API and receives generated audio for playback. This speech-output path sends translated text, not microphone or system audio. Apple system speech remains local. Gemini speech output is not added to realtime audio-provider sessions that already synthesize speech, which avoids duplicate output.
+
+The Gemini API key remains in macOS Keychain and is sent to Google in the API request header. Google's account, data handling, quota, pricing, and service terms apply. Live authentication, billing, retention behavior, output quality, and latency depend on the user's Google account and service availability and are not verified by local tests.
+
 ## Optional Meta Scribe Mode
 
 Meta Scribe is optional and works only after the user provides a Meta API key.

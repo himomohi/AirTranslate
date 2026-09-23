@@ -23,7 +23,7 @@
 
 AirTranslate는 Mac에서 재생되는 소리를 캡처해 실시간으로 전사하고, 번역 흐름을 선택하면 번역하며, 필요하면 다른 앱 위에 플로팅 자막을 유지합니다. Apple 기본 모드는 계속 로컬 우선 기본 경로입니다. 클라우드 엔진은 선택형이며 해당 제공자 키를 설정하면 사용할 수 있습니다.
 
-AirTranslate **1.12.1/build1121**은 앱이 한 번에 하나의 인스턴스만 실행되도록 합니다. AirTranslate를 다시 열어도 두 번째 사본을 만들지 않아 캡처, 자막, 권한 상태가 하나의 프로세스에 묶입니다.
+AirTranslate **1.13.0/build1130**는 번역 음성 출력을 선택할 수 있게 합니다. 기본 Apple 시스템 음성을 유지하거나 Google Gemini 3.8 Flash TTS 또는 Gemini 3.8 Flash-Lite TTS를 고를 수 있습니다. Gemini 음성 출력은 macOS Keychain에 저장된 Gemini API 키를 사용하고, 안정된 번역 텍스트만 말하며, 이미 음성을 합성하는 실시간 음성 제공자 세션에서는 중복으로 합성하지 않습니다.
 
 설정 > API 키 > Qwen에 **Alibaba Cloud 싱가포르 API 키**를 입력하세요. Qwen3.8 LiveTranslate는 워크스페이스 ID도 필요하지만 Qwen Audio 3.1 Realtime Plus와 Filetrans는 키만 사용합니다. 키는 macOS Keychain의 전용 항목에 저장하며, 캡처를 시작하면 선택한 실시간 오디오를 Alibaba Cloud 싱가포르로 직접 전송합니다. 설정 > 일반에서 기존 기본 모델 `qwen3.8-livetranslate-flash-realtime` 또는 `qwen-audio-3.1-realtime-plus`를 선택할 수 있습니다. 선택한 실시간 모델은 원문 전사와 번역문을 반환합니다. **음성 출력은 선택 사항이며 처음에는 꺼져 있습니다**. Qwen Audio 요금은 Model Studio에서 확인하세요.
 
@@ -35,12 +35,14 @@ AirTranslate **1.12.1/build1121**은 앱이 한 번에 하나의 인스턴스만
 
 **Qwen 중지 전에 최종 자막 수신을 기다립니다**. 빈 최종 응답은 임시 자막을 철회하고, 주기적 저장을 포함한 Qwen 기록에는 확정 결과만 남깁니다. Apple 기본 모드와 기록 파일 저장의 선택 사용 정책은 유지합니다.
 
+**번역 음성 출력 모델을 선택할 수 있습니다**. 설정에서 로컬 Apple 시스템 음성 또는 Gemini 3.8 TTS 모델을 고릅니다. Gemini TTS는 사용자의 Gemini 키로 안정된 번역 텍스트만 Google에 보냅니다.
+
 ## 다운로드
 
-현재 공개 최신 릴리즈: **v1.12.1**.
+현재 공개 최신 릴리즈: **v1.13.0**.
 
 - [AirTranslate.dmg 다운로드](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [AirTranslate-1.12.1.zip 다운로드](https://github.com/himomohi/AirTranslate/releases/download/v1.12.1/AirTranslate-1.12.1.zip)
+- [AirTranslate-1.13.0.zip 다운로드](https://github.com/himomohi/AirTranslate/releases/download/v1.13.0/AirTranslate-1.13.0.zip)
 - [AirTranslate.dmg.sha256 다운로드](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [버전 이력 보기](Release/VERSION-HISTORY.md)
 
@@ -120,10 +122,12 @@ API 키 화면은 **OpenAI**, **Gemini**, **Meta**, **Azure**, **Nari**, **Space
 
 키는 macOS Keychain에 저장됩니다. AirTranslate는 계정 시스템, 개발자 운영 중계 서버, 하드코딩된 제공자 키를 포함하지 않습니다.
 
+Gemini 키는 Gemini Live와 선택형 Gemini 번역 음성 출력에서 함께 사용합니다. Gemini TTS를 선택해도 실제 계정 권한, 과금, 품질, 지연 검증을 의미하지 않습니다.
+
 ## 개인정보
 
 - Apple 기본 모드는 macOS 프레임워크와 Apple 언어 자산을 사용합니다.
-- GPT, Gemini, Meta, Azure, Nari, Grok, Qwen 모드는 선택한 기능에 필요한 오디오나 텍스트만 사용자의 키로 해당 제공자에게 직접 보냅니다.
+- GPT, Gemini, Meta, Azure, Nari, Grok, Qwen 모드는 선택한 기능에 필요한 오디오나 텍스트만 사용자의 키로 해당 제공자에게 직접 보냅니다. Gemini TTS는 사용자가 Gemini 음성 모델을 선택한 뒤 안정된 번역 텍스트만 전송합니다.
 - 저장된 기록은 파일 저장을 켰을 때만 사용자 Mac의 일반 텍스트 파일로 남습니다.
 - 더 긴 제공자 및 저장 안내는 [Release/PRIVACY-NOTICE.md](Release/PRIVACY-NOTICE.md)를 참고하세요.
 

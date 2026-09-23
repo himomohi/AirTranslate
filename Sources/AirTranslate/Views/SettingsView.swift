@@ -403,6 +403,43 @@ struct SettingsView: View {
                 )
                 .disabled(isSessionConfigurationLocked)
 
+                if !session.isUsingProviderRealtimeTranslation {
+                    SettingsControlRow(
+                        title: SettingsCopy.translatedSpeechModel,
+                        detail: SettingsCopy.translatedSpeechModelDetail,
+                        systemImage: "waveform"
+                    ) {
+                        Picker(
+                            SettingsCopy.translatedSpeechModel,
+                            selection: lockedSessionConfigurationBinding($session.speechSynthesisModel)
+                        ) {
+                            ForEach(SpeechSynthesisModel.allCases) { model in
+                                Text(model.title).tag(model)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .frame(minWidth: 220, idealWidth: 260, maxWidth: 300)
+                        .disabled(isSessionConfigurationLocked)
+                        .accessibilityLabel(SettingsCopy.translatedSpeechModel)
+                        .accessibilityValue(session.speechSynthesisModel.title)
+                        .accessibilityHint(SettingsCopy.translatedSpeechModelDetail)
+                    }
+                    .disabled(isSessionConfigurationLocked)
+
+                    if session.speechSynthesisModel.isGeminiTTS,
+                       !session.hasGeminiAPIKey,
+                       processingModeSelection.wrappedValue != .gemini {
+                        SettingsNoticeActionRow(
+                            text: AppText.geminiTTSAPIKeyMissing,
+                            systemImage: "key",
+                            actionTitle: SettingsCopy.enterGeminiAPIKey
+                        ) {
+                            selectedCategory.wrappedValue = .apiKeys
+                        }
+                    }
+                }
+
                 SettingsControlRow(
                     title: SettingsCopy.liveTranslationVolume,
                     detail: session.isDubbingEnabled
@@ -1299,6 +1336,18 @@ private enum SettingsCopy {
     static let dubbingDetail = AppText.localized(
         english: "Speak translated output when a stable translated segment is available.",
         korean: "안정된 번역 문장이 생기면 번역 음성을 재생합니다."
+    )
+    static let translatedSpeechModel = AppText.localized(
+        english: "Translated Speech Model",
+        korean: "번역 음성 모델",
+        japanese: "翻訳音声モデル",
+        chineseSimplified: "译文语音模型"
+    )
+    static let translatedSpeechModelDetail = AppText.localized(
+        english: "For translated text output, choose Apple system speech or Gemini 3.8 Flash or Flash-Lite TTS.",
+        korean: "번역된 텍스트의 음성 출력에 Apple 시스템 음성 또는 Gemini 3.8 Flash·Flash-Lite TTS를 선택합니다.",
+        japanese: "翻訳テキストの音声出力にAppleシステム音声、Gemini 3.8 FlashまたはFlash-Lite TTSを選択します。",
+        chineseSimplified: "为译文语音输出选择 Apple 系统语音、Gemini 3.8 Flash 或 Flash-Lite TTS。"
     )
     static let liveTranslationVolume = AppText.localized(
         english: "Volume",
