@@ -23,13 +23,13 @@ Live Mac audio captions and translation for meetings, videos, lectures, intervie
 
 AirTranslate captures audio playing on your Mac, transcribes it live, translates it when you choose a translation workflow, and can keep captions floating above other apps. Apple Mode remains the default local-first workflow. Cloud engines are optional and become available after you configure the matching provider key.
 
-AirTranslate **1.13.0/build1130** adds selectable translated speech output: keep the default Apple system voice, or choose Google Gemini 3.8 Flash TTS or Gemini 3.8 Flash-Lite TTS. Gemini speech output uses the Gemini API key saved in macOS Keychain, speaks stable translated text, and stays out of realtime audio provider sessions that already synthesize speech.
+AirTranslate **1.14.0/build1140** lets you choose provider-specific models from the bottom-right control on the main workspace. The console badge shows the selected model name, and the same popover keeps provider switching, model selection, and Settings shortcuts together. Translated speech model selection appears there when the current workflow supports it.
 
 Configure an **Alibaba Cloud Singapore API key** in Settings > API Keys > Qwen. Qwen3.8 LiveTranslate also requires a workspace ID; Qwen Audio 3.1 Realtime Plus and Filetrans use the key without one. The key is stored separately in macOS Keychain; selected realtime audio is sent directly to Alibaba Cloud Singapore when capture starts. Choose the existing `qwen3.8-livetranslate-flash-realtime` default or `qwen-audio-3.1-realtime-plus` in Settings > General. The selected realtime model returns original transcripts and translated text; **speech output is optional and initially off**. Current Qwen Audio pricing is shown in Model Studio.
 
 Settings > General also includes `qwen-audio-3.1-asr-flash-filetrans` for asynchronous transcription. **Only a public HTTPS audio URL is accepted**; QwenCloud fetches its audio, and AirTranslate does not upload a local file in this workflow. Share only audio you are authorized to send. See [Qwen setup and pricing](docs/qwen-livetranslate.md). Real-account authentication, billing, translation and transcription quality, and latency remain unverified.
 
-The **key-aware mode picker** shows unavailable providers in gray and provides a settings shortcut on each row. Information icons describe the selected model and its pricing basis. **OpenAI Audio unifies translation and source transcription** while preserving the selected language and output preferences.
+The **key-aware mode picker** shows unavailable providers in gray and provides a settings shortcut on each row. Information icons describe the selected model and its pricing basis. **OpenAI Audio unifies translation and source transcription** while preserving the selected language and output preferences. The main picker exposes Apple, OpenAI, Gemini, Qwen, and Nari model choices, including Qwen Audio 3.1, Gemini Live, Gemini TTS, and Nari GA options where applicable.
 
 **Floating captions show text only**: no window background, border, toolbar, status text, or hover resize controls. Five text styles, font and color options, width, line spacing, ordering, and sample previews are available in Settings. Use the main window, menu bar, or ⌘⇧C to show or hide captions.
 
@@ -39,10 +39,10 @@ The **key-aware mode picker** shows unavailable providers in gray and provides a
 
 ## Download
 
-Latest public release: **v1.13.0**.
+Latest public release: **v1.14.0**.
 
 - [Download AirTranslate.dmg](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [Download AirTranslate-1.13.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.13.0/AirTranslate-1.13.0.zip)
+- [Download AirTranslate-1.14.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.14.0/AirTranslate-1.14.0.zip)
 - [Download AirTranslate.dmg.sha256](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [View release history](Release/VERSION-HISTORY.md)
 

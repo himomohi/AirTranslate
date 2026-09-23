@@ -23,13 +23,13 @@
 
 AirTranslate 会捕获 Mac 正在播放的音频，实时转写；当你选择翻译流程时，它会进行翻译，并可将字幕悬浮在其他应用上方。Apple Mode 仍然是默认的本地优先流程。云端引擎为可选项，配置对应提供方密钥后即可使用。
 
-AirTranslate **1.13.0/build1130** 可选择译文语音输出。你可以保留默认 Apple 系统语音，也可以选择 Google Gemini 3.8 Flash TTS 或 Gemini 3.8 Flash-Lite TTS。Gemini 语音输出使用保存在 macOS Keychain 中的 Gemini API 密钥，只朗读稳定的译文文本，并且在已自行合成语音的实时音频提供方会话中不会重复合成。
+AirTranslate **1.14.0/build1140** 可直接在主工作区右下角控件中选择各提供方的模型。控制台徽章会显示当前选中的模型名称，同一个弹出面板中可完成提供方切换、模型选择和设置入口。当前流程支持时，可在同一个弹出面板中选择译文语音模型。
 
 请在设置 > API 密钥 > Qwen 中输入 **阿里云新加坡 API 密钥**。Qwen3.8 LiveTranslate 还需要工作空间 ID；Qwen Audio 3.1 Realtime Plus 和 Filetrans 仅使用密钥。密钥单独保存在 macOS Keychain 中，开始捕获后会将所选实时音频直接发送到阿里云新加坡。在设置 > 通用中，可选择默认模型 `qwen3.8-livetranslate-flash-realtime` 或 `qwen-audio-3.1-realtime-plus`。所选实时模型会返回原文转写和译文。**语音输出为可选项，默认关闭**。请在 Model Studio 中查看当前 Qwen Audio 价格。
 
 设置 > 通用中的 `qwen-audio-3.1-asr-flash-filetrans` 用于异步转写音频文件。**仅接受公开的 HTTPS 音频 URL**；QwenCloud 会从 URL 获取音频，此流程不会上传本地音频文件。请只分享你有权发送给提供方的音频。参见 [Qwen 设置与价格](docs/qwen-livetranslate.md)。真实账户认证、计费、翻译和转写质量及延迟尚未验证。
 
-**反映 API 密钥状态的模式选择器**将没有密钥的提供方显示为灰色，并在每行提供设置入口。信息图标说明模型及其计费依据。**OpenAI 语音统一翻译与原文转写**，并保留语言和输出偏好。
+**反映 API 密钥状态的模式选择器**将没有密钥的提供方显示为灰色，并在每行提供设置入口。信息图标说明模型及其计费依据。**OpenAI 语音统一翻译与原文转写**，并保留语言和输出偏好。主界面选择器可选择 Apple、OpenAI、Gemini、Qwen 和 Nari 模型，并在适用时直接选择 Qwen Audio 3.1、Gemini Live、Gemini TTS 和 Nari GA 选项。
 
 **悬浮字幕只显示文字**，不显示窗口背景、边框、工具栏、状态文字或悬停缩放控件。可在设置中调整五种文字样式、字体、颜色、宽度、行距、顺序及示例预览，通过主界面、菜单栏或 ⌘⇧C 切换显示。
 
@@ -39,10 +39,10 @@ AirTranslate **1.13.0/build1130** 可选择译文语音输出。你可以保留�
 
 ## 下载
 
-当前公开最新版：**v1.13.0**。
+当前公开最新版：**v1.14.0**。
 
 - [下载 AirTranslate.dmg](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [下载 AirTranslate-1.13.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.13.0/AirTranslate-1.13.0.zip)
+- [下载 AirTranslate-1.14.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.14.0/AirTranslate-1.14.0.zip)
 - [下载 AirTranslate.dmg.sha256](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [查看版本历史](Release/VERSION-HISTORY.md)
 

@@ -23,13 +23,13 @@
 
 AirTranslate는 Mac에서 재생되는 소리를 캡처해 실시간으로 전사하고, 번역 흐름을 선택하면 번역하며, 필요하면 다른 앱 위에 플로팅 자막을 유지합니다. Apple 기본 모드는 계속 로컬 우선 기본 경로입니다. 클라우드 엔진은 선택형이며 해당 제공자 키를 설정하면 사용할 수 있습니다.
 
-AirTranslate **1.13.0/build1130**는 번역 음성 출력을 선택할 수 있게 합니다. 기본 Apple 시스템 음성을 유지하거나 Google Gemini 3.8 Flash TTS 또는 Gemini 3.8 Flash-Lite TTS를 고를 수 있습니다. Gemini 음성 출력은 macOS Keychain에 저장된 Gemini API 키를 사용하고, 안정된 번역 텍스트만 말하며, 이미 음성을 합성하는 실시간 음성 제공자 세션에서는 중복으로 합성하지 않습니다.
+AirTranslate **1.14.0/build1140**는 메인 화면 우측 하단 컨트롤에서 제공자별 모델을 직접 선택할 수 있게 합니다. 콘솔 배지는 선택된 모델 이름을 보여 주며, 같은 팝오버에서 제공자 전환, 모델 선택, 설정 바로가기를 함께 다룹니다. 현재 워크플로에서 지원되면 같은 팝오버에서 번역 음성 모델을 선택할 수 있습니다.
 
 설정 > API 키 > Qwen에 **Alibaba Cloud 싱가포르 API 키**를 입력하세요. Qwen3.8 LiveTranslate는 워크스페이스 ID도 필요하지만 Qwen Audio 3.1 Realtime Plus와 Filetrans는 키만 사용합니다. 키는 macOS Keychain의 전용 항목에 저장하며, 캡처를 시작하면 선택한 실시간 오디오를 Alibaba Cloud 싱가포르로 직접 전송합니다. 설정 > 일반에서 기존 기본 모델 `qwen3.8-livetranslate-flash-realtime` 또는 `qwen-audio-3.1-realtime-plus`를 선택할 수 있습니다. 선택한 실시간 모델은 원문 전사와 번역문을 반환합니다. **음성 출력은 선택 사항이며 처음에는 꺼져 있습니다**. Qwen Audio 요금은 Model Studio에서 확인하세요.
 
 설정 > 일반의 `qwen-audio-3.1-asr-flash-filetrans`는 비동기 파일 전사 도구입니다. **공개 HTTPS 오디오 URL만 지원**하며 QwenCloud가 URL에서 오디오를 가져옵니다. 이 흐름은 로컬 파일을 업로드하지 않습니다. 제공자에게 보낼 권한이 있는 오디오만 공유하세요. [Qwen 설정·요금 안내](docs/qwen-livetranslate.md)를 참고하세요. 실제 계정 인증·과금·번역·전사 품질·지연은 미검증입니다.
 
-**API 키 상태를 반영하는 모드 선택기**는 키가 없는 제공자를 회색으로 표시하고 각 행에 설정 바로가기를 제공합니다. 정보 아이콘에서 모델과 요금 기준을 확인할 수 있습니다. **OpenAI 음성은 번역과 원문 전사를 하나로 통합**하고 언어·출력 선호를 유지합니다.
+**API 키 상태를 반영하는 모드 선택기**는 키가 없는 제공자를 회색으로 표시하고 각 행에 설정 바로가기를 제공합니다. 정보 아이콘에서 모델과 요금 기준을 확인할 수 있습니다. **OpenAI 음성은 번역과 원문 전사를 하나로 통합**하고 언어·출력 선호를 유지합니다. 메인 선택기에서 Apple, OpenAI, Gemini, Qwen, Nari 모델을 고를 수 있고, 해당되는 경우 Qwen Audio 3.1, Gemini Live, Gemini TTS, Nari GA 옵션을 직접 선택할 수 있습니다.
 
 **플로팅 자막은 글자만 표시**합니다. 창 배경·테두리·도구막대·상태 문구·hover 리사이즈 조작은 표시하지 않습니다. 다섯 글자 스타일과 글꼴·색상·폭·줄 간격·배치·샘플 미리보기는 설정에서 조절하고, 메인 화면·메뉴바·⌘⇧C로 표시 여부를 바꿉니다.
 
@@ -39,10 +39,10 @@ AirTranslate **1.13.0/build1130**는 번역 음성 출력을 선택할 수 있�
 
 ## 다운로드
 
-현재 공개 최신 릴리즈: **v1.13.0**.
+현재 공개 최신 릴리즈: **v1.14.0**.
 
 - [AirTranslate.dmg 다운로드](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [AirTranslate-1.13.0.zip 다운로드](https://github.com/himomohi/AirTranslate/releases/download/v1.13.0/AirTranslate-1.13.0.zip)
+- [AirTranslate-1.14.0.zip 다운로드](https://github.com/himomohi/AirTranslate/releases/download/v1.14.0/AirTranslate-1.14.0.zip)
 - [AirTranslate.dmg.sha256 다운로드](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [버전 이력 보기](Release/VERSION-HISTORY.md)
 

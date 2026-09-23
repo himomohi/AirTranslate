@@ -23,13 +23,13 @@
 
 AirTranslateはMacで再生中の音声を取り込み、ライブで文字起こしし、翻訳ワークフローを選んだ場合は翻訳し、必要に応じて他のアプリの上にフローティング字幕を表示します。Apple Modeは引き続きローカル優先の標準ワークフローです。クラウドエンジンは任意で、対応するプロバイダーキーを設定すると利用できます。
 
-AirTranslate **1.13.0/build1130** では、翻訳音声出力を選べます。標準のAppleシステム音声のまま使うか、Google Gemini 3.8 Flash TTSまたはGemini 3.8 Flash-Lite TTSを選択できます。Gemini音声出力はmacOS Keychainに保存されたGemini APIキーを使い、安定した翻訳テキストだけを読み上げ、すでに音声を合成するリアルタイム音声プロバイダーのセッションでは重複して合成しません。
+AirTranslate **1.14.0/build1140** では、メインワークスペース右下のコントロールからプロバイダー別モデルを直接選択できます。コンソールのバッジには選択中のモデル名が表示され、同じポップオーバーにプロバイダー切り替え、モデル選択、設定ショートカットがあります。現在のワークフローが対応している場合、同じポップオーバーで翻訳音声モデルを選択できます。
 
 設定 > APIキー > Qwenに **Alibaba CloudシンガポールのAPIキー** を入力してください。Qwen3.8 LiveTranslateにはワークスペースIDも必要ですが、Qwen Audio 3.1 Realtime PlusとFiletransはキーだけで利用できます。キーはmacOS Keychainの専用項目に保存し、キャプチャ開始時に選択したリアルタイム音声をAlibaba Cloudシンガポールへ直接送信します。設定 > 一般で既定の `qwen3.8-livetranslate-flash-realtime` または `qwen-audio-3.1-realtime-plus` を選べます。選択したリアルタイムモデルは原文文字起こしと翻訳を返します。**音声出力は任意で、初期状態ではオフです**。Qwen Audioの料金はModel Studioで確認してください。
 
 設定 > 一般の `qwen-audio-3.1-asr-flash-filetrans` は非同期の音声ファイル文字起こしです。**公開HTTPS音声URLのみ利用できます**。QwenCloudがURLから音声を取得し、この機能はローカルファイルをアップロードしません。送信する権利のある音声だけを共有してください。[Qwenの設定と料金](docs/qwen-livetranslate.md)をご覧ください。実アカウントの認証・課金・翻訳と文字起こしの品質・遅延は未検証です。
 
-**APIキー状態を反映するモード選択**では、キーのないプロバイダーをグレー表示し、各行に設定へのショートカットを用意します。情報アイコンでモデルと料金基準を確認できます。**OpenAI音声は翻訳と原文文字起こしを統合**し、言語・出力の設定を保持します。
+**APIキー状態を反映するモード選択**では、キーのないプロバイダーをグレー表示し、各行に設定へのショートカットを用意します。情報アイコンでモデルと料金基準を確認できます。**OpenAI音声は翻訳と原文文字起こしを統合**し、言語・出力の設定を保持します。メインの選択ではApple、OpenAI、Gemini、Qwen、Nariのモデルを選べ、該当する場合はQwen Audio 3.1、Gemini Live、Gemini TTS、Nari GAオプションを直接選択できます。
 
 **フローティング字幕は文字だけを表示**します。背景・枠・ツールバー・状態表示・hover時のリサイズ操作は表示しません。5種類の文字スタイル、フォント・色・幅・行間・順序・サンプルプレビューは設定で調整し、メイン画面・メニューバー・⌘⇧Cで表示を切り替えます。
 
@@ -39,10 +39,10 @@ AirTranslate **1.13.0/build1130** では、翻訳音声出力を選べます。�
 
 ## ダウンロード
 
-現在の公開最新版: **v1.13.0**。
+現在の公開最新版: **v1.14.0**。
 
 - [AirTranslate.dmgをダウンロード](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [AirTranslate-1.13.0.zipをダウンロード](https://github.com/himomohi/AirTranslate/releases/download/v1.13.0/AirTranslate-1.13.0.zip)
+- [AirTranslate-1.14.0.zipをダウンロード](https://github.com/himomohi/AirTranslate/releases/download/v1.14.0/AirTranslate-1.14.0.zip)
 - [AirTranslate.dmg.sha256をダウンロード](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [バージョン履歴を見る](Release/VERSION-HISTORY.md)
 

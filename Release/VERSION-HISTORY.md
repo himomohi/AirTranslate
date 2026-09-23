@@ -1,5 +1,16 @@
 # AirTranslate Version History
 
+## 1.14.0 - 2026-09-24
+
+### Added
+
+- The main workspace's bottom-right control now opens a provider and model picker so users can choose the active model without leaving the console.
+- Provider-specific model choices are available for Apple, OpenAI, Gemini, Qwen, and Nari, including the current Qwen Audio 3.1, Gemini Live, Gemini TTS, and Nari GA model options where applicable.
+
+### Changed
+
+- The console badge displays the selected model name, and the same popover keeps provider switching, Settings shortcuts, and translated speech model selection together.
+
 ## 1.13.0 - 2026-09-24
 
 ### Added
