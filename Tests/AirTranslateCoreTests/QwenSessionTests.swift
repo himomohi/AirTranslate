@@ -61,6 +61,21 @@ struct QwenSessionTests {
         }
     }
 
+    @Test func audio31ReadinessRequiresKeyButNotWorkspace() throws {
+        try withSession { session, _, _ in
+            session.useQwenTranslationMode()
+            session.qwenTranslationModel = .audio31RealtimePlus
+            session.qwenWorkspaceID = ""
+            #expect(session.startReadinessAssessment().issue == .qwenConfigurationMissing)
+
+            session.hasQwenAPIKey = true
+            #expect(session.hasQwenConfiguration)
+            #expect(session.startReadinessAssessment().canStart)
+            session.useAppleDefaultMode()
+            #expect(session.hasQwenConfiguration)
+        }
+    }
+
     @Test func settingsAndIndependentVoicePreferenceRestore() throws {
         try withSession { session, defaults, directory in
             session.useQwenTranslationMode()

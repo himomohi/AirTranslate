@@ -148,7 +148,7 @@ struct StageHeaderView: View {
         case .openAI: AppText.openAIAPIKeyNotConfigured
         case .gemini: AppText.geminiAPIKeyNotConfigured
         case .azure: AzureMAICopy.configurationRequired
-        case .qwen: QwenCopy.configurationRequired
+        case .qwen: QwenCopy.configurationRequired(for: session.qwenTranslationModel.isEnabled ? session.qwenTranslationModel : session.preferredQwenModel)
         case .grok: GrokCopy.configurationRequired
         case .nari: NariCopy.configurationRequired
         case .meta: AppText.metaAPIKeyNotConfigured

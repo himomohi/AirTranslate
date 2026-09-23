@@ -12,6 +12,7 @@ All notable changes to AirTranslate are documented in this file.
 ### Changed
 
 - Qwen model details explain the Realtime Plus workflow and direct users to the current Singapore console for its usage-based rate.
+- Qwen Audio 3.1 Realtime Plus and Filetrans use the Singapore API key without a workspace ID; Qwen3.8 LiveTranslate continues to require the workspace ID.
 - Qwen setup and privacy documentation describe the realtime and file-transcription data paths separately.
 
 ## 1.11.0 - 2026-09-20

@@ -410,9 +410,9 @@ final class QwenRealtimeTranslationService: @unchecked Sendable {
         guard model.isEnabled else { throw QwenTranslationError.configuration }
         let rawWorkspace = workspaceID.trimmingCharacters(in: .whitespacesAndNewlines)
         let workspace = rawWorkspace.lowercased()
-        guard !workspace.isEmpty, workspace.utf8.count <= 63,
-              workspace.utf8.allSatisfy({ (97...122).contains($0) || (48...57).contains($0) || $0 == 45 }),
-              workspace.first != "-", workspace.last != "-" else { throw QwenTranslationError.configuration }
+        if model == .liveTranslateFlashRealtime {
+            guard QwenTranslationModel.isValidWorkspaceID(rawWorkspace) else { throw QwenTranslationError.configuration }
+        }
         var components = URLComponents()
         components.scheme = "wss"
         components.host = model == .audio31RealtimePlus
@@ -424,9 +424,6 @@ final class QwenRealtimeTranslationService: @unchecked Sendable {
         var request = URLRequest(url: url)
         request.timeoutInterval = 15
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-        if model == .audio31RealtimePlus {
-            request.setValue(rawWorkspace, forHTTPHeaderField: "X-DashScope-WorkSpace")
-        }
         return request
     }
 

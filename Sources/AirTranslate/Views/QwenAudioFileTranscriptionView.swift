@@ -57,7 +57,7 @@ struct QwenAudioFileTranscriptionView: View {
                         .accessibilityIdentifier("qwenFileTranscriptionStart")
                     Spacer()
                     if !hasAPIKey {
-                        Label(QwenCopy.configurationRequired, systemImage: "key")
+                        Label(QwenCopy.apiKeyRequired, systemImage: "key")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(2)

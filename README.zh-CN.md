@@ -25,7 +25,7 @@ AirTranslate 会捕获 Mac 正在播放的音频，实时转写；当你选择�
 
 AirTranslate **1.12.0/build1120** 为 **Qwen LiveTranslate** 增加可选模型 `qwen-audio-3.1-realtime-plus`，并在设置 > 通用中加入 Qwen 音频文件转写工具。
 
-请在设置 > API 密钥 > Qwen 中输入 **阿里云新加坡 API 密钥和工作空间 ID**。密钥单独保存在 macOS Keychain 中，开始捕获后会将所选音频直接发送到阿里云新加坡。在设置 > 通用中，可选择默认模型 `qwen3.8-livetranslate-flash-realtime` 或 `qwen-audio-3.1-realtime-plus`。所选实时模型会返回原文转写和译文。**语音输出为可选项，默认关闭**。请在 Model Studio 中查看当前 Qwen Audio 价格。
+请在设置 > API 密钥 > Qwen 中输入 **阿里云新加坡 API 密钥**。Qwen3.8 LiveTranslate 还需要工作空间 ID；Qwen Audio 3.1 Realtime Plus 和 Filetrans 仅使用密钥。密钥单独保存在 macOS Keychain 中，开始捕获后会将所选实时音频直接发送到阿里云新加坡。在设置 > 通用中，可选择默认模型 `qwen3.8-livetranslate-flash-realtime` 或 `qwen-audio-3.1-realtime-plus`。所选实时模型会返回原文转写和译文。**语音输出为可选项，默认关闭**。请在 Model Studio 中查看当前 Qwen Audio 价格。
 
 设置 > 通用中的 `qwen-audio-3.1-asr-flash-filetrans` 用于异步转写音频文件。**仅接受公开的 HTTPS 音频 URL**；QwenCloud 会从 URL 获取音频，此流程不会上传本地音频文件。请只分享你有权发送给提供方的音频。参见 [Qwen 设置与价格](docs/qwen-livetranslate.md)。真实账户认证、计费、翻译和转写质量及延迟尚未验证。
 
@@ -96,7 +96,7 @@ API 驱动的引擎在 **Settings > API Keys** 中配置密钥后即可使用。
 | Azure MAI | 与 Apple Translation 字幕配合使用的预览云端转写。 | Azure Speech 密钥和终结点 |
 | Nari STT | Nari Qwen3-ASR 原文转写，可使用麦克风或 Mac 音频。 | Nari |
 | Grok STT | 使用 Grok Voice Transcribe 2.0 转写麦克风或 Mac 音频的原文。 | SpaceXAI (xAI) |
-| Qwen LiveTranslate | 使用 Qwen3.8 或 Qwen Audio 3.1 Realtime Plus 实时转写原文、翻译字幕并可选语音输出。 | 阿里云新加坡 API 密钥和工作空间 ID |
+| Qwen LiveTranslate | 使用 Qwen3.8 或 Qwen Audio 3.1 Realtime Plus 实时转写原文、翻译字幕并可选语音输出。 | 阿里云新加坡 API 密钥；Qwen3.8 还需要工作空间 ID |
 
 Qwen Audio 3.1 ASR Flash Filetrans 可在设置 > 通用中通过公开的 HTTPS 音频 URL 异步转写。QwenCloud 会从 URL 获取音频；此流程不上传本地音频文件。
 

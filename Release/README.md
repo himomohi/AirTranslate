@@ -103,7 +103,7 @@ git diff -- . ':(exclude).build/**' ':(exclude)Release/product/**' | \
 - Confirm the release DMG opens and contains `AirTranslate.app` plus the Applications shortcut.
 - Confirm `AirTranslate.dmg.sha256` matches the uploaded DMG.
 - Confirm the release ZIP does not contain API keys, tokens, private keys, provisioning profiles, or `.env` files.
-- Confirm optional cloud providers require user-provided keys at runtime and do not bundle credentials. Qwen also requires a Singapore workspace ID.
+- Confirm optional cloud providers require user-provided keys at runtime and do not bundle credentials. Qwen3.8 LiveTranslate also requires a Singapore workspace ID; Qwen Audio 3.1 Realtime Plus and Filetrans use the key without one.
 - Confirm Gemini Live mode still requires a user-provided key at runtime and does not bundle one.
 - Confirm Meta Scribe mode still requires a user-provided key at runtime and does not bundle one.
 - Confirm Azure MAI still requires a user-provided Azure Speech endpoint and API key at runtime and does not bundle one.

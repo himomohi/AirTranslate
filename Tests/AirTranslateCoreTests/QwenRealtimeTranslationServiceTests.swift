@@ -193,7 +193,12 @@ struct QwenRealtimeTranslationServiceTests {
             .init(name: "model", value: "qwen-audio-3.1-realtime-plus")
         ])
         #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer test-only")
-        #expect(request.value(forHTTPHeaderField: "X-DashScope-WorkSpace") == "ws-123")
+        #expect(request.value(forHTTPHeaderField: "X-DashScope-WorkSpace") == nil)
+        let noWorkspaceRequest = try QwenRealtimeTranslationService.request(
+            key: "test-only", workspaceID: "", model: .audio31RealtimePlus
+        )
+        #expect(noWorkspaceRequest.url?.host == "maas.qwencloudapi.com")
+        #expect(noWorkspaceRequest.value(forHTTPHeaderField: "X-DashScope-WorkSpace") == nil)
 
         let text = try QwenRealtimeTranslationService.configuration(
             language: "ko", audioOutputEnabled: true, model: .audio31RealtimePlus

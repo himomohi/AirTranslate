@@ -80,11 +80,11 @@ verification boundaries. Grok STT is included from version 1.10.0.
 
 ## Optional Qwen Audio (1.11.0+)
 
-When Qwen LiveTranslate is selected and capture starts, AirTranslate sends the selected microphone or system audio directly to the user's Alibaba Cloud Singapore workspace for the selected realtime model: `qwen3.8-livetranslate-flash-realtime` or `qwen-audio-3.1-realtime-plus`. It receives original transcripts, translated text, and optional translated speech. It does not send screen images or enable voice cloning.
+When Qwen LiveTranslate is selected and capture starts, AirTranslate sends the selected microphone or system audio directly to Alibaba Cloud Singapore for the selected realtime model: `qwen3.8-livetranslate-flash-realtime` or `qwen-audio-3.1-realtime-plus`. Qwen3.8 uses the configured workspace ID; Realtime Plus uses the API key without a workspace ID. It receives original transcripts, translated text, and optional translated speech. It does not send screen images or enable voice cloning.
 
 Settings > General also includes Qwen Audio 3.1 ASR Flash Filetrans for asynchronous transcription. The user supplies a public HTTPS audio URL; AirTranslate sends that URL to QwenCloud, which fetches the audio. This workflow does not upload a local audio file. QwenCloud returns a task result URL, which AirTranslate reads to display the transcript.
 
-The user supplies a Singapore API key and workspace ID. The key is stored in a dedicated device-local macOS Keychain item and sent only in the authorization header. The workspace ID and output preferences are stored locally. Speech output starts off and its preference is saved independently. Transcript files remain opt-in and contain confirmed Qwen results only.
+The user supplies a Singapore API key; only Qwen3.8 requires a workspace ID. The key is stored in a dedicated device-local macOS Keychain item and sent only in the authorization header. The workspace ID and output preferences are stored locally. Speech output starts off and its preference is saved independently. Transcript files remain opt-in and contain confirmed Qwen results only.
 
 Alibaba Cloud's account permissions, retention, quotas, pricing, and service terms apply to both workflows. Share only a URL whose audio you are authorized to send to QwenCloud. AirTranslate provides no shared credential or developer-operated relay. Local tests do not verify live authentication, billing, transcription or translation quality, or latency. See [Qwen setup and pricing](../docs/qwen-livetranslate.md).
 

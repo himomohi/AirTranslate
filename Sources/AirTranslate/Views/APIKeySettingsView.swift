@@ -37,7 +37,7 @@ struct APIKeySettingsView: View {
                         detail: detail(for: provider),
                         consoleURL: provider.consoleURL,
                         hasKey: hasKey(provider),
-                        needsConfiguration: (provider == .azure && !validAzureEndpoint) || (provider == .qwen && !QwenTranslationModel.isValidWorkspaceID(session.qwenWorkspaceID)),
+                        needsConfiguration: (provider == .azure && !validAzureEndpoint) || (provider == .qwen && !session.hasQwenConfiguration),
                         isCurrent: activeProvider == provider,
                         isLocked: isLocked,
                         isExpanded: Binding(

@@ -612,10 +612,17 @@ final class TranslationSessionStore {
             resetTranslationCache()
             resetDubbingProgress()
             refreshModelAvailability()
-            if oldValue.isEnabled, !qwenTranslationModel.isEnabled,
-               !isRunning, !isStarting, captureStartFailureMessage == QwenCopy.configurationRequired {
-                dismissCaptureStartFailure()
-                if statusMessage == QwenCopy.configurationRequired { statusMessage = AppText.ready }
+            if oldValue.isEnabled, !isRunning, !isStarting,
+               captureStartFailureMessage == QwenCopy.configurationRequired(for: oldValue) {
+                if qwenTranslationModel.isEnabled && !hasQwenConfiguration {
+                    presentCaptureStartFailure(
+                        QwenCopy.configurationRequired(for: qwenTranslationModel),
+                        recoveryAction: .apiKeys
+                    )
+                } else {
+                    dismissCaptureStartFailure()
+                    if statusMessage == QwenCopy.configurationRequired(for: oldValue) { statusMessage = AppText.ready }
+                }
             }
         }
     }
@@ -629,7 +636,9 @@ final class TranslationSessionStore {
 
     var isUsingQwenTranslation: Bool { qwenTranslationModel.isEnabled }
     var hasQwenConfiguration: Bool {
-        hasQwenAPIKey && QwenTranslationModel.isValidWorkspaceID(qwenWorkspaceID)
+        let model = qwenTranslationModel.isEnabled ? qwenTranslationModel : preferredQwenModel
+        let hasRequiredWorkspace = model == .audio31RealtimePlus || QwenTranslationModel.isValidWorkspaceID(qwenWorkspaceID)
+        return hasQwenAPIKey && hasRequiredWorkspace
     }
 
     var hasGrokAPIKey = GrokAPIKeyStore.hasAPIKey()
@@ -1679,7 +1688,7 @@ final class TranslationSessionStore {
         case .metaAPIKeyMissing:
             return AppText.metaAPIKeyMissing
         case .qwenConfigurationMissing:
-            return QwenCopy.configurationRequired
+            return QwenCopy.configurationRequired(for: qwenTranslationModel)
         case .grokAPIKeyMissing:
             return GrokCopy.configurationRequired
         case .grokLanguageUnsupported:
@@ -3564,7 +3573,8 @@ final class TranslationSessionStore {
                 try await service.start(
                     workspaceID: configuration.qwenWorkspaceID,
                     targetLanguage: configuration.targetLanguage,
-                    audioOutputEnabled: configuration.qwenAudioOutputEnabled
+                    audioOutputEnabled: configuration.qwenAudioOutputEnabled,
+                    model: configuration.qwenTranslationModel
                 )
                 guard !Task.isCancelled, service === qwenTranslator,
                       pipelineLifecycle.acceptsSample(generation: generation),

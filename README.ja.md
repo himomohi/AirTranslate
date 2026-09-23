@@ -25,7 +25,7 @@ AirTranslateはMacで再生中の音声を取り込み、ライブで文字起�
 
 AirTranslate **1.12.0/build1120** では、**Qwen LiveTranslate** の追加モデル `qwen-audio-3.1-realtime-plus` と、設定 > 一般のQwen音声ファイル文字起こしツールを追加します。
 
-設定 > APIキー > Qwenに **Alibaba CloudシンガポールのAPIキーとワークスペースID** を入力してください。キーはmacOS Keychainの専用項目に保存し、キャプチャ開始時に選択した音声をAlibaba Cloudシンガポールへ直接送信します。設定 > 一般で既定の `qwen3.8-livetranslate-flash-realtime` または `qwen-audio-3.1-realtime-plus` を選べます。選択したリアルタイムモデルは原文文字起こしと翻訳を返します。**音声出力は任意で、初期状態ではオフです**。Qwen Audioの料金はModel Studioで確認してください。
+設定 > APIキー > Qwenに **Alibaba CloudシンガポールのAPIキー** を入力してください。Qwen3.8 LiveTranslateにはワークスペースIDも必要ですが、Qwen Audio 3.1 Realtime PlusとFiletransはキーだけで利用できます。キーはmacOS Keychainの専用項目に保存し、キャプチャ開始時に選択したリアルタイム音声をAlibaba Cloudシンガポールへ直接送信します。設定 > 一般で既定の `qwen3.8-livetranslate-flash-realtime` または `qwen-audio-3.1-realtime-plus` を選べます。選択したリアルタイムモデルは原文文字起こしと翻訳を返します。**音声出力は任意で、初期状態ではオフです**。Qwen Audioの料金はModel Studioで確認してください。
 
 設定 > 一般の `qwen-audio-3.1-asr-flash-filetrans` は非同期の音声ファイル文字起こしです。**公開HTTPS音声URLのみ利用できます**。QwenCloudがURLから音声を取得し、この機能はローカルファイルをアップロードしません。送信する権利のある音声だけを共有してください。[Qwenの設定と料金](docs/qwen-livetranslate.md)をご覧ください。実アカウントの認証・課金・翻訳と文字起こしの品質・遅延は未検証です。
 
@@ -96,7 +96,7 @@ API連携エンジンは、**Settings > API Keys**でキーを設定すると利
 | Azure MAI | Apple Translation字幕と組み合わせるプレビューのクラウド文字起こしです。 | Azure Speechキーとエンドポイント |
 | Nari STT | Nari Qwen3-ASR原文文字起こしです。マイクまたはMac音声を使えます。 | Nari |
 | Grok STT | マイクまたはMac音声をGrok Voice Transcribe 2.0で原文に文字起こしします。 | SpaceXAI (xAI) |
-| Qwen LiveTranslate | Qwen3.8またはQwen Audio 3.1 Realtime Plusによるリアルタイム文字起こし・翻訳字幕・任意の音声出力。 | Alibaba CloudシンガポールのAPIキーとワークスペースID |
+| Qwen LiveTranslate | Qwen3.8またはQwen Audio 3.1 Realtime Plusによるリアルタイム文字起こし・翻訳字幕・任意の音声出力。 | Alibaba CloudシンガポールのAPIキー。Qwen3.8にはワークスペースIDも必要 |
 
 Qwen Audio 3.1 ASR Flash Filetransは、設定 > 一般で公開HTTPS音声URLから非同期で文字起こしします。QwenCloudがURLから音声を取得し、この機能はローカル音声ファイルをアップロードしません。
 

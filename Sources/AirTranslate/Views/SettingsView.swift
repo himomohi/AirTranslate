@@ -862,7 +862,8 @@ struct SettingsView: View {
             systemImage: "waveform"
         )
         if !session.hasQwenConfiguration {
-            SettingsNoticeActionRow(text: QwenCopy.configurationRequired, systemImage: "key", actionTitle: AppText.translationSettings) {
+            let model = session.qwenTranslationModel.isEnabled ? session.qwenTranslationModel : session.preferredQwenModel
+            SettingsNoticeActionRow(text: QwenCopy.configurationRequired(for: model), systemImage: "key", actionTitle: AppText.translationSettings) {
                 session.requestAPIKeySettings(provider: .qwen)
                 selectedCategory.wrappedValue = .apiKeys
             }

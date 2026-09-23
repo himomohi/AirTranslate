@@ -4,7 +4,7 @@ AirTranslate 1.12.0 adds two Qwen Audio 3.1 options while keeping Apple Mode and
 
 ## Added
 
-- **Qwen Audio 3.1 Realtime Plus** (`qwen-audio-3.1-realtime-plus`) is an alternate model for Qwen LiveTranslate. Select the model in Settings > General; capture still requires the user's Alibaba Cloud Singapore API key and workspace ID.
+- **Qwen Audio 3.1 Realtime Plus** (`qwen-audio-3.1-realtime-plus`) is an alternate model for Qwen LiveTranslate. Select the model in Settings > General; capture requires the user's Alibaba Cloud Singapore API key. The workspace ID is required only for the existing Qwen3.8 model.
 - **Qwen Audio 3.1 ASR Flash Filetrans** (`qwen-audio-3.1-asr-flash-filetrans`) is available in Settings > General for asynchronous transcription from a public HTTPS audio URL. QwenCloud fetches the audio; AirTranslate does not upload a local file in this workflow.
 
 ## Changed

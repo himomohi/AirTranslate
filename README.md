@@ -25,7 +25,7 @@ AirTranslate captures audio playing on your Mac, transcribes it live, translates
 
 AirTranslate **1.12.0/build1120** adds `qwen-audio-3.1-realtime-plus` as an alternate model for **Qwen LiveTranslate** and adds a Qwen Audio file-transcription tool in Settings > General.
 
-Configure an **Alibaba Cloud Singapore API key and workspace ID** in Settings > API Keys > Qwen. The key is stored separately in macOS Keychain; selected audio is sent directly to Alibaba Cloud Singapore when capture starts. Choose the existing `qwen3.8-livetranslate-flash-realtime` default or `qwen-audio-3.1-realtime-plus` in Settings > General. The selected realtime model returns original transcripts and translated text; **speech output is optional and initially off**. Current Qwen Audio pricing is shown in Model Studio.
+Configure an **Alibaba Cloud Singapore API key** in Settings > API Keys > Qwen. Qwen3.8 LiveTranslate also requires a workspace ID; Qwen Audio 3.1 Realtime Plus and Filetrans use the key without one. The key is stored separately in macOS Keychain; selected realtime audio is sent directly to Alibaba Cloud Singapore when capture starts. Choose the existing `qwen3.8-livetranslate-flash-realtime` default or `qwen-audio-3.1-realtime-plus` in Settings > General. The selected realtime model returns original transcripts and translated text; **speech output is optional and initially off**. Current Qwen Audio pricing is shown in Model Studio.
 
 Settings > General also includes `qwen-audio-3.1-asr-flash-filetrans` for asynchronous transcription. **Only a public HTTPS audio URL is accepted**; QwenCloud fetches its audio, and AirTranslate does not upload a local file in this workflow. Share only audio you are authorized to send. See [Qwen setup and pricing](docs/qwen-livetranslate.md). Real-account authentication, billing, translation and transcription quality, and latency remain unverified.
 
@@ -96,7 +96,7 @@ API-backed engines become available after you configure their keys in **Settings
 | Azure MAI | Preview cloud transcription with Apple Translation captions. | Azure Speech key and endpoint |
 | Nari STT | Nari Qwen3-ASR source transcription from microphone or Mac audio. | Nari |
 | Grok STT | Grok Voice Transcribe 2.0 source transcription from microphone or Mac audio. | SpaceXAI (xAI) |
-| Qwen LiveTranslate | Qwen3.8 or Qwen Audio 3.1 Realtime Plus original transcripts, translated captions, and optional speech output. | Alibaba Cloud Singapore API key and workspace ID |
+| Qwen LiveTranslate | Qwen3.8 or Qwen Audio 3.1 Realtime Plus original transcripts, translated captions, and optional speech output. | Alibaba Cloud Singapore API key; workspace ID for Qwen3.8 |
 
 Qwen Audio 3.1 ASR Flash Filetrans is available in Settings > General for asynchronous transcription from a public HTTPS audio URL. QwenCloud fetches the URL; local audio-file uploads are not supported by this workflow.
 

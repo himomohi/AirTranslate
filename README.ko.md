@@ -25,7 +25,7 @@ AirTranslate는 Mac에서 재생되는 소리를 캡처해 실시간으로 전�
 
 AirTranslate **1.12.0/build1120**은 **Qwen LiveTranslate**의 대체 모델 `qwen-audio-3.1-realtime-plus`와 설정 > 일반의 Qwen 오디오 파일 전사 도구를 추가합니다.
 
-설정 > API 키 > Qwen에 **Alibaba Cloud 싱가포르 API 키와 워크스페이스 ID**를 입력하세요. 키는 macOS Keychain의 전용 항목에 저장하며, 캡처를 시작하면 선택한 오디오를 Alibaba Cloud 싱가포르로 직접 전송합니다. 설정 > 일반에서 기존 기본 모델 `qwen3.8-livetranslate-flash-realtime` 또는 `qwen-audio-3.1-realtime-plus`를 선택할 수 있습니다. 선택한 실시간 모델은 원문 전사와 번역문을 반환합니다. **음성 출력은 선택 사항이며 처음에는 꺼져 있습니다**. Qwen Audio 요금은 Model Studio에서 확인하세요.
+설정 > API 키 > Qwen에 **Alibaba Cloud 싱가포르 API 키**를 입력하세요. Qwen3.8 LiveTranslate는 워크스페이스 ID도 필요하지만 Qwen Audio 3.1 Realtime Plus와 Filetrans는 키만 사용합니다. 키는 macOS Keychain의 전용 항목에 저장하며, 캡처를 시작하면 선택한 실시간 오디오를 Alibaba Cloud 싱가포르로 직접 전송합니다. 설정 > 일반에서 기존 기본 모델 `qwen3.8-livetranslate-flash-realtime` 또는 `qwen-audio-3.1-realtime-plus`를 선택할 수 있습니다. 선택한 실시간 모델은 원문 전사와 번역문을 반환합니다. **음성 출력은 선택 사항이며 처음에는 꺼져 있습니다**. Qwen Audio 요금은 Model Studio에서 확인하세요.
 
 설정 > 일반의 `qwen-audio-3.1-asr-flash-filetrans`는 비동기 파일 전사 도구입니다. **공개 HTTPS 오디오 URL만 지원**하며 QwenCloud가 URL에서 오디오를 가져옵니다. 이 흐름은 로컬 파일을 업로드하지 않습니다. 제공자에게 보낼 권한이 있는 오디오만 공유하세요. [Qwen 설정·요금 안내](docs/qwen-livetranslate.md)를 참고하세요. 실제 계정 인증·과금·번역·전사 품질·지연은 미검증입니다.
 
@@ -96,7 +96,7 @@ API 기반 엔진은 **설정 > API 키**에서 키를 설정한 뒤 사용할 �
 | Azure MAI | Apple Translation 자막과 함께 쓰는 프리뷰 클라우드 전사입니다. | Azure Speech 키와 엔드포인트 |
 | Nari STT | Nari Qwen3-ASR 원문 전사입니다. 마이크나 Mac 오디오를 사용할 수 있습니다. | Nari |
 | Grok STT | 마이크나 Mac 오디오의 Grok Voice Transcribe 2.0 원문 전사입니다. | SpaceXAI (xAI) |
-| Qwen LiveTranslate | Qwen3.8 또는 Qwen Audio 3.1 Realtime Plus의 실시간 원문 전사·번역 자막·선택형 음성 출력. | Alibaba Cloud 싱가포르 API 키와 워크스페이스 ID |
+| Qwen LiveTranslate | Qwen3.8 또는 Qwen Audio 3.1 Realtime Plus의 실시간 원문 전사·번역 자막·선택형 음성 출력. | Alibaba Cloud 싱가포르 API 키; Qwen3.8은 워크스페이스 ID도 필요 |
 
 Qwen Audio 3.1 ASR Flash Filetrans는 설정 > 일반에서 공개 HTTPS 오디오 URL을 비동기 전사합니다. QwenCloud가 URL의 오디오를 가져오며, 이 기능은 로컬 오디오 파일을 업로드하지 않습니다.
 
