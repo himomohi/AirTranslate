@@ -82,6 +82,26 @@ struct QwenSessionTests {
         }
     }
 
+    @Test func realtimeModelPreferenceRestoresAndSurvivesModeSwitch() throws {
+        try withSession { session, defaults, directory in
+            session.hasQwenAPIKey = true
+            session.useQwenTranslationMode()
+            session.qwenTranslationModel = .audio31RealtimePlus
+            session.useAppleDefaultMode()
+            #expect(session.qwenTranslationModel == .off)
+            #expect(session.preferredQwenModel == .audio31RealtimePlus)
+            #expect(defaults.string(forKey: "preferredQwenTranslationModelID") == "qwen-audio-3.1-realtime-plus")
+            session.useQwenTranslationMode()
+            #expect(session.qwenTranslationModel == .audio31RealtimePlus)
+
+            let restored = TranslationSessionStore(modelAvailabilityProvider: { _, _ in [:] },
+                settingsDefaults: defaults, transcriptsDirectoryURL: directory)
+            #expect(restored.qwenTranslationModel == .audio31RealtimePlus)
+            #expect(ProcessingModeInfo.information(for: .qwen, qwenModel: restored.qwenTranslationModel).modelID
+                == "qwen-audio-3.1-realtime-plus")
+        }
+    }
+
     @Test func finalCorrectionRepeatsAndPausedDrainReachCaptions() throws {
         try withSession { session, _, _ in
             session.useQwenTranslationMode()

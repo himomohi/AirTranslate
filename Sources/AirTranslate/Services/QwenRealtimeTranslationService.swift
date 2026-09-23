@@ -66,6 +66,7 @@ final class QwenRealtimeTranslationService: @unchecked Sendable {
     private let connectionFactory: ConnectionFactory
     private let setupTimeout: Duration
     private let finishTimeout: Duration
+    private let idleDrainGrace: Duration
     private var phase = Phase.stopped
     private var generation = UUID()
     private var connection: (any QwenWebSocketConnection)?
@@ -75,9 +76,14 @@ final class QwenRealtimeTranslationService: @unchecked Sendable {
     private var pcmBuffer = Data()
     private var configurationMessage = ""
     private var targetLanguageCode = ""
+    private var activeModel: QwenTranslationModel = .liveTranslateFlashRealtime
     private var audioOutputEnabled = false
     private var paused = false
     private var finishAcknowledged = false
+    private var finishAudioSent = false
+    private var finishAudioSentAt: ContinuousClock.Instant?
+    private var responseStartedDuringDrain = false
+    private var responseInProgress = false
     private var deliveriesInFlight = 0
     private var terminalError: QwenTranslationError?
     private var sourceLedger = QwenTextLedger()
@@ -106,27 +112,35 @@ final class QwenRealtimeTranslationService: @unchecked Sendable {
 
     init(keyProvider: @escaping @Sendable () throws -> String? = { try QwenAPIKeyStore.readAPIKey() },
          connectionFactory: @escaping ConnectionFactory = { QwenURLSessionConnection(request: $0) },
-         setupTimeout: Duration = .seconds(8), finishTimeout: Duration = .seconds(15)) {
+         setupTimeout: Duration = .seconds(8), finishTimeout: Duration = .seconds(15),
+         idleDrainGrace: Duration = .seconds(2)) {
         self.keyProvider = keyProvider
         self.connectionFactory = connectionFactory
         self.setupTimeout = setupTimeout
         self.finishTimeout = finishTimeout
+        self.idleDrainGrace = idleDrainGrace
     }
 
-    func start(workspaceID: String, targetLanguage: LanguageOption, audioOutputEnabled: Bool) async throws {
+    func start(
+        workspaceID: String,
+        targetLanguage: LanguageOption,
+        audioOutputEnabled: Bool,
+        model: QwenTranslationModel = .liveTranslateFlashRealtime
+    ) async throws {
         stop()
         let key: String
         do { key = try keyProvider()?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" }
         catch { throw QwenTranslationError.missingKey }
-        let request = try Self.request(key: key, workspaceID: workspaceID)
+        let request = try Self.request(key: key, workspaceID: workspaceID, model: model)
         let language = try Self.languageCode(targetLanguage)
-        let configuration = try Self.configuration(language: language, audioOutputEnabled: audioOutputEnabled)
+        let configuration = try Self.configuration(language: language, audioOutputEnabled: audioOutputEnabled, model: model)
         let socket = connectionFactory(request)
         let token = lock.withLock {
             let token = generation
             connection = socket
             configurationMessage = configuration
             targetLanguageCode = language
+            activeModel = model
             self.audioOutputEnabled = audioOutputEnabled
             phase = .connecting
             paused = false
@@ -172,7 +186,18 @@ final class QwenRealtimeTranslationService: @unchecked Sendable {
                     enqueueLocked(.audio(pcmBuffer), generation: generation)
                     pcmBuffer.removeAll(keepingCapacity: false)
                 }
-                enqueueLocked(.finish, generation: generation)
+                if activeModel == .audio31RealtimePlus {
+                    // Plus uses server VAD; one second of silence closes the final speech turn.
+                    for _ in 0..<10 {
+                        enqueueLocked(.audio(Data(repeating: 0, count: Self.chunkBytes)), generation: generation)
+                    }
+                    finishAudioSent = false
+                    finishAudioSentAt = nil
+                    responseStartedDuringDrain = responseInProgress
+                    finishAcknowledged = false
+                } else {
+                    enqueueLocked(.finish, generation: generation)
+                }
             }
             return generation
         }
@@ -189,7 +214,12 @@ final class QwenRealtimeTranslationService: @unchecked Sendable {
                     let ready = try lock.withLock {
                         guard generation == token else { throw CancellationError() }
                         if let terminalError { throw terminalError }
-                        return finishing ? finishAcknowledged && deliveriesInFlight == 0 : phase == .streaming
+                        if !finishing { return phase == .streaming }
+                        guard deliveriesInFlight == 0 else { return false }
+                        guard activeModel == .audio31RealtimePlus else { return finishAcknowledged }
+                        guard finishAudioSent, let finishAudioSentAt else { return false }
+                        if responseStartedDuringDrain { return finishAcknowledged }
+                        return ContinuousClock.now >= finishAudioSentAt.advanced(by: idleDrainGrace)
                     }
                     if ready {
                         if finishing { stop(generation: token) }
@@ -226,6 +256,10 @@ final class QwenRealtimeTranslationService: @unchecked Sendable {
             sourceLedger = QwenTextLedger()
             translationLedger = QwenTextLedger()
             finishAcknowledged = false
+            finishAudioSent = false
+            finishAudioSentAt = nil
+            responseStartedDuringDrain = false
+            responseInProgress = false
             deliveriesInFlight = 0
             terminalError = nil
             let socket = connection
@@ -244,7 +278,14 @@ final class QwenRealtimeTranslationService: @unchecked Sendable {
             while !Task.isCancelled {
                 let next: QwenClientMessage? = self.lock.withLock {
                     guard self.generation == token, self.phase != .stopped, self.phase != .failed else { return nil }
-                    guard !self.outbound.isEmpty else { self.sendTask = nil; return nil }
+                    guard !self.outbound.isEmpty else {
+                        if self.phase == .draining, self.activeModel == .audio31RealtimePlus {
+                            self.finishAudioSent = true
+                            self.finishAudioSentAt = .now
+                        }
+                        self.sendTask = nil
+                        return nil
+                    }
                     return self.outbound.removeFirst()
                 }
                 guard let next else { return }
@@ -269,7 +310,7 @@ final class QwenRealtimeTranslationService: @unchecked Sendable {
     private func receiveLoop(_ socket: any QwenWebSocketConnection, generation token: UUID) async {
         do {
             while !Task.isCancelled {
-                let event = try QwenServerEvent.parse(try await socket.receive())
+                let event = try QwenServerEvent.parse(try await socket.receive(), model: lock.withLock { activeModel })
                 let delivery: Delivery? = try lock.withLock {
                     guard generation == token, phase != .stopped, phase != .failed else { return nil }
                     switch event {
@@ -281,7 +322,10 @@ final class QwenRealtimeTranslationService: @unchecked Sendable {
                         return nil
                     case .updated(let language, let modalities):
                         let expected: Set<String> = audioOutputEnabled ? ["text", "audio"] : ["text"]
-                        guard phase == .configuring, language == targetLanguageCode, Set(modalities) == expected else {
+                        let languageMatches = activeModel == .liveTranslateFlashRealtime
+                            ? language == targetLanguageCode
+                            : language == nil
+                        guard phase == .configuring, languageMatches, Set(modalities) == expected else {
                             throw QwenTranslationError.invalidResponse
                         }
                         phase = .streaming
@@ -305,6 +349,17 @@ final class QwenRealtimeTranslationService: @unchecked Sendable {
                             throw QwenTranslationError.invalidResponse
                         }
                         finishAcknowledged = true
+                        result = nil
+                    case .responseStarted:
+                        responseInProgress = true
+                        if phase == .draining {
+                            responseStartedDuringDrain = true
+                            finishAcknowledged = false
+                        }
+                        result = nil
+                    case .responseFinished:
+                        responseInProgress = false
+                        if phase == .draining { finishAcknowledged = true }
                         result = nil
                     default: result = nil
                     }
@@ -346,21 +401,32 @@ final class QwenRealtimeTranslationService: @unchecked Sendable {
         }
     }
 
-    static func request(key: String, workspaceID: String) throws -> URLRequest {
+    static func request(
+        key: String,
+        workspaceID: String,
+        model: QwenTranslationModel = .liveTranslateFlashRealtime
+    ) throws -> URLRequest {
         guard !key.isEmpty, key.utf8.allSatisfy({ $0 >= 0x21 && $0 <= 0x7E }) else { throw QwenTranslationError.missingKey }
-        let workspace = workspaceID.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard model.isEnabled else { throw QwenTranslationError.configuration }
+        let rawWorkspace = workspaceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let workspace = rawWorkspace.lowercased()
         guard !workspace.isEmpty, workspace.utf8.count <= 63,
               workspace.utf8.allSatisfy({ (97...122).contains($0) || (48...57).contains($0) || $0 == 45 }),
               workspace.first != "-", workspace.last != "-" else { throw QwenTranslationError.configuration }
         var components = URLComponents()
         components.scheme = "wss"
-        components.host = "\(workspace).ap-southeast-1.maas.aliyuncs.com"
+        components.host = model == .audio31RealtimePlus
+            ? "maas.qwencloudapi.com"
+            : "\(workspace).ap-southeast-1.maas.aliyuncs.com"
         components.path = "/api-ws/v1/realtime"
-        components.queryItems = [.init(name: "model", value: QwenTranslationModel.liveTranslateFlashRealtime.rawValue)]
+        components.queryItems = [.init(name: "model", value: model.rawValue)]
         guard let url = components.url else { throw QwenTranslationError.configuration }
         var request = URLRequest(url: url)
         request.timeoutInterval = 15
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        if model == .audio31RealtimePlus {
+            request.setValue(rawWorkspace, forHTTPHeaderField: "X-DashScope-WorkSpace")
+        }
         return request
     }
 
@@ -370,12 +436,50 @@ final class QwenRealtimeTranslationService: @unchecked Sendable {
         return code
     }
 
-    static func configuration(language: String, audioOutputEnabled: Bool) throws -> String {
-        let json: [String: Any] = ["type": "session.update", "session": [
-            "output_modalities": audioOutputEnabled ? ["text", "audio"] : ["text"],
-            "translation": ["language": language]
-        ]]
+    static func configuration(
+        language: String,
+        audioOutputEnabled: Bool,
+        model: QwenTranslationModel = .liveTranslateFlashRealtime
+    ) throws -> String {
+        let session: [String: Any]
+        switch model {
+        case .off:
+            throw QwenTranslationError.configuration
+        case .liveTranslateFlashRealtime:
+            session = [
+                "output_modalities": audioOutputEnabled ? ["text", "audio"] : ["text"],
+                "translation": ["language": language]
+            ]
+        case .audio31RealtimePlus:
+            session = [
+                "modalities": audioOutputEnabled ? ["text", "audio"] : ["text"],
+                "input_audio_format": "pcm",
+                "output_audio_format": "pcm",
+                "voice": "longanqian_v3.1",
+                "input_audio_transcription": ["model": "qwen3-asr-flash-realtime"],
+                "instructions": "Translate each spoken utterance into \(translationLanguageName(language)). Detect the source language automatically. Return only the translation, preserving meaning and tone. Do not answer the speaker or add commentary.",
+                "turn_detection": [
+                    "type": "server_vad",
+                    "threshold": 0.5,
+                    "silence_duration_ms": 800
+                ]
+            ]
+        }
+        let json: [String: Any] = ["type": "session.update", "session": session]
         return String(decoding: try JSONSerialization.data(withJSONObject: json, options: [.sortedKeys]), as: UTF8.self)
+    }
+
+    private static func translationLanguageName(_ code: String) -> String {
+        switch code {
+        case "en": "English"
+        case "ko": "Korean"
+        case "ja": "Japanese"
+        case "zh": "Chinese"
+        case "es": "Spanish"
+        case "fr": "French"
+        case "de": "German"
+        default: code
+        }
     }
 }
 
@@ -415,11 +519,12 @@ struct QwenTextLedger {
 }
 
 enum QwenServerEvent: Sendable {
-    case created, updated(String, [String]), finished
+    case created, updated(String?, [String]), finished
     case source(String, String, Bool), translation(String, String, Bool), audio(Data)
+    case responseStarted, responseFinished
     case failure, ignored
 
-    static func parse(_ data: Data) throws -> Self {
+    static func parse(_ data: Data, model: QwenTranslationModel = .liveTranslateFlashRealtime) throws -> Self {
         guard data.count <= QwenRealtimeTranslationService.maximumMessageBytes,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let type = json["type"] as? String else { throw QwenTranslationError.invalidResponse }
@@ -434,22 +539,38 @@ enum QwenServerEvent: Sendable {
         }
         switch type {
         case "session.created", "session.updated":
-            guard let session = json["session"] as? [String: Any],
-                  session["model"] as? String == QwenTranslationModel.liveTranslateFlashRealtime.rawValue,
-                  let audio = session["audio"] as? [String: Any],
-                  let input = audio["input"] as? [String: Any], let inputFormat = input["format"] as? [String: Any],
-                  inputFormat["type"] as? String == "pcm", inputFormat["sample_rate"] as? Int == 16_000,
-                  let output = audio["output"] as? [String: Any], let outputFormat = output["format"] as? [String: Any],
-                  outputFormat["type"] as? String == "pcm", outputFormat["sample_rate"] as? Int == 24_000 else {
+            guard let session = json["session"] as? [String: Any], session["model"] as? String == model.rawValue else {
                 throw QwenTranslationError.invalidResponse
             }
             if type == "session.created" { return .created }
-            guard let modalities = session["output_modalities"] as? [String],
+            if model == .audio31RealtimePlus {
+                guard let modalities = session["modalities"] as? [String],
+                      session["input_audio_format"] as? String == "pcm",
+                      session["output_audio_format"] as? String == "pcm",
+                      session["instructions"] as? String != nil,
+                      let turnDetection = session["turn_detection"] as? [String: Any],
+                      turnDetection["type"] as? String == "server_vad" else {
+                    throw QwenTranslationError.invalidResponse
+                }
+                return .updated(nil, modalities)
+            }
+            guard let audio = session["audio"] as? [String: Any],
+                  let input = audio["input"] as? [String: Any], let inputFormat = input["format"] as? [String: Any],
+                  inputFormat["type"] as? String == "pcm", inputFormat["sample_rate"] as? Int == 16_000,
+                  let output = audio["output"] as? [String: Any], let outputFormat = output["format"] as? [String: Any],
+                  outputFormat["type"] as? String == "pcm", outputFormat["sample_rate"] as? Int == 24_000,
+                  let modalities = session["output_modalities"] as? [String],
                   let translation = session["translation"] as? [String: Any], let language = translation["language"] as? String else {
                 throw QwenTranslationError.invalidResponse
             }
             return .updated(language, modalities)
-        case "conversation.item.input_audio_transcription.delta": return try .source(itemID(), string("delta"), false)
+        case "conversation.item.input_audio_transcription.delta":
+            if model == .audio31RealtimePlus {
+                let stableText = json["text"] as? String ?? ""
+                let provisionalText = json["stash"] as? String ?? ""
+                return try .source(itemID(), stableText + provisionalText, false)
+            }
+            return try .source(itemID(), string("delta"), false)
         case "conversation.item.input_audio_transcription.completed": return try .source(itemID(), string("transcript"), true)
         case "response.text.delta", "response.audio_transcript.delta": return try .translation(itemID(), string("delta"), false)
         case "response.text.done": return try .translation(itemID(), string("text"), true)
@@ -460,9 +581,17 @@ enum QwenServerEvent: Sendable {
             }
             return .audio(audio)
         case "session.finished": return .finished
+        case "response.created": return model == .audio31RealtimePlus ? .responseStarted : .ignored
         case "response.done":
             guard let response = json["response"] as? [String: Any], let status = response["status"] as? String else {
                 throw QwenTranslationError.invalidResponse
+            }
+            if model == .audio31RealtimePlus {
+                switch status {
+                case "completed", "cancelled": return .responseFinished
+                case "failed": return .failure
+                default: return .ignored
+                }
             }
             return status == "completed" ? .ignored : .failure
         case "error", "conversation.item.input_audio_transcription.failed":

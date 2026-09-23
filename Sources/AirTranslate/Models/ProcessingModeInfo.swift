@@ -23,11 +23,12 @@ struct ProcessingModeInfo {
         for engine: ProcessingEngine,
         openAIOutputMode: LiveOutputMode = .translation,
         geminiModel: GeminiTranslationModel = .gemini35LiveTranslate,
-        nariModel: NariTranscriptionModel = .qwen3ASRFast
+        nariModel: NariTranscriptionModel = .qwen3ASRFast,
+        qwenModel: QwenTranslationModel = .liveTranslateFlashRealtime
     ) -> Self {
         switch engine {
         case .qwen:
-            Self(modelID: QwenTranslationModel.liveTranslateFlashRealtime.rawValue, summary: QwenCopy.detail, price: QwenCopy.price)
+            Self(modelID: qwenModel.rawValue, summary: QwenCopy.detail(for: qwenModel), price: QwenCopy.price(for: qwenModel))
         case .apple:
             Self(modelID: "apple-system",
                  summary: copy("On-device transcription & translation", "기기 내 음성 전사·번역", "デバイス内で文字起こし・翻訳", "设备端语音转写与翻译"),
@@ -105,7 +106,8 @@ extension ProcessingEngine {
             for: self,
             openAIOutputMode: session.openAIOutputMode,
             geminiModel: session.geminiTranslationModel.isEnabled ? session.geminiTranslationModel : session.preferredGeminiModel,
-            nariModel: session.nariTranscriptionModel.isEnabled ? session.nariTranscriptionModel : .qwen3ASRFast
+            nariModel: session.nariTranscriptionModel.isEnabled ? session.nariTranscriptionModel : .qwen3ASRFast,
+            qwenModel: session.qwenTranslationModel
         )
     }
 }

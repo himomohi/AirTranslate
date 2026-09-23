@@ -198,13 +198,7 @@ struct SettingsView: View {
                 nariGeneralSettings
             }
             if processingModeSelection.wrappedValue == .qwen {
-                SettingsNoticeRow(text: QwenCopy.detail + "\n" + QwenCopy.price, systemImage: "waveform")
-                if !session.hasQwenConfiguration {
-                    SettingsNoticeActionRow(text: QwenCopy.configurationRequired, systemImage: "key", actionTitle: AppText.translationSettings) {
-                        session.requestAPIKeySettings(provider: .qwen)
-                        selectedCategory.wrappedValue = .apiKeys
-                    }
-                }
+                qwenGeneralSettings
             }
 
             if processingModeSelection.wrappedValue == .grok {
@@ -764,7 +758,7 @@ struct SettingsView: View {
     }
 
     private var autoDetectionDetail: String {
-        if session.isUsingQwenTranslation { return QwenCopy.detail }
+        if session.isUsingQwenTranslation { return QwenCopy.detail(for: session.qwenTranslationModel) }
         if session.isUsingGrokSTT { return GrokCopy.autoDetectDetail }
         if session.isUsingNariSTT { return NariCopy.autoDetectDetail }
         if session.isUsingMetaScribe { return SettingsCopy.metaAutoDetectDetail }
@@ -841,6 +835,39 @@ struct SettingsView: View {
             guard !isSessionConfigurationLocked else { return }
             session.useGeminiMode(model)
         }
+    }
+
+    @ViewBuilder
+    private var qwenGeneralSettings: some View {
+        SettingsControlRow(
+            title: QwenCopy.modelLabel,
+            detail: QwenCopy.modelDetail,
+            systemImage: "waveform"
+        ) {
+            Picker(QwenCopy.modelLabel, selection: lockedSessionConfigurationBinding($session.qwenTranslationModel)) {
+                ForEach(QwenTranslationModel.selectableCases) { model in
+                    Text(model.title).tag(model)
+                }
+            }
+            .labelsHidden()
+            .frame(minWidth: 210, idealWidth: 250, maxWidth: 300)
+            .disabled(isSessionConfigurationLocked)
+            .accessibilityLabel(QwenCopy.modelLabel)
+            .accessibilityValue(session.qwenTranslationModel.title)
+            .accessibilityIdentifier("qwenRealtimeModelPicker")
+        }
+
+        SettingsNoticeRow(
+            text: QwenCopy.detail(for: session.qwenTranslationModel) + "\n" + QwenCopy.price(for: session.qwenTranslationModel),
+            systemImage: "waveform"
+        )
+        if !session.hasQwenConfiguration {
+            SettingsNoticeActionRow(text: QwenCopy.configurationRequired, systemImage: "key", actionTitle: AppText.translationSettings) {
+                session.requestAPIKeySettings(provider: .qwen)
+                selectedCategory.wrappedValue = .apiKeys
+            }
+        }
+        QwenAudioFileTranscriptionView(hasAPIKey: session.hasQwenAPIKey)
     }
 
     private var liveOutputModeBinding: Binding<LiveOutputMode> {

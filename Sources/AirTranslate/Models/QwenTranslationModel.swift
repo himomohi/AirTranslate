@@ -3,9 +3,23 @@ import Foundation
 enum QwenTranslationModel: String, CaseIterable, Identifiable, Sendable {
     case off
     case liveTranslateFlashRealtime = "qwen3.8-livetranslate-flash-realtime"
+    case audio31RealtimePlus = "qwen-audio-3.1-realtime-plus"
+
+    static let selectableCases: [QwenTranslationModel] = [
+        .liveTranslateFlashRealtime,
+        .audio31RealtimePlus,
+    ]
 
     var id: String { rawValue }
     var isEnabled: Bool { self != .off }
+
+    var title: String {
+        switch self {
+        case .off: AppText.localized(english: "Off", korean: "끔", japanese: "オフ", chineseSimplified: "关闭")
+        case .liveTranslateFlashRealtime: "Qwen3.8 LiveTranslate"
+        case .audio31RealtimePlus: "Qwen Audio 3.1 Realtime Plus"
+        }
+    }
 
     // 워크스페이스는 고정된 싱가포르 서비스 호스트의 단일 DNS 레이블이다.
     static func isValidWorkspaceID(_ value: String) -> Bool {

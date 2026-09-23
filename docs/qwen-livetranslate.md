@@ -1,57 +1,55 @@
-# Qwen3.8 실시간 번역
+# Qwen Audio options
 
-AirTranslate 1.11.0부터 **Qwen LiveTranslate** 모드는 `qwen3.8-livetranslate-flash-realtime`을 사용한다. 기존 Nari Qwen3-ASR 전사 모드와 별도 제공자이며, Apple 기본 모드와 다른 제공자의 설정은 유지한다.
+AirTranslate 1.12.0 supports two realtime models in Qwen LiveTranslate and an asynchronous audio-file transcription tool. These use the user's Alibaba Cloud Singapore credentials. The realtime models send selected microphone or Mac audio during capture. Filetrans sends a public HTTPS audio URL to QwenCloud for processing.
 
-## 설정
+## Shared setup
 
-1. Alibaba Cloud Model Studio의 **싱가포르** 워크스페이스에서 API 키를 준비한다.
-2. AirTranslate **설정 → API 키 → Alibaba Cloud · Qwen**에 API 키와 해당 워크스페이스 ID를 입력한다. ID 필드에는 URL을 넣지 않는다.
-3. 메인 화면의 모드 선택에서 **Qwen LiveTranslate**를 선택한다. API 키가 없으면 선택 버튼은 비활성화되지만 설정 버튼은 사용할 수 있다.
-4. PC 소리 또는 마이크와 번역 대상 언어를 선택하고 시작한다. 입력 언어는 서비스가 자동으로 감지한다.
-5. 음성 번역도 필요하면 시작 전에 **설정 → 출력 → 음성 출력**을 켠다. 처음에는 자막만 출력하며, 이후의 음성 출력 선택은 Qwen 전용으로 기억한다.
+1. Prepare an Alibaba Cloud Model Studio API key and workspace ID for the Singapore region.
+2. In AirTranslate, open **Settings → API Keys → Alibaba Cloud · Qwen** and enter the key and workspace ID. Enter the workspace ID itself, not a URL.
+3. The API key is stored in the dedicated macOS Keychain item `AirTranslate.Qwen`. The workspace ID and selected realtime model are local app preferences. A saved key only means local configuration is present; it does not confirm account authorization, quota, or paid access.
 
-앱이 현재 제공하는 영어·한국어·일본어·중국어·스페인어·프랑스어·독일어를 대상 언어로 사용할 수 있다. 모델의 전체 60개 언어 선택기를 추가한 것은 아니다. 화면 이미지 전송과 목소리 복제 설정은 제공하지 않는다.
+The app currently offers English, Korean, Japanese, Chinese, Spanish, French, and German as target languages. It does not add the provider's full language selector, image input, or voice cloning.
 
-## 데이터와 과금
+## Realtime translation
 
-선택한 입력 소리만 Alibaba Cloud 싱가포르의 워크스페이스 전용 WebSocket으로 전송한다. 원문 전사와 번역문을 받아 기존 메인·플로팅 자막에 표시한다. Apple 번역 언어팩은 이 모드에 필요하지 않다. 기록 파일 저장은 기존 사용자의 선택을 따르며, 철회 가능한 부분 결과 대신 확정된 원문·번역을 저장한다.
+Choose **Qwen LiveTranslate** in the main mode picker. In Settings → General, select one of these Qwen models:
 
-API 키는 별도 Keychain 항목 `AirTranslate.Qwen`에 저장하고 인증 헤더로만 전송한다. 워크스페이스 ID와 출력 선택은 UserDefaults에 저장한다. 키가 저장되었다는 표시는 API 인증이나 유료 사용 가능 여부가 검증되었다는 뜻이 아니다.
+| Model | Behavior |
+| --- | --- |
+| `qwen3.8-livetranslate-flash-realtime` | Existing default. Uses the LiveTranslate realtime API and its session-finish/finished lifecycle. |
+| `qwen-audio-3.1-realtime-plus` | New alternate. Uses the Qwen Audio Realtime WebSocket protocol, server VAD, and waits for each response to finish before closing. |
 
-2026-09-20 싱가포르 공식 정가(USD):
+Both options send selected audio directly to Alibaba Cloud Singapore and return original captions and translated text. Translation is requested through the session instructions. The app retains its existing optional speech-output preference, initially off. Apple translation language assets are not required.
 
-| 항목 | 100만 토큰당 가격 | 시간 환산 |
-| --- | ---: | --- |
-| 음성 입력 | $7.50 | 입력 7토큰/초 → $0.189/시간 |
-| 번역문 출력 | $20 | 실제 번역문 토큰 수에 따라 추가 |
-| 음성 출력 | $30 | 출력 12.5토큰/초 → $1.35/시간 |
-| 원문 전사 텍스트 | 무료 | 번역문 출력과 구분 |
+The 3.1 model uses the Qwen Audio WebSocket endpoint and event contract, not the LiveTranslate endpoint or `session.finish` event. During stop, AirTranslate sends a short silent audio tail to let server VAD close the final turn, then drains the final response. The two protocol paths remain separate.
 
-입력 1시간과 번역문 1만 토큰을 가정하면 자막은 $0.389이다. 번역 음성을 추가로 1시간 생성하면 총 $1.739이다. 출력량에 따라 달라지는 예시이며 무료 제공량이나 계정 프로모션을 가정하지 않는다.
+The documented Singapore rate for the existing 3.8 model was checked on 2026-09-20 and is summarized in [model pricing](processing-mode-pricing.md). This guide does not state numeric rates for Realtime Plus; check the current Model Studio console for the selected account's rate, quota, and charges.
 
-## 종료와 오류
+## Qwen Audio Filetrans
 
-일시정지·중지는 입력 전송을 멈추고 마지막 음성과 완료 요청을 보낸 뒤 서버의 최종 자막을 기다린다. 재개하면 새 연결을 연다. 연결 오류·대기열 초과·완료 시간 초과가 발생하면 실패 상태를 표시하며, 이미 받은 자막은 보존한다. 실패한 음성을 자동 재전송하지 않는다.
+Open **Settings → General → Qwen Audio File Transcription**. Enter a public HTTPS URL for audio you are authorized to send to QwenCloud, then submit it. The provider fetches the audio URL and processes it asynchronously. AirTranslate does not upload a local audio file in this workflow.
 
-## 검증 범위
+The app sends `qwen-audio-3.1-asr-flash-filetrans` with the URL, receives a task ID, checks the task status, and reads the completed transcript from the returned transcription URL. The transcript is shown in Settings for copying. Submitting a URL does not start microphone or system-audio capture.
 
-자동 테스트는 네트워크에 접속하지 않는 가짜 WebSocket으로 연결 준비, 세션 구성, 부분/확정 결과, 마지막 오디오 전송, 종료 대기, 시간 초과, 취소, 오래된 결과 차단과 비밀값 비노출을 검증한다. 세션 테스트는 모드 전환·설정 복원·시작 차단·자막 갱신을 확인한다.
+The URL must be reachable by QwenCloud without your local network or browser session. Do not submit private URLs, links containing credentials or access tokens, or audio you do not have permission to share. The provider's account access, retention, quotas, pricing, and service terms apply. Numeric Filetrans rates are not stated here; check Model Studio for the current account rate. Key and URL content should not be included in support reports.
 
-실제 Alibaba Cloud 계정의 인증·할당량·과금 및 음성 번역 품질·지연은 별도 실서비스 검증 대상이다. 현재 구현 자체로 이 결과를 입증하지 않는다.
+## Data and storage
 
-2026-09-20 구현 완료 시점의 로컬 검증 결과(릴리즈 게시 전):
+- Realtime audio is sent to the user's Alibaba Cloud Singapore workspace only after Qwen LiveTranslate capture starts.
+- Filetrans sends the entered public URL to QwenCloud; QwenCloud fetches the audio. The app reads the task's transcript result URL without forwarding the Qwen authorization header to that result host.
+- The API key stays in macOS Keychain. Workspace ID and realtime model selection stay in local app preferences. The submitted URL and transcript are held for the active tool interaction and are not added to transcript files by this tool.
+- Saving live transcript files remains opt-in and only confirmed Qwen live results are saved.
 
-- 전체 직렬 테스트 409개/45 suites 통과. 이후 확정 결과만 저장하는 체크포인트 보강에 대해 Qwen 집중 테스트 19개/2 suites 통과.
-- 최종 release 빌드와 새 `dist/AirTranslate.app` 실행 경로 검사 통과.
-- 실제 앱에서 키 없는 Qwen 선택 비활성화, 설정 버튼 진입, API 키·워크스페이스 입력란, 아이콘 표시와 Tab 이동을 확인했다. 키 입력이나 캡처 시작은 수행하지 않았다.
-- 빈 최종 결과의 자막 철회·확정 결과 저장, 시스템 메뉴에서 캡처 중지 시 마지막 결과 수신을 회귀 테스트에 반영했다.
-- 비밀값 패턴·민감 파일 검사에서 일치 없음. 커밋·push·공개 릴리즈·설치본 교체는 수행하지 않았다.
+AirTranslate has no developer-operated relay or shared Qwen credential. Alibaba Cloud terms and the user's account configuration govern provider-side processing and retention. Local implementation tests do not prove live account authorization, billing, translation or transcription quality, or latency.
 
-## 공식 계약
+## Verification
 
-- [정확한 모델과 가격](https://www.alibabacloud.com/help/en/model-studio/qwen3-8-livetranslate-flash-realtime)
-- [실시간 번역·과금 안내](https://www.alibabacloud.com/help/en/model-studio/qwen3-5-livetranslate-flash-realtime) — URL은 3.5지만 본문에 3.8 계약이 있다.
-- [클라이언트 이벤트](https://www.alibabacloud.com/help/en/model-studio/live-translator-client-events)
-- [서버 이벤트](https://www.alibabacloud.com/help/en/model-studio/live-translator-server-events)
+Automated tests use fake WebSocket and HTTP clients. They cover model selection and restoration, model-specific connection/configuration, final-response draining, Filetrans request and task polling, rejected input, result parsing, and error handling. They do not contact QwenCloud or use a real API key.
 
-3.8은 `session.output_modalities`, `response.text.delta`, `response.audio_transcript.delta`를 사용한다. 3.5의 `modalities`와 `*.text` 이벤트를 혼용하지 않는다.
+## Official model documentation
+
+- [Qwen Audio 3.1 Realtime Plus](https://www.qwencloud.com/models/qwen-audio-3.1-realtime-plus)
+- [Qwen Audio 3.1 ASR Flash Filetrans](https://www.qwencloud.com/models/qwen-audio-3.1-asr-flash-filetrans)
+- [Qwen Audio realtime client events](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/client-events)
+- [Qwen Audio realtime server events](https://docs.qwencloud.com/api-reference/qwen-audio-realtime/server-events)
+- [Qwen Audio asynchronous file transcription API](https://docs.qwencloud.com/developer-guides/speech/asr)

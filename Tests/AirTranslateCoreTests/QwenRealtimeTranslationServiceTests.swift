@@ -16,14 +16,17 @@ private final class QwenSocketStub: QwenWebSocketConnection, @unchecked Sendable
     let finishAutomatically: Bool
     let blockAudio: Bool
     let allowLateReceiveAfterClose: Bool
+    let model: QwenTranslationModel
 
     init(createAutomatically: Bool = true, updateAutomatically: Bool = true, finishAutomatically: Bool = true,
-         blockAudio: Bool = false, allowLateReceiveAfterClose: Bool = false) {
+         blockAudio: Bool = false, allowLateReceiveAfterClose: Bool = false,
+         model: QwenTranslationModel = .liveTranslateFlashRealtime) {
         self.createAutomatically = createAutomatically
         self.updateAutomatically = updateAutomatically
         self.finishAutomatically = finishAutomatically
         self.blockAudio = blockAudio
         self.allowLateReceiveAfterClose = allowLateReceiveAfterClose
+        self.model = model
     }
 
     var messages: [[String: Any]] {
@@ -35,7 +38,7 @@ private final class QwenSocketStub: QwenWebSocketConnection, @unchecked Sendable
 
     func resume() {
         lock.withLock { resumed = true }
-        if createAutomatically { emit(Self.sessionEvent("session.created")) }
+        if createAutomatically { emit(Self.sessionEvent("session.created", model: model)) }
     }
 
     func send(_ text: String) async throws {
@@ -47,9 +50,14 @@ private final class QwenSocketStub: QwenWebSocketConnection, @unchecked Sendable
         switch json["type"] as? String {
         case "session.update" where updateAutomatically:
             let session = json["session"] as! [String: Any]
-            let target = (session["translation"] as! [String: Any])["language"] as! String
-            let audio = (session["output_modalities"] as! [String]).contains("audio")
-            emit(Self.sessionEvent("session.updated", target: target, audio: audio))
+            if model == .audio31RealtimePlus {
+                let audio = (session["modalities"] as! [String]).contains("audio")
+                emit(Self.sessionEvent("session.updated", audio: audio, model: model))
+            } else {
+                let target = (session["translation"] as! [String: Any])["language"] as! String
+                let audio = (session["output_modalities"] as! [String]).contains("audio")
+                emit(Self.sessionEvent("session.updated", target: target, audio: audio, model: model))
+            }
         case "session.finish" where finishAutomatically:
             emit(["type": "session.finished"])
         case "input_audio_buffer.append" where blockAudio:
@@ -95,9 +103,25 @@ private final class QwenSocketStub: QwenWebSocketConnection, @unchecked Sendable
         }
     }
 
-    static func sessionEvent(_ type: String, target: String = "ko", audio: Bool = false) -> [String: Any] {
-        ["type": type, "session": [
-            "model": "qwen3.8-livetranslate-flash-realtime",
+    static func sessionEvent(
+        _ type: String,
+        target: String = "ko",
+        audio: Bool = false,
+        model: QwenTranslationModel = .liveTranslateFlashRealtime
+    ) -> [String: Any] {
+        if model == .audio31RealtimePlus {
+            return ["type": type, "session": [
+                "model": model.rawValue,
+                "modalities": audio ? ["text", "audio"] : ["text"],
+                "voice": "longanqian_v3.1",
+                "input_audio_format": "pcm",
+                "output_audio_format": "pcm",
+                "instructions": "Translate spoken language to \(target).",
+                "turn_detection": ["type": "server_vad", "threshold": 0.5, "silence_duration_ms": 800],
+            ]]
+        }
+        return ["type": type, "session": [
+            "model": model.rawValue,
             "output_modalities": audio ? ["text", "audio"] : ["text"],
             "translation": ["language": target],
             "audio": [
@@ -157,6 +181,123 @@ struct QwenRealtimeTranslationServiceTests {
         #expect(throws: QwenTranslationError.configuration) {
             try QwenRealtimeTranslationService.languageCode(.init(id: "invalid", title: "Invalid", locale: .current))
         }
+    }
+
+    @Test func audio31RequestAndConfigurationUseQwenAudioProtocol() throws {
+        let request = try QwenRealtimeTranslationService.request(
+            key: "test-only", workspaceID: " ws-123 ", model: .audio31RealtimePlus
+        )
+        let url = try #require(request.url)
+        #expect(url.host == "maas.qwencloudapi.com")
+        #expect(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems == [
+            .init(name: "model", value: "qwen-audio-3.1-realtime-plus")
+        ])
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer test-only")
+        #expect(request.value(forHTTPHeaderField: "X-DashScope-WorkSpace") == "ws-123")
+
+        let text = try QwenRealtimeTranslationService.configuration(
+            language: "ko", audioOutputEnabled: true, model: .audio31RealtimePlus
+        )
+        let root = try #require(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+        let session = try #require(root["session"] as? [String: Any])
+        #expect(session["modalities"] as? [String] == ["text", "audio"])
+        #expect(session["input_audio_format"] as? String == "pcm")
+        #expect(session["output_audio_format"] as? String == "pcm")
+        #expect((session["turn_detection"] as? [String: Any])?["type"] as? String == "server_vad")
+        #expect((session["instructions"] as? String)?.contains("Korean") == true)
+        #expect(session["translation"] == nil && session["output_modalities"] == nil)
+    }
+
+    @Test func audio31ParserAcceptsRealtimeSessionAndTranscriptEvents() throws {
+        let created = try QwenServerEvent.parse(
+            JSONSerialization.data(withJSONObject: QwenSocketStub.sessionEvent("session.created", model: .audio31RealtimePlus)),
+            model: .audio31RealtimePlus
+        )
+        guard case .created = created else { Issue.record("session.created required"); return }
+
+        let updated = try QwenServerEvent.parse(
+            JSONSerialization.data(withJSONObject: QwenSocketStub.sessionEvent("session.updated", audio: true, model: .audio31RealtimePlus)),
+            model: .audio31RealtimePlus
+        )
+        guard case .updated(nil, ["text", "audio"]) = updated else { Issue.record("Qwen Audio session.updated required"); return }
+
+        let source = try QwenServerEvent.parse(Data(#"{"type":"conversation.item.input_audio_transcription.delta","item_id":"source","text":"Hello ","stash":"world"}"#.utf8), model: .audio31RealtimePlus)
+        guard case .source("source", "Hello world", false) = source else { Issue.record("stable and provisional source text required"); return }
+
+        let response = try QwenServerEvent.parse(Data(#"{"type":"response.done","response":{"status":"completed"}}"#.utf8), model: .audio31RealtimePlus)
+        guard case .responseFinished = response else { Issue.record("response.done required"); return }
+    }
+
+    @Test func audio31FinishDrainsVADAndWaitsForResponseDone() async throws {
+        let socket = QwenSocketStub(model: .audio31RealtimePlus)
+        let service = QwenRealtimeTranslationService(
+            keyProvider: { "test-only" }, connectionFactory: { _ in socket },
+            setupTimeout: .seconds(2), finishTimeout: .seconds(4)
+        )
+        defer { service.stop() }
+        try await service.start(
+            workspaceID: "ws-test", targetLanguage: .korean, audioOutputEnabled: false,
+            model: .audio31RealtimePlus
+        )
+        service.append(try makeSample(frames: 1_600))
+        let finishing = Task { try await service.finish() }
+        try await waitUntil { socket.messageTypes.filter { $0 == "input_audio_buffer.append" }.count == 11 }
+        #expect(!socket.messageTypes.contains("session.finish"))
+        for audio in socket.messages.dropFirst().compactMap({ $0["audio"] as? String }).suffix(10) {
+            #expect(Data(base64Encoded: audio) == Data(repeating: 0, count: 3_200))
+        }
+        socket.emit(["type": "response.created", "response": ["status": "in_progress"]])
+        socket.emit(["type": "conversation.item.input_audio_transcription.completed", "item_id": "source", "transcript": "Hello."])
+        socket.emit(["type": "response.text.done", "item_id": "translated", "text": "안녕하세요."])
+        socket.emit(["type": "response.done", "response": ["status": "completed"]])
+        try await finishing.value
+        #expect(socket.isClosed)
+    }
+
+    @Test func audio31FinishDuringSilenceUsesBoundedIdleGrace() async throws {
+        let socket = QwenSocketStub(model: .audio31RealtimePlus)
+        let service = QwenRealtimeTranslationService(
+            keyProvider: { "test-only" }, connectionFactory: { _ in socket },
+            setupTimeout: .seconds(2), finishTimeout: .seconds(3), idleDrainGrace: .milliseconds(10)
+        )
+        defer { service.stop() }
+        try await service.start(
+            workspaceID: "ws-test", targetLanguage: .korean, audioOutputEnabled: false,
+            model: .audio31RealtimePlus
+        )
+
+        try await service.finish()
+
+        #expect(socket.messageTypes.filter { $0 == "input_audio_buffer.append" }.count == 10)
+        #expect(socket.isClosed)
+    }
+
+    @Test func audio31FinishWaitsForResponseThatStartedBeforeDraining() async throws {
+        let socket = QwenSocketStub(model: .audio31RealtimePlus)
+        let service = QwenRealtimeTranslationService(
+            keyProvider: { "test-only" }, connectionFactory: { _ in socket },
+            setupTimeout: .seconds(2), finishTimeout: .seconds(3), idleDrainGrace: .milliseconds(20)
+        )
+        defer { service.stop() }
+        let results = QwenTestResults()
+        service.onSourceTranscript = { await results.addSource($0, $1) }
+        try await service.start(
+            workspaceID: "ws-test", targetLanguage: .korean, audioOutputEnabled: false,
+            model: .audio31RealtimePlus
+        )
+        service.append(try makeSample(frames: 1_600))
+        socket.emit(["type": "response.created", "response": ["status": "in_progress"]])
+        socket.emit(["type": "conversation.item.input_audio_transcription.completed", "item_id": "source", "transcript": "Hello."])
+        try await waitUntil { await results.source.count == 1 }
+
+        let finishing = Task { try await service.finish() }
+        try await waitUntil { socket.messageTypes.filter { $0 == "input_audio_buffer.append" }.count == 11 }
+        try await Task.sleep(for: .milliseconds(60))
+        #expect(!socket.isClosed)
+
+        socket.emit(["type": "response.done", "response": ["status": "completed"]])
+        try await finishing.value
+        #expect(socket.isClosed)
     }
 
     @Test func ledgerDeliversDeltasAndAuthoritativeFinalOnceWithoutMixingItems() throws {

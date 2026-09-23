@@ -592,9 +592,11 @@ final class TranslationSessionStore {
     var qwenWorkspaceID = "" {
         didSet { persistSelectedSettings() }
     }
+    private(set) var preferredQwenModel = QwenTranslationModel.liveTranslateFlashRealtime
     var qwenTranslationModel = QwenTranslationModel.off {
         didSet {
             if qwenTranslationModel.isEnabled {
+                preferredQwenModel = qwenTranslationModel
                 grokTranscriptionModel = .off
                 nariTranscriptionModel = .off
                 isUsingAzureMAI = false
@@ -2123,7 +2125,9 @@ final class TranslationSessionStore {
 
     func useQwenTranslationMode() {
         guard !isRunning, !isStarting else { return }
-        qwenTranslationModel = .liveTranslateFlashRealtime
+        if !qwenTranslationModel.isEnabled {
+            qwenTranslationModel = preferredQwenModel
+        }
         clearTranscribeOnlyNotice(resetActivation: true)
         applyVoiceOutputDefault(qwenVoiceOutputEnabled)
     }
@@ -2941,7 +2945,8 @@ final class TranslationSessionStore {
             qwenTranslator = QwenRealtimeTranslationService()
             configureQwenCallbacks(service: qwenTranslator, generation: generation)
             try await qwenTranslator.start(workspaceID: configuration.qwenWorkspaceID,
-                targetLanguage: configuration.targetLanguage, audioOutputEnabled: configuration.qwenAudioOutputEnabled)
+                targetLanguage: configuration.targetLanguage, audioOutputEnabled: configuration.qwenAudioOutputEnabled,
+                model: configuration.qwenTranslationModel)
         } else if configuration.nariTranscriptionModel.isEnabled {
             nariTranscriber = NariRealtimeTranscriber()
             configureNariCallbacks(service: nariTranscriber, generation: generation)
@@ -4084,6 +4089,13 @@ final class TranslationSessionStore {
         qwenVoiceOutputEnabled = defaults.bool(forKey: "qwenVoiceOutputEnabled")
         let restoredQwenModel = defaults.string(forKey: "qwenTranslationModelID")
             .flatMap(QwenTranslationModel.init(rawValue:)) ?? .off
+        let restoredPreferredQwenModel = defaults.string(forKey: "preferredQwenTranslationModelID")
+            .flatMap(QwenTranslationModel.init(rawValue:))
+        if let restoredPreferredQwenModel, restoredPreferredQwenModel.isEnabled {
+            preferredQwenModel = restoredPreferredQwenModel
+        } else if restoredQwenModel.isEnabled {
+            preferredQwenModel = restoredQwenModel
+        }
         if restoredQwenModel.isEnabled {
             qwenTranslationModel = restoredQwenModel
         } else if restoredGrokModel.isEnabled {
@@ -4163,6 +4175,8 @@ final class TranslationSessionStore {
         defaults.set(azureSpeechEndpoint, forKey: "azureSpeechEndpoint")
         defaults.set(metaTranscriptionModel.id, forKey: SettingsKey.metaTranscriptionModelID)
         defaults.set(qwenTranslationModel.rawValue, forKey: "qwenTranslationModelID")
+        defaults.set((qwenTranslationModel.isEnabled ? qwenTranslationModel : preferredQwenModel).rawValue,
+                     forKey: "preferredQwenTranslationModelID")
         defaults.set(qwenWorkspaceID, forKey: "qwenWorkspaceID")
         defaults.set(qwenVoiceOutputEnabled, forKey: "qwenVoiceOutputEnabled")
         defaults.set(grokTranscriptionModel.rawValue, forKey: SettingsKey.grokTranscriptionModelID)

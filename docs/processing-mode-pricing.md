@@ -16,6 +16,8 @@
 | Nari · `qwen3-asr:free`, `qwen3-asr-fast:free` | 사용 불가 · GA 모델 선택 필요 | [Nari GA 공지](https://narilabs.com/blog/nari-model-apis-general-availability/): 무료 베타는 2026-09-16 23:59 PT 종료. US$0로 안내하지 않음 |
 | Grok · `grok-voice-transcribe-2.0` | US$0.20/시간 | [xAI 요금표](https://docs.x.ai/developers/pricing), [Grok Voice Transcribe 2.0 공지](https://x.ai/news/grok-voice-transcribe-2). 앱의 WebSocket 스트리밍 요금이며 REST 일괄 전사 US$0.10/시간과 구분 |
 | Qwen · `qwen3.8-livetranslate-flash-realtime` | 입력 $0.189/시간 + 번역문 $20/100만 토큰 · 음성 출력 추가 $1.35/시간 | [Alibaba Cloud 공식 모델·가격](https://www.alibabacloud.com/help/en/model-studio/qwen3-8-livetranslate-flash-realtime), 싱가포르 기준. 입력 7토큰/초, 음성 출력 12.5토큰/초. 원문 전사는 무료. [계산·설정 안내](qwen-livetranslate.md) |
+| Qwen · `qwen-audio-3.1-realtime-plus` | 사용량 기준 · 현재 요금 확인 | [QwenCloud 모델 안내](https://www.qwencloud.com/models/qwen-audio-3.1-realtime-plus). 현재 싱가포르 계정의 요금·한도는 Model Studio에서 확인한다. |
+| Qwen · `qwen-audio-3.1-asr-flash-filetrans` | 사용량 기준 · 현재 요금 확인 | [QwenCloud 모델 안내](https://www.qwencloud.com/models/qwen-audio-3.1-asr-flash-filetrans). 비동기 공개 URL 전사이며 현재 계정의 요금·한도는 Model Studio에서 확인한다. |
 
 Gemini 무료 티어는 별도로 존재한다. 툴팁은 유료 요금의 분당 추정치임을 표시하며 모든 계정에 정액 요금을 약속하지 않는다. Azure 할인 종료 후 요금은 새 공식 요금 확인 전 추정하지 않는다.
 

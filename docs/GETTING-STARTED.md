@@ -39,7 +39,8 @@ When troubleshooting permissions, check which app copy is running. Older or diff
 - **Transcribe Only:** source captions without translation.
 - **OpenAI Audio, Gemini, Meta, Azure, or Nari:** optional provider modes that require user-supplied keys.
 - **Grok STT (1.10.0+):** Grok Voice Transcribe 2.0 transcription with your own SpaceXAI (xAI) key. Select Grok STT after adding the key in API Keys. See [Grok STT notes](grok-stt.md).
-- **Qwen LiveTranslate (1.11.0+):** Add your Alibaba Cloud Singapore API key and workspace ID, then choose Qwen LiveTranslate in the mode picker. Original transcripts and translations arrive directly from Qwen. Speech output is optional and initially off; Apple language packs are not needed for this mode. See [Qwen setup and pricing](qwen-livetranslate.md).
+- **Qwen LiveTranslate (1.11.0+):** Add your Alibaba Cloud Singapore API key and workspace ID, then choose Qwen LiveTranslate in the mode picker. Choose the default Qwen3.8 model or Qwen Audio 3.1 Realtime Plus in Settings > General. Original transcripts and translations arrive directly from Qwen. Speech output is optional and initially off; Apple language packs are not needed for this mode.
+- **Qwen Audio Filetrans (1.12.0+):** In Settings > General, submit a public HTTPS audio URL for asynchronous transcription. QwenCloud fetches the URL; the app does not upload a local audio file in this workflow. See [Qwen setup and pricing](qwen-livetranslate.md).
 
 Provider keys are managed in **Settings > API Keys**. A configured key means AirTranslate has local provider settings; it does not prove provider account authorization until a session starts.
 

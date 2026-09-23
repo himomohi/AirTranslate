@@ -172,7 +172,7 @@ struct APIKeySettingsView: View {
         case .meta: MetaTranscriptionModel.museVoiceTranscribe.title
         case .azure: "MAI-Transcribe-2"
         case .nari: "Qwen3-ASR"
-        case .qwen: QwenTranslationModel.liveTranslateFlashRealtime.rawValue
+        case .qwen: selectedQwenModel.rawValue
         case .grok: GrokTranscriptionModel.voiceTranscribe2.title
         }
     }
@@ -184,9 +184,13 @@ struct APIKeySettingsView: View {
         case .meta: AppText.metaScribeDetail
         case .azure: AzureMAICopy.detail
         case .nari: NariCopy.detail + "\n\n" + NariCopy.modelDetail
-        case .qwen: QwenCopy.detail + "\n\n" + QwenCopy.price
+        case .qwen: QwenCopy.detail(for: selectedQwenModel) + "\n\n" + QwenCopy.price(for: selectedQwenModel)
         case .grok: GrokCopy.detail
         }
+    }
+
+    private var selectedQwenModel: QwenTranslationModel {
+        session.qwenTranslationModel.isEnabled ? session.qwenTranslationModel : .liveTranslateFlashRealtime
     }
 
     private func save(_ key: String, for provider: CredentialProvider) throws {

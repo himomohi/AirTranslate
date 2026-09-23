@@ -2,6 +2,18 @@
 
 All notable changes to AirTranslate are documented in this file.
 
+## 1.12.0 - 2026-09-23
+
+### Added
+
+- Qwen LiveTranslate can use `qwen-audio-3.1-realtime-plus` as an alternate realtime model while preserving the existing Qwen3.8 default and saved model choice.
+- Settings > General includes Qwen Audio 3.1 ASR Flash Filetrans for asynchronous transcription from a user-provided public HTTPS audio URL. QwenCloud fetches that URL; local audio-file uploads are not supported by this workflow.
+
+### Changed
+
+- Qwen model details explain the Realtime Plus workflow and direct users to the current Singapore console for its usage-based rate.
+- Qwen setup and privacy documentation describe the realtime and file-transcription data paths separately.
+
 ## 1.11.0 - 2026-09-20
 
 ### Added
