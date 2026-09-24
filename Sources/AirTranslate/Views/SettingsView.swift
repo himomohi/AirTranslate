@@ -403,40 +403,38 @@ struct SettingsView: View {
                 )
                 .disabled(isSessionConfigurationLocked)
 
-                if !session.isUsingProviderRealtimeTranslation {
-                    SettingsControlRow(
-                        title: SettingsCopy.translatedSpeechModel,
-                        detail: SettingsCopy.translatedSpeechModelDetail,
-                        systemImage: "waveform"
+                SettingsControlRow(
+                    title: SettingsCopy.translatedSpeechModel,
+                    detail: SettingsCopy.translatedSpeechModelDetail,
+                    systemImage: "waveform"
+                ) {
+                    Picker(
+                        SettingsCopy.translatedSpeechModel,
+                        selection: lockedSessionConfigurationBinding($session.speechSynthesisModel)
                     ) {
-                        Picker(
-                            SettingsCopy.translatedSpeechModel,
-                            selection: lockedSessionConfigurationBinding($session.speechSynthesisModel)
-                        ) {
-                            ForEach(SpeechSynthesisModel.allCases) { model in
-                                Text(model.title).tag(model)
-                            }
+                        ForEach(SpeechSynthesisModel.allCases) { model in
+                            Text(model.title).tag(model)
                         }
-                        .pickerStyle(.menu)
-                        .labelsHidden()
-                        .frame(minWidth: 220, idealWidth: 260, maxWidth: 300)
-                        .disabled(isSessionConfigurationLocked)
-                        .accessibilityLabel(SettingsCopy.translatedSpeechModel)
-                        .accessibilityValue(session.speechSynthesisModel.title)
-                        .accessibilityHint(SettingsCopy.translatedSpeechModelDetail)
                     }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(minWidth: 220, idealWidth: 260, maxWidth: 300)
                     .disabled(isSessionConfigurationLocked)
+                    .accessibilityLabel(SettingsCopy.translatedSpeechModel)
+                    .accessibilityValue(session.speechSynthesisModel.title)
+                    .accessibilityHint(SettingsCopy.translatedSpeechModelDetail)
+                }
+                .disabled(isSessionConfigurationLocked)
 
-                    if session.speechSynthesisModel.isGeminiTTS,
-                       !session.hasGeminiAPIKey,
-                       processingModeSelection.wrappedValue != .gemini {
-                        SettingsNoticeActionRow(
-                            text: AppText.geminiTTSAPIKeyMissing,
-                            systemImage: "key",
-                            actionTitle: SettingsCopy.enterGeminiAPIKey
-                        ) {
-                            selectedCategory.wrappedValue = .apiKeys
-                        }
+                if session.speechSynthesisModel.isGeminiTTS,
+                   !session.hasGeminiAPIKey,
+                   processingModeSelection.wrappedValue != .gemini {
+                    SettingsNoticeActionRow(
+                        text: AppText.geminiTTSAPIKeyMissing,
+                        systemImage: "key",
+                        actionTitle: SettingsCopy.enterGeminiAPIKey
+                    ) {
+                        selectedCategory.wrappedValue = .apiKeys
                     }
                 }
 
@@ -1344,10 +1342,10 @@ private enum SettingsCopy {
         chineseSimplified: "译文语音模型"
     )
     static let translatedSpeechModelDetail = AppText.localized(
-        english: "For translated text output, choose Apple system speech or Gemini 3.8 Flash or Flash-Lite TTS.",
-        korean: "번역된 텍스트의 음성 출력에 Apple 시스템 음성 또는 Gemini 3.8 Flash·Flash-Lite TTS를 선택합니다.",
-        japanese: "翻訳テキストの音声出力にAppleシステム音声、Gemini 3.8 FlashまたはFlash-Lite TTSを選択します。",
-        chineseSimplified: "为译文语音输出选择 Apple 系统语音、Gemini 3.8 Flash 或 Flash-Lite TTS。"
+        english: "For translated text output, choose Apple system speech or Gemini 3.8 Flash or Flash-Lite TTS. The choice is saved in realtime modes, but realtime audio still uses the provider's native voice.",
+        korean: "번역된 텍스트의 음성 출력에 Apple 시스템 음성 또는 Gemini 3.8 Flash·Flash-Lite TTS를 선택합니다. 선택은 실시간 모드에서도 저장되며, 실제 실시간 음성은 제공자 자체 음성을 사용합니다.",
+        japanese: "翻訳テキストの音声出力にAppleシステム音声、Gemini 3.8 FlashまたはFlash-Lite TTSを選択します。選択はリアルタイムモードでも保存され、リアルタイム音声にはプロバイダー独自の音声が使用されます。",
+        chineseSimplified: "为译文语音输出选择 Apple 系统语音、Gemini 3.8 Flash 或 Flash-Lite TTS。实时模式下也会保存此选择，但实时音频仍由提供方生成。"
     )
     static let liveTranslationVolume = AppText.localized(
         english: "Volume",

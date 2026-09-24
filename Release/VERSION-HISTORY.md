@@ -1,5 +1,12 @@
 # AirTranslate Version History
 
+## 1.14.1 - 2026-09-24
+
+### Fixed
+
+- The Gemini model menu now includes Gemini 3.8 Flash TTS and Flash-Lite TTS and saves the translated-speech choice independently from the realtime model.
+- Realtime audio continues to use the active provider's native voice; Gemini TTS is used for text-translation workflows.
+
 ## 1.14.0 - 2026-09-24
 
 ### Added

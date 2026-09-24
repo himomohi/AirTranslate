@@ -85,11 +85,12 @@ struct ProcessingModePicker: View {
                 }
                 .accessibilityIdentifier("mainProviderModelSelection")
 
-                if !session.isTranscribeOnlyMode && !session.isUsingProviderRealtimeTranslation {
+                if !session.isTranscribeOnlyMode {
                     HStack(spacing: 8) {
                         Text(ModePickerCopy.speechModel)
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(AirTranslateDesign.Palette.textSecondary)
+                        InlineHelpIcon(symbol: "info.circle", help: ModePickerCopy.speechModelAvailabilityDetail)
                         Spacer(minLength: 4)
                         Picker(ModePickerCopy.speechModel, selection: $session.speechSynthesisModel) {
                             ForEach(SpeechSynthesisModel.allCases) { model in
@@ -153,13 +154,40 @@ struct ProcessingModePicker: View {
                 .labelsHidden()
                 .accessibilityIdentifier("mainProviderModelPicker.openAI")
             case .gemini:
-                Picker(ModePickerCopy.model, selection: geminiModelSelection) {
-                    ForEach(GeminiTranslationModel.selectableCases) { model in
-                        Text(model.title).tag(model)
+                Menu {
+                    Section(ModePickerCopy.geminiRealtimeModels) {
+                        ForEach(GeminiTranslationModel.selectableCases) { model in
+                            Button {
+                                selectGeminiRealtimeModel(model)
+                            } label: {
+                                modelMenuLabel(model.title, isSelected: selectedGeminiRealtimeModel == model)
+                            }
+                            .disabled(session.isRunning || session.isStarting)
+                        }
+                    }
+                    Section(ModePickerCopy.geminiSpeechModels) {
+                        ForEach(SpeechSynthesisModel.allCases.filter(\.isGeminiTTS)) { model in
+                            Button {
+                                selectGeminiSpeechModel(model)
+                            } label: {
+                                modelMenuLabel(model.title, isSelected: session.speechSynthesisModel == model)
+                            }
+                            .disabled(session.isRunning || session.isStarting)
+                        }
                     }
                 }
-                .pickerStyle(.menu)
-                .labelsHidden()
+                label: {
+                    HStack(spacing: 6) {
+                        Text(currentModelTitle)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 9, weight: .semibold))
+                    }
+                }
+                .menuStyle(.borderlessButton)
+                .accessibilityLabel(ModePickerCopy.model)
+                .accessibilityValue(currentModelTitle)
                 .accessibilityIdentifier("mainProviderModelPicker.gemini")
             case .qwen:
                 Picker(ModePickerCopy.model, selection: qwenModelSelection) {
@@ -229,12 +257,27 @@ struct ProcessingModePicker: View {
         }
     }
 
-    private var geminiModelSelection: Binding<GeminiTranslationModel> {
-        Binding {
-            session.geminiTranslationModel.isEnabled ? session.geminiTranslationModel : session.preferredGeminiModel
-        } set: { model in
-            guard !session.isRunning, !session.isStarting else { return }
-            session.useGeminiMode(model)
+    private var selectedGeminiRealtimeModel: GeminiTranslationModel {
+        session.geminiTranslationModel.isEnabled ? session.geminiTranslationModel : session.preferredGeminiModel
+    }
+
+    private func selectGeminiRealtimeModel(_ model: GeminiTranslationModel) {
+        guard !session.isRunning, !session.isStarting else { return }
+        session.useGeminiMode(model)
+    }
+
+    private func selectGeminiSpeechModel(_ model: SpeechSynthesisModel) {
+        guard !session.isRunning, !session.isStarting else { return }
+        session.speechSynthesisModel = model
+    }
+
+    @ViewBuilder
+    private func modelMenuLabel(_ title: String, isSelected: Bool) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "checkmark")
+                .opacity(isSelected ? 1 : 0)
+                .frame(width: 12)
+            Text(title)
         }
     }
 
@@ -345,6 +388,14 @@ private enum ModePickerCopy {
     static let chooseProviderAndModel = AppText.localized(english: "Choose Provider and Model", korean: "공급자와 모델 선택", japanese: "プロバイダーとモデルを選択", chineseSimplified: "选择提供商和模型")
     static let model = AppText.localized(english: "Model", korean: "모델", japanese: "モデル", chineseSimplified: "模型")
     static let speechModel = AppText.localized(english: "Translation Voice", korean: "번역 음성", japanese: "翻訳音声", chineseSimplified: "翻译语音")
+    static let geminiRealtimeModels = AppText.localized(english: "Realtime models", korean: "실시간 모델", japanese: "リアルタイムモデル", chineseSimplified: "实时模型")
+    static let geminiSpeechModels = AppText.localized(english: "Translated speech models", korean: "번역 음성 모델", japanese: "翻訳音声モデル", chineseSimplified: "译文语音模型")
+    static let speechModelAvailabilityDetail = AppText.localized(
+        english: "Gemini TTS is available as a saved preference here, but is used only in text-translation workflows. Realtime providers use their own audio.",
+        korean: "Gemini TTS 선택은 저장되지만 텍스트 번역 흐름에서만 사용됩니다. 실시간 제공자는 자체 음성을 사용합니다.",
+        japanese: "Gemini TTSの選択は保存されますが、テキスト翻訳のフローでのみ使用されます。リアルタイムプロバイダーは独自の音声を使用します。",
+        chineseSimplified: "Gemini TTS 选择会保存，但仅用于文本翻译流程。实时提供方使用自己的音频。"
+    )
     static let keyRequired = AppText.localized(english: "API key required", korean: "API 키 필요", japanese: "APIキーが必要", chineseSimplified: "需要 API 密钥")
     static let keySaved = AppText.localized(english: "API key saved", korean: "API 키 저장됨", japanese: "APIキー保存済み", chineseSimplified: "API 密钥已保存")
     static let noKeyRequired = AppText.localized(english: "No API key needed", korean: "API 키 없이 사용", japanese: "APIキー不要", chineseSimplified: "无需 API 密钥")

@@ -23,7 +23,7 @@
 
 AirTranslate 会捕获 Mac 正在播放的音频，实时转写；当你选择翻译流程时，它会进行翻译，并可将字幕悬浮在其他应用上方。Apple Mode 仍然是默认的本地优先流程。云端引擎为可选项，配置对应提供方密钥后即可使用。
 
-AirTranslate **1.14.0/build1140** 可直接在主工作区右下角控件中选择各提供方的模型。控制台徽章会显示当前选中的模型名称，同一个弹出面板中可完成提供方切换、模型选择和设置入口。当前流程支持时，可在同一个弹出面板中选择译文语音模型。
+AirTranslate **1.14.1/build1141** 可直接在主工作区右下角控件中选择各提供方的模型。Gemini 模型菜单现在会同时列出实时模型、Gemini 3.8 Flash TTS 和 Flash-Lite TTS。TTS 选择会保存为译文语音偏好，仅用于文本翻译流程。实时提供方继续使用自己的原生音频。
 
 请在设置 > API 密钥 > Qwen 中输入 **阿里云新加坡 API 密钥**。Qwen3.8 LiveTranslate 还需要工作空间 ID；Qwen Audio 3.1 Realtime Plus 和 Filetrans 仅使用密钥。密钥单独保存在 macOS Keychain 中，开始捕获后会将所选实时音频直接发送到阿里云新加坡。在设置 > 通用中，可选择默认模型 `qwen3.8-livetranslate-flash-realtime` 或 `qwen-audio-3.1-realtime-plus`。所选实时模型会返回原文转写和译文。**语音输出为可选项，默认关闭**。请在 Model Studio 中查看当前 Qwen Audio 价格。
 
@@ -35,11 +35,11 @@ AirTranslate **1.14.0/build1140** 可直接在主工作区右下角控件中选�
 
 **Qwen 停止前会等待最终字幕**。空的最终响应会撤回临时字幕，Qwen 记录仅保存已确认的结果，包括定期保存。Apple Mode 仍为默认模式，记录文件保存仍需主动启用。
 
-**可以选择译文语音输出模型**。在设置中选择本地 Apple 系统语音，或选择 Gemini 3.8 TTS 模型。Gemini TTS 会使用你的 Gemini 密钥，只将稳定的译文文本发送给 Google。
+**可以选择译文语音输出模型**。在设置或主工作区的 Gemini 模型菜单中选择 Apple 系统语音、Gemini 3.8 Flash TTS 或 Flash-Lite TTS。实时模式下也会保存此选择，但仅用于文本翻译；实时提供方继续使用自己的原生音频。Gemini TTS 会使用你的 Gemini 密钥，只将稳定的译文文本发送给 Google。
 
 ## 下载
 
-当前公开最新版：**v1.14.0**。
+当前公开最新版：**v1.14.1**。
 
 - [下载 AirTranslate.dmg](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
 - [下载 AirTranslate-1.14.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.14.0/AirTranslate-1.14.0.zip)

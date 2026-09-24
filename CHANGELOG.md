@@ -2,6 +2,13 @@
 
 All notable changes to AirTranslate are documented in this file.
 
+## 1.14.1 - 2026-09-24
+
+### Fixed
+
+- Gemini 3.8 Flash TTS and Flash-Lite TTS now appear in the Gemini model menu on the main workspace and update the saved translated-speech preference independently of the realtime model.
+- The main picker keeps the selected realtime model and translated-speech model visibly separate; Gemini TTS remains available only to text-translation workflows while realtime providers use native audio.
+
 ## 1.14.0 - 2026-09-24
 
 ### Added

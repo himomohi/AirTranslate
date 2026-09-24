@@ -23,7 +23,7 @@
 
 AirTranslate는 Mac에서 재생되는 소리를 캡처해 실시간으로 전사하고, 번역 흐름을 선택하면 번역하며, 필요하면 다른 앱 위에 플로팅 자막을 유지합니다. Apple 기본 모드는 계속 로컬 우선 기본 경로입니다. 클라우드 엔진은 선택형이며 해당 제공자 키를 설정하면 사용할 수 있습니다.
 
-AirTranslate **1.14.0/build1140**는 메인 화면 우측 하단 컨트롤에서 제공자별 모델을 직접 선택할 수 있게 합니다. 콘솔 배지는 선택된 모델 이름을 보여 주며, 같은 팝오버에서 제공자 전환, 모델 선택, 설정 바로가기를 함께 다룹니다. 현재 워크플로에서 지원되면 같은 팝오버에서 번역 음성 모델을 선택할 수 있습니다.
+AirTranslate **1.14.1/build1141**은 메인 화면 우측 하단 컨트롤에서 제공자별 모델을 직접 선택할 수 있게 합니다. Gemini 모델 메뉴에 실시간 모델과 함께 Gemini 3.8 Flash TTS 및 Flash-Lite TTS가 표시됩니다. TTS 선택은 번역 음성 선호로 저장되며 텍스트 번역에서만 사용됩니다. 실시간 제공자는 자체 음성을 계속 사용합니다.
 
 설정 > API 키 > Qwen에 **Alibaba Cloud 싱가포르 API 키**를 입력하세요. Qwen3.8 LiveTranslate는 워크스페이스 ID도 필요하지만 Qwen Audio 3.1 Realtime Plus와 Filetrans는 키만 사용합니다. 키는 macOS Keychain의 전용 항목에 저장하며, 캡처를 시작하면 선택한 실시간 오디오를 Alibaba Cloud 싱가포르로 직접 전송합니다. 설정 > 일반에서 기존 기본 모델 `qwen3.8-livetranslate-flash-realtime` 또는 `qwen-audio-3.1-realtime-plus`를 선택할 수 있습니다. 선택한 실시간 모델은 원문 전사와 번역문을 반환합니다. **음성 출력은 선택 사항이며 처음에는 꺼져 있습니다**. Qwen Audio 요금은 Model Studio에서 확인하세요.
 
@@ -35,11 +35,11 @@ AirTranslate **1.14.0/build1140**는 메인 화면 우측 하단 컨트롤에서
 
 **Qwen 중지 전에 최종 자막 수신을 기다립니다**. 빈 최종 응답은 임시 자막을 철회하고, 주기적 저장을 포함한 Qwen 기록에는 확정 결과만 남깁니다. Apple 기본 모드와 기록 파일 저장의 선택 사용 정책은 유지합니다.
 
-**번역 음성 출력 모델을 선택할 수 있습니다**. 설정에서 로컬 Apple 시스템 음성 또는 Gemini 3.8 TTS 모델을 고릅니다. Gemini TTS는 사용자의 Gemini 키로 안정된 번역 텍스트만 Google에 보냅니다.
+**번역 음성 출력 모델을 선택할 수 있습니다**. 설정 또는 메인 화면의 Gemini 모델 메뉴에서 Apple 시스템 음성, Gemini 3.8 Flash TTS, Flash-Lite TTS를 고릅니다. 실시간 모드에서도 선택은 저장되지만 텍스트 번역에서만 사용하며, 실시간 제공자는 자체 음성을 계속 사용합니다. Gemini TTS는 안정된 번역 텍스트만 Google에 보냅니다.
 
 ## 다운로드
 
-현재 공개 최신 릴리즈: **v1.14.0**.
+현재 공개 최신 릴리즈: **v1.14.1**.
 
 - [AirTranslate.dmg 다운로드](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
 - [AirTranslate-1.14.0.zip 다운로드](https://github.com/himomohi/AirTranslate/releases/download/v1.14.0/AirTranslate-1.14.0.zip)
