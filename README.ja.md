@@ -23,26 +23,26 @@
 
 AirTranslateはMacで再生中の音声を取り込み、ライブで文字起こしし、翻訳ワークフローを選んだ場合は翻訳し、必要に応じて他のアプリの上にフローティング字幕を表示します。Apple Modeは引き続きローカル優先の標準ワークフローです。クラウドエンジンは任意で、対応するプロバイダーキーを設定すると利用できます。
 
-AirTranslate **1.14.1/build1141** では、メインワークスペース右下のコントロールからプロバイダー別モデルを直接選択できます。GeminiモデルメニューにリアルタイムモデルとGemini 3.8 Flash TTS、Flash-Lite TTSが表示されます。TTSの選択は翻訳音声の設定として保存され、テキスト翻訳でのみ使用されます。リアルタイムプロバイダーは引き続き独自の音声を使用します。
+AirTranslate **1.14.2/build1142** では、メインワークスペース右下のコントロールからプロバイダー別モデルを選択できます。モデル選択ではリアルタイム翻訳と原文文字起こしを分けています。Gemini TTSは別の翻訳音声項目で、テキスト翻訳でのみ使用します。リアルタイムプロバイダーは引き続き独自の音声を使用します。
 
-設定 > APIキー > Qwenに **Alibaba CloudシンガポールのAPIキー** を入力してください。Qwen3.8 LiveTranslateにはワークスペースIDも必要ですが、Qwen Audio 3.1 Realtime PlusとFiletransはキーだけで利用できます。キーはmacOS Keychainの専用項目に保存し、キャプチャ開始時に選択したリアルタイム音声をAlibaba Cloudシンガポールへ直接送信します。設定 > 一般で既定の `qwen3.8-livetranslate-flash-realtime` または `qwen-audio-3.1-realtime-plus` を選べます。選択したリアルタイムモデルは原文文字起こしと翻訳を返します。**音声出力は任意で、初期状態ではオフです**。Qwen Audioの料金はModel Studioで確認してください。
+設定 > APIキー > Qwenに **Alibaba CloudシンガポールのAPIキー** を入力してください。Qwen3.8 LiveTranslateにはワークスペースIDも必要ですが、Qwen Audio 3.1 Realtime PlusとFiletransはキーだけで利用できます。キーはmacOS Keychainの専用項目に保存し、キャプチャ開始時に選択したリアルタイム音声をAlibaba Cloudシンガポールへ直接送信します。設定 > 一般で既定の `qwen3.8-livetranslate-flash-realtime` または `qwen-audio-3.1-realtime-plus` を選べます。Qwen Audio 3.1 Realtime PlusはAirTranslateから翻訳指示を受ける全二重のリアルタイム音声会話モデルです。Qwen3.8 LiveTranslateは専用のリアルタイム翻訳モデルです。**音声出力は任意で、初期状態ではオフです**。Qwen Audioの料金はModel Studioで確認してください。
 
 設定 > 一般の `qwen-audio-3.1-asr-flash-filetrans` は非同期の音声ファイル文字起こしです。**公開HTTPS音声URLのみ利用できます**。QwenCloudがURLから音声を取得し、この機能はローカルファイルをアップロードしません。送信する権利のある音声だけを共有してください。[Qwenの設定と料金](docs/qwen-livetranslate.md)をご覧ください。実アカウントの認証・課金・翻訳と文字起こしの品質・遅延は未検証です。
 
-**APIキー状態を反映するモード選択**では、キーのないプロバイダーをグレー表示し、各行に設定へのショートカットを用意します。情報アイコンでモデルと料金基準を確認できます。**OpenAI音声は翻訳と原文文字起こしを統合**し、言語・出力の設定を保持します。メインの選択ではApple、OpenAI、Gemini、Qwen、Nariのモデルを選べ、該当する場合はQwen Audio 3.1、Gemini Live、Gemini TTS、Nari GAオプションを直接選択できます。
+**APIキー状態を反映するモード選択**では、キーのないプロバイダーをグレー表示し、各行に設定へのショートカットを用意します。情報アイコンでモデルと料金基準を確認できます。**OpenAI音声は翻訳と原文文字起こしを統合**し、言語・出力の設定を保持します。メインの選択ではApple、OpenAI、Gemini、Qwen、Nariのモデルを機能別の説明とともに選べます。翻訳音声モデルは別の選択欄に表示されます。
 
 **フローティング字幕は文字だけを表示**します。背景・枠・ツールバー・状態表示・hover時のリサイズ操作は表示しません。5種類の文字スタイル、フォント・色・幅・行間・順序・サンプルプレビューは設定で調整し、メイン画面・メニューバー・⌘⇧Cで表示を切り替えます。
 
 **Qwenは停止前に最終字幕の受信を待ちます**。空の最終応答は暫定字幕を取り消し、定期保存を含むQwenの記録には確定結果だけを保存します。Apple Modeを標準とし、記録ファイル保存は任意のままです。
 
-**翻訳音声出力モデルを選択できます**。設定またはメイン画面のGeminiモデルメニューでAppleシステム音声、Gemini 3.8 Flash TTS、Flash-Lite TTSを選びます。リアルタイムモードでも選択は保存されますが、テキスト翻訳でのみ使用されます。リアルタイムプロバイダーは引き続き独自の音声を使用します。Gemini TTSは安定した翻訳テキストだけをGoogleへ送信します。
+**翻訳音声出力モデルを選択できます**。設定またはメイン画面の別の翻訳音声選択欄でAppleシステム音声、Gemini 3.8 Flash TTS、Flash-Lite TTSを選びます。リアルタイムモードでも選択は保存されますが、テキスト翻訳でのみ使用されます。リアルタイムプロバイダーは引き続き独自の音声を使用します。Gemini TTSは安定した翻訳テキストだけをGoogleへ送信します。
 
 ## ダウンロード
 
 現在の公開最新版: **v1.14.1**。
 
 - [AirTranslate.dmgをダウンロード](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [AirTranslate-1.14.0.zipをダウンロード](https://github.com/himomohi/AirTranslate/releases/download/v1.14.0/AirTranslate-1.14.0.zip)
+- [AirTranslate-1.14.2.zipをダウンロード](https://github.com/himomohi/AirTranslate/releases/download/v1.14.2/AirTranslate-1.14.2.zip)
 - [AirTranslate.dmg.sha256をダウンロード](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [バージョン履歴を見る](Release/VERSION-HISTORY.md)
 
@@ -93,12 +93,12 @@ API連携エンジンは、**Settings > API Keys**でキーを設定すると利
 | --- | --- | --- |
 | Apple Mode | 標準のローカル優先文字起こしと翻訳です。 | なし |
 | OpenAI 音声 | 1つのプロバイダー内で翻訳または原文文字起こしを選びます。出力アイコンで `gpt-realtime-translate`・`gpt-live-transcribe` を切り替え、ツールチップでモデルと料金を確認できます。 | OpenAI |
-| Gemini Live | Geminiライブ翻訳、または音声言語を自動検出する原文文字起こしです。 | Gemini |
+| Gemini Live | 文書化されたリアルタイム翻訳モデル、または音声言語を自動検出する原文文字起こしモデルを選択できます。 | Gemini |
 | Meta Scribe | AirTranslate翻訳の前段にある、話者ラベル付き多言語文字起こしです。 | Meta |
-| Azure MAI | Apple Translation字幕と組み合わせるプレビューのクラウド文字起こしです。 | Azure Speechキーとエンドポイント |
+| Azure MAI | 5秒のWAVチャンクをREST APIで順次文字起こしし、Apple Translationの字幕と組み合わせるプレビュー機能です。 | Azure Speechキーとエンドポイント |
 | Nari STT | Nari Qwen3-ASR原文文字起こしです。マイクまたはMac音声を使えます。 | Nari |
 | Grok STT | マイクまたはMac音声をGrok Voice Transcribe 2.0で原文に文字起こしします。 | SpaceXAI (xAI) |
-| Qwen LiveTranslate | Qwen3.8またはQwen Audio 3.1 Realtime Plusによるリアルタイム文字起こし・翻訳字幕・任意の音声出力。 | Alibaba CloudシンガポールのAPIキー。Qwen3.8にはワークスペースIDも必要 |
+| Qwen LiveTranslate | Qwen3.8は専用のリアルタイム翻訳モデルです。Qwen Audio 3.1 Realtime PlusはAirTranslateから翻訳指示を受ける全二重音声会話モデルで、音声応答を返せます。 | Alibaba CloudシンガポールのAPIキー。Qwen3.8にはワークスペースIDも必要 |
 
 Qwen Audio 3.1 ASR Flash Filetransは、設定 > 一般で公開HTTPS音声URLから非同期で文字起こしします。QwenCloudがURLから音声を取得し、この機能はローカル音声ファイルをアップロードしません。
 

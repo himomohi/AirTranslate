@@ -1342,10 +1342,10 @@ private enum SettingsCopy {
         chineseSimplified: "译文语音模型"
     )
     static let translatedSpeechModelDetail = AppText.localized(
-        english: "For translated text output, choose Apple system speech or Gemini 3.8 Flash or Flash-Lite TTS. The choice is saved in realtime modes, but realtime audio still uses the provider's native voice.",
-        korean: "번역된 텍스트의 음성 출력에 Apple 시스템 음성 또는 Gemini 3.8 Flash·Flash-Lite TTS를 선택합니다. 선택은 실시간 모드에서도 저장되며, 실제 실시간 음성은 제공자 자체 음성을 사용합니다.",
-        japanese: "翻訳テキストの音声出力にAppleシステム音声、Gemini 3.8 FlashまたはFlash-Lite TTSを選択します。選択はリアルタイムモードでも保存され、リアルタイム音声にはプロバイダー独自の音声が使用されます。",
-        chineseSimplified: "为译文语音输出选择 Apple 系统语音、Gemini 3.8 Flash 或 Flash-Lite TTS。实时模式下也会保存此选择，但实时音频仍由提供方生成。"
+        english: "Choose how AirTranslate reads translated text in its Apple TranslationSession workflow, including text transcribed by STT providers: Apple system speech or Gemini 3.8 Flash / Flash-Lite TTS. Realtime speech-translation providers use their own audio output.",
+        korean: "Apple TranslationSession으로 텍스트를 번역하는 흐름(전사 제공자의 결과를 번역하는 경우 포함)에서 번역문을 읽을 음성을 선택합니다(Apple 시스템 음성 또는 Gemini 3.8 Flash·Flash-Lite TTS). 실시간 음성 번역 제공자는 자체 오디오 출력을 사용합니다.",
+        japanese: "Apple TranslationSessionでテキストを翻訳するフロー（音声認識プロバイダーの文字起こし結果を翻訳する場合を含む）で読み上げる音声を選択します（Appleシステム音声またはGemini 3.8 Flash / Flash-Lite TTS）。リアルタイム音声翻訳プロバイダーは独自の音声出力を使用します。",
+        chineseSimplified: "选择在 Apple TranslationSession 文本翻译流程中朗读译文的语音，也包括翻译语音识别提供方转写出的文本（Apple 系统语音或 Gemini 3.8 Flash / Flash-Lite TTS）。实时语音翻译提供方使用自己的音频输出。"
     )
     static let liveTranslationVolume = AppText.localized(
         english: "Volume",

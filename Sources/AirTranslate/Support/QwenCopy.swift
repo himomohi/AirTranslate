@@ -10,7 +10,7 @@ enum QwenCopy {
         switch model {
         case .off, .liveTranslateFlashRealtime: detail
         case .audio31RealtimePlus:
-            copy("Qwen Audio 3.1 Realtime Plus, configured to translate speech in real time. Audio is sent to Alibaba Cloud in Singapore.", "Qwen Audio 3.1 Realtime Plus로 음성을 실시간 번역합니다. 오디오는 Alibaba Cloud 싱가포르로 전송됩니다.", "Qwen Audio 3.1 Realtime Plusで音声をリアルタイム翻訳します。音声はAlibaba Cloudのシンガポールに送信されます。", "使用 Qwen Audio 3.1 Realtime Plus 实时翻译语音。音频会发送至阿里云新加坡。")
+            copy("Qwen documents Audio 3.1 Realtime Plus as a full-duplex voice-conversation model. AirTranslate gives it translation instructions and can use its spoken response. Audio is sent to Alibaba Cloud in Singapore.", "Qwen Audio 3.1 Realtime Plus는 양방향 실시간 음성 대화 모델입니다. AirTranslate가 번역 지시를 전달하고, 필요하면 모델의 음성 응답을 사용합니다. 오디오는 Alibaba Cloud 싱가포르로 전송됩니다.", "Qwen Audio 3.1 Realtime Plusは全二重のリアルタイム音声会話モデルです。AirTranslateが翻訳指示を渡し、必要に応じてモデルの音声応答を使用します。音声はAlibaba Cloudのシンガポールに送信されます。", "Qwen Audio 3.1 Realtime Plus 是全双工实时语音对话模型。AirTranslate 会向其提供翻译指令，并可使用模型的语音响应。音频会发送至阿里云新加坡。")
         }
     }
     static func price(for model: QwenTranslationModel) -> String {

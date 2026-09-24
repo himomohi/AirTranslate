@@ -147,33 +147,40 @@ struct ProcessingModePicker: View {
                 .accessibilityIdentifier("mainProviderModelPicker.apple")
             case .openAI:
                 Picker(ModePickerCopy.model, selection: openAIModelSelection) {
-                    Text("gpt-realtime-translate").tag(LiveOutputMode.translation)
-                    Text("gpt-live-transcribe").tag(LiveOutputMode.transcription)
+                    Section(ModePickerCopy.realtimeTranslationModels) {
+                        Text("gpt-realtime-translate").tag(LiveOutputMode.translation)
+                    }
+                    Section(ModePickerCopy.realtimeTranscriptionModels) {
+                        Text("gpt-live-transcribe").tag(LiveOutputMode.transcription)
+                    }
                 }
                 .pickerStyle(.menu)
                 .labelsHidden()
                 .accessibilityIdentifier("mainProviderModelPicker.openAI")
             case .gemini:
                 Menu {
-                    Section(ModePickerCopy.geminiRealtimeModels) {
-                        ForEach(GeminiTranslationModel.selectableCases) { model in
-                            Button {
-                                selectGeminiRealtimeModel(model)
-                            } label: {
-                                modelMenuLabel(model.title, isSelected: selectedGeminiRealtimeModel == model)
-                            }
-                            .disabled(session.isRunning || session.isStarting)
+                    Section(ModePickerCopy.realtimeTranslationModels) {
+                        Button {
+                            selectGeminiRealtimeModel(.gemini35LiveTranslate)
+                        } label: {
+                            modelMenuLabel(
+                                GeminiTranslationModel.gemini35LiveTranslate.title,
+                                isSelected: selectedGeminiRealtimeModel == .gemini35LiveTranslate
+                            )
                         }
+                        .disabled(session.isRunning || session.isStarting)
                     }
-                    Section(ModePickerCopy.geminiSpeechModels) {
-                        ForEach(SpeechSynthesisModel.allCases.filter(\.isGeminiTTS)) { model in
-                            Button {
-                                selectGeminiSpeechModel(model)
-                            } label: {
-                                modelMenuLabel(model.title, isSelected: session.speechSynthesisModel == model)
-                            }
-                            .disabled(session.isRunning || session.isStarting)
+
+                    Section(ModePickerCopy.realtimeTranscriptionModels) {
+                        Button {
+                            selectGeminiRealtimeModel(.gemini35TranscribeLive)
+                        } label: {
+                            modelMenuLabel(
+                                GeminiTranslationModel.gemini35TranscribeLive.title,
+                                isSelected: selectedGeminiRealtimeModel == .gemini35TranscribeLive
+                            )
                         }
+                        .disabled(session.isRunning || session.isStarting)
                     }
                 }
                 label: {
@@ -190,13 +197,43 @@ struct ProcessingModePicker: View {
                 .accessibilityValue(currentModelTitle)
                 .accessibilityIdentifier("mainProviderModelPicker.gemini")
             case .qwen:
-                Picker(ModePickerCopy.model, selection: qwenModelSelection) {
-                    ForEach(QwenTranslationModel.selectableCases) { model in
-                        Text(model.title).tag(model)
+                Menu {
+                    Section(ModePickerCopy.qwenDedicatedTranslation) {
+                        Button {
+                            qwenModelSelection.wrappedValue = .liveTranslateFlashRealtime
+                        } label: {
+                            modelMenuLabel(
+                                QwenTranslationModel.liveTranslateFlashRealtime.title,
+                                isSelected: selectedQwenRealtimeModel == .liveTranslateFlashRealtime
+                            )
+                        }
+                        .disabled(session.isRunning || session.isStarting)
+                    }
+
+                    Section(ModePickerCopy.qwenPromptedVoiceConversation) {
+                        Button {
+                            qwenModelSelection.wrappedValue = .audio31RealtimePlus
+                        } label: {
+                            modelMenuLabel(
+                                QwenTranslationModel.audio31RealtimePlus.title,
+                                isSelected: selectedQwenRealtimeModel == .audio31RealtimePlus
+                            )
+                        }
+                        .disabled(session.isRunning || session.isStarting)
                     }
                 }
-                .pickerStyle(.menu)
-                .labelsHidden()
+                label: {
+                    HStack(spacing: 6) {
+                        Text(currentModelTitle)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 9, weight: .semibold))
+                    }
+                }
+                .menuStyle(.borderlessButton)
+                .accessibilityLabel(ModePickerCopy.model)
+                .accessibilityValue(currentModelTitle)
                 .accessibilityIdentifier("mainProviderModelPicker.qwen")
             case .nari:
                 Picker(ModePickerCopy.model, selection: nariModelSelection) {
@@ -261,14 +298,13 @@ struct ProcessingModePicker: View {
         session.geminiTranslationModel.isEnabled ? session.geminiTranslationModel : session.preferredGeminiModel
     }
 
+    private var selectedQwenRealtimeModel: QwenTranslationModel {
+        session.qwenTranslationModel.isEnabled ? session.qwenTranslationModel : session.preferredQwenModel
+    }
+
     private func selectGeminiRealtimeModel(_ model: GeminiTranslationModel) {
         guard !session.isRunning, !session.isStarting else { return }
         session.useGeminiMode(model)
-    }
-
-    private func selectGeminiSpeechModel(_ model: SpeechSynthesisModel) {
-        guard !session.isRunning, !session.isStarting else { return }
-        session.speechSynthesisModel = model
     }
 
     @ViewBuilder
@@ -387,14 +423,16 @@ private struct ModeSelectionButtonStyle: ButtonStyle {
 private enum ModePickerCopy {
     static let chooseProviderAndModel = AppText.localized(english: "Choose Provider and Model", korean: "공급자와 모델 선택", japanese: "プロバイダーとモデルを選択", chineseSimplified: "选择提供商和模型")
     static let model = AppText.localized(english: "Model", korean: "모델", japanese: "モデル", chineseSimplified: "模型")
-    static let speechModel = AppText.localized(english: "Translation Voice", korean: "번역 음성", japanese: "翻訳音声", chineseSimplified: "翻译语音")
-    static let geminiRealtimeModels = AppText.localized(english: "Realtime models", korean: "실시간 모델", japanese: "リアルタイムモデル", chineseSimplified: "实时模型")
-    static let geminiSpeechModels = AppText.localized(english: "Translated speech models", korean: "번역 음성 모델", japanese: "翻訳音声モデル", chineseSimplified: "译文语音模型")
+    static let speechModel = AppText.localized(english: "Text Translation Voice", korean: "텍스트 번역 음성", japanese: "テキスト翻訳の音声", chineseSimplified: "文本翻译语音")
+    static let realtimeTranslationModels = AppText.localized(english: "Realtime speech translation", korean: "실시간 음성 번역", japanese: "リアルタイム音声翻訳", chineseSimplified: "实时语音翻译")
+    static let realtimeTranscriptionModels = AppText.localized(english: "Realtime transcription", korean: "실시간 음성 전사", japanese: "リアルタイム音声文字起こし", chineseSimplified: "实时语音转写")
+    static let qwenDedicatedTranslation = AppText.localized(english: "Dedicated realtime translation", korean: "실시간 번역 전용", japanese: "リアルタイム翻訳専用", chineseSimplified: "专用实时翻译")
+    static let qwenPromptedVoiceConversation = AppText.localized(english: "Voice conversation · app translation instructions", korean: "음성 대화 · 앱 번역 지시 적용", japanese: "音声会話 · アプリの翻訳指示を適用", chineseSimplified: "语音对话 · 应用翻译指令")
     static let speechModelAvailabilityDetail = AppText.localized(
-        english: "Gemini TTS is available as a saved preference here, but is used only in text-translation workflows. Realtime providers use their own audio.",
-        korean: "Gemini TTS 선택은 저장되지만 텍스트 번역 흐름에서만 사용됩니다. 실시간 제공자는 자체 음성을 사용합니다.",
-        japanese: "Gemini TTSの選択は保存されますが、テキスト翻訳のフローでのみ使用されます。リアルタイムプロバイダーは独自の音声を使用します。",
-        chineseSimplified: "Gemini TTS 选择会保存，但仅用于文本翻译流程。实时提供方使用自己的音频。"
+        english: "Choose how AirTranslate reads translated text in its Apple TranslationSession workflow, including text transcribed by STT providers: Apple system speech or Gemini TTS. Realtime speech-translation providers use their own audio output.",
+        korean: "Apple TranslationSession으로 텍스트를 번역하는 흐름(전사 제공자의 결과를 번역하는 경우 포함)에서 번역문을 읽을 음성을 선택합니다(Apple 시스템 음성 또는 Gemini TTS). 실시간 음성 번역 제공자는 자체 오디오 출력을 사용합니다.",
+        japanese: "Apple TranslationSessionでテキストを翻訳するフロー（音声認識プロバイダーの文字起こし結果を翻訳する場合を含む）で読み上げる音声を選択します（Appleシステム音声またはGemini TTS）。リアルタイム音声翻訳プロバイダーは独自の音声出力を使用します。",
+        chineseSimplified: "选择在 Apple TranslationSession 文本翻译流程中朗读译文的语音，也包括翻译语音识别提供方转写出的文本（Apple 系统语音或 Gemini TTS）。实时语音翻译提供方使用自己的音频输出。"
     )
     static let keyRequired = AppText.localized(english: "API key required", korean: "API 키 필요", japanese: "APIキーが必要", chineseSimplified: "需要 API 密钥")
     static let keySaved = AppText.localized(english: "API key saved", korean: "API 키 저장됨", japanese: "APIキー保存済み", chineseSimplified: "API 密钥已保存")

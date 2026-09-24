@@ -23,26 +23,26 @@ Live Mac audio captions and translation for meetings, videos, lectures, intervie
 
 AirTranslate captures audio playing on your Mac, transcribes it live, translates it when you choose a translation workflow, and can keep captions floating above other apps. Apple Mode remains the default local-first workflow. Cloud engines are optional and become available after you configure the matching provider key.
 
-AirTranslate **1.14.1/build1141** lets you choose provider-specific models from the bottom-right control on the main workspace. The Gemini model menu now includes Gemini 3.8 Flash TTS and Flash-Lite TTS alongside realtime models. TTS selection is saved as a translated-speech preference and used only in text-translation workflows. Realtime providers keep their native audio.
+AirTranslate **1.14.2/build1142** lets you choose provider-specific models from the bottom-right control on the main workspace. The model picker separates realtime translation and source-transcription models. Gemini TTS is a separate translated-speech choice used only for text translation. Realtime providers keep their native audio.
 
-Configure an **Alibaba Cloud Singapore API key** in Settings > API Keys > Qwen. Qwen3.8 LiveTranslate also requires a workspace ID; Qwen Audio 3.1 Realtime Plus and Filetrans use the key without one. The key is stored separately in macOS Keychain; selected realtime audio is sent directly to Alibaba Cloud Singapore when capture starts. Choose the existing `qwen3.8-livetranslate-flash-realtime` default or `qwen-audio-3.1-realtime-plus` in Settings > General. The selected realtime model returns original transcripts and translated text; **speech output is optional and initially off**. Current Qwen Audio pricing is shown in Model Studio.
+Configure an **Alibaba Cloud Singapore API key** in Settings > API Keys > Qwen. Qwen3.8 LiveTranslate also requires a workspace ID; Qwen Audio 3.1 Realtime Plus and Filetrans use the key without one. The key is stored separately in macOS Keychain; selected realtime audio is sent directly to Alibaba Cloud Singapore when capture starts. Choose the existing `qwen3.8-livetranslate-flash-realtime` default or `qwen-audio-3.1-realtime-plus` in Settings > General. Qwen Audio 3.1 Realtime Plus is a full-duplex voice-conversation model that receives translation instructions from AirTranslate; Qwen3.8 LiveTranslate is the dedicated realtime translation model. **Speech output is optional and initially off**. Current Qwen Audio pricing is shown in Model Studio.
 
 Settings > General also includes `qwen-audio-3.1-asr-flash-filetrans` for asynchronous transcription. **Only a public HTTPS audio URL is accepted**; QwenCloud fetches its audio, and AirTranslate does not upload a local file in this workflow. Share only audio you are authorized to send. See [Qwen setup and pricing](docs/qwen-livetranslate.md). Real-account authentication, billing, translation and transcription quality, and latency remain unverified.
 
-The **key-aware mode picker** shows unavailable providers in gray and provides a settings shortcut on each row. Information icons describe the selected model and its pricing basis. **OpenAI Audio unifies translation and source transcription** while preserving the selected language and output preferences. The main picker exposes Apple, OpenAI, Gemini, Qwen, and Nari model choices, including Qwen Audio 3.1, Gemini Live, Gemini TTS, and Nari GA options where applicable.
+The **key-aware mode picker** shows unavailable providers in gray and provides a settings shortcut on each row. Information icons describe the selected model and its pricing basis. **OpenAI Audio unifies translation and source transcription** while preserving the selected language and output preferences. The main picker exposes Apple, OpenAI, Gemini, Qwen, and Nari choices with task-specific model descriptions; translated-speech models use a separate selector.
 
 **Floating captions show text only**: no window background, border, toolbar, status text, or hover resize controls. Five text styles, font and color options, width, line spacing, ordering, and sample previews are available in Settings. Use the main window, menu bar, or ⌘⇧C to show or hide captions.
 
 **Qwen final captions are drained before stopping**. Empty final results retract provisional captions, and saved Qwen transcripts contain confirmed results only, including periodic checkpoints. Apple Mode remains the default; transcript file saving remains opt-in.
 
-**Translated speech output is selectable** in Settings and the main workspace's Gemini model menu. Choose Apple system speech or Gemini 3.8 Flash or Flash-Lite TTS. The choice is saved during realtime modes but used only for text translation; realtime providers keep their native audio. Gemini TTS sends only stable translated text to Google with your Gemini key.
+**Translated speech output is selectable** in Settings and the main workspace's separate translated-speech control. Choose Apple system speech or Gemini 3.8 Flash or Flash-Lite TTS. The choice is saved during realtime modes but used only for text translation; realtime providers keep their native audio. Gemini TTS sends only stable translated text to Google with your Gemini key.
 
 ## Download
 
 Latest public release: **v1.14.1**.
 
 - [Download AirTranslate.dmg](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [Download AirTranslate-1.14.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.14.0/AirTranslate-1.14.0.zip)
+- [Download AirTranslate-1.14.2.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.14.2/AirTranslate-1.14.2.zip)
 - [Download AirTranslate.dmg.sha256](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [View release history](Release/VERSION-HISTORY.md)
 
@@ -93,12 +93,12 @@ API-backed engines become available after you configure their keys in **Settings
 | --- | --- | --- |
 | Apple Mode | Default local-first transcription and translation. Apple basic-mode source-language auto-detect remains disabled while language-switch handling is improved. | None |
 | OpenAI Audio | Choose translation or source transcription within one provider. The output icons select `gpt-realtime-translate` or `gpt-live-transcribe`; tooltips show the active model and rate. | OpenAI |
-| Gemini Live | Gemini live translation or source-only transcription with automatic spoken-language detection. | Gemini |
+| Gemini Live | Select the documented realtime translation model or the separate source-only transcription model with automatic spoken-language detection. | Gemini |
 | Meta Scribe | Speaker-labeled multilingual transcription before AirTranslate translation. | Meta |
-| Azure MAI | Preview cloud transcription with Apple Translation captions. | Azure Speech key and endpoint |
+| Azure MAI | Preview cloud transcription via sequential five-second WAV REST requests, with Apple Translation captions. | Azure Speech key and endpoint |
 | Nari STT | Nari Qwen3-ASR source transcription from microphone or Mac audio. | Nari |
 | Grok STT | Grok Voice Transcribe 2.0 source transcription from microphone or Mac audio. | SpaceXAI (xAI) |
-| Qwen LiveTranslate | Qwen3.8 or Qwen Audio 3.1 Realtime Plus original transcripts, translated captions, and optional speech output. | Alibaba Cloud Singapore API key; workspace ID for Qwen3.8 |
+| Qwen LiveTranslate | Qwen3.8 is the dedicated realtime translation model. Qwen Audio 3.1 Realtime Plus is a full-duplex voice-conversation model used with AirTranslate translation instructions and can return speech. | Alibaba Cloud Singapore API key; workspace ID for Qwen3.8 |
 
 Qwen Audio 3.1 ASR Flash Filetrans is available in Settings > General for asynchronous transcription from a public HTTPS audio URL. QwenCloud fetches the URL; local audio-file uploads are not supported by this workflow.
 

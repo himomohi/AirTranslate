@@ -1,5 +1,12 @@
 # AirTranslate Version History
 
+## 1.14.2 - 2026-09-24
+
+### Changed
+
+- The main model picker separates realtime translation, realtime transcription, and translated-speech synthesis by provider capability and app workflow. Gemini TTS remains a separate text-translation speech choice.
+- Qwen Audio 3.1 Realtime Plus is identified as a full-duplex voice-conversation model that receives AirTranslate translation instructions, not as Qwen3.8's dedicated translation model.
+
 ## 1.14.1 - 2026-09-24
 
 ### Fixed
