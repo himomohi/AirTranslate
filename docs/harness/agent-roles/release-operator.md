@@ -33,6 +33,8 @@ tags, GitHub release state, and posting copy as one atomic release set.
 
 - Release set should not have mixed versions.
 - Security and test gates must pass before public action.
+- staged 파일·공개 문서·릴리즈 본문·첨부 목록에 로컬 운영 기록이나
+  실행 회차·실패 흡수·내부 평가 요약이 없는지 확인한다.
 
 ## Do Not
 

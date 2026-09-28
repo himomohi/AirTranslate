@@ -25,6 +25,7 @@ Release/product/
 
 # Local contributor notes
 devlog/
+하네스성숙도기록.md
 
 # Local secrets and signing material
 .env

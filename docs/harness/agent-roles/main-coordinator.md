@@ -21,7 +21,7 @@ sub-results, and deliver the final user-facing answer.
 
 - User request.
 - Current repo state.
-- Relevant `AGENTS.md`, project harness, release docs, and maturity log.
+- Relevant `AGENTS.md`, project harness, release docs, and local-only internal notes.
 
 ## Required Outputs
 
@@ -34,6 +34,8 @@ sub-results, and deliver the final user-facing answer.
 
 - Confirm all required role gates either ran or were explicitly not needed.
 - Confirm Notion/GitHub/local artifacts match the user request.
+- 로컬 운영 기록과 그 요약이 staged 파일·공개 문서·릴리즈 본문·첨부에
+  포함되지 않았는지 확인한다.
 
 ## Do Not
 

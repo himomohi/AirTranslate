@@ -46,7 +46,7 @@
 - 모델·키·전송·문구: `GrokTranscriptionModel.swift`, `GrokAPIKeyStore.swift`, `GrokRealtimeTranscriber.swift`, `GrokCopy.swift`.
 - 연결: `StartReadiness.swift`, `TranslationSessionStore.swift`, `APIKeySettingsView.swift`, `CaptionBoardView.swift`, `SettingsView.swift`, `SidebarView.swift`.
 - 회귀: `GrokRealtimeTranscriberTests.swift`, `GrokSessionTests.swift`.
-- 문서: `README.md`, `README.ko.md`, `README.ja.md`, `README.zh-CN.md`, `CHANGELOG.md`, `Release/PRIVACY-NOTICE.md`, `docs/GETTING-STARTED.md`, `docs/grok-stt.md`, `structure/README.md`, 이 검증 기록, `하네스성숙도기록.md`.
+- 문서: `README.md`, `README.ko.md`, `README.ja.md`, `README.zh-CN.md`, `CHANGELOG.md`, `Release/PRIVACY-NOTICE.md`, `docs/GETTING-STARTED.md`, `docs/grok-stt.md`, `structure/README.md`, 이 검증 기록.
 - 기존 미추적 `docs/release/1.8.0-verification-report.md`는 수정하지 않았다. 커밋·push·버전 변경은 수행하지 않았다.
 
 공식 API 계약과 사용법: [Grok STT 안내](grok-stt.md).

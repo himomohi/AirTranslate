@@ -15,6 +15,8 @@ publication workflows.
 - Review Keychain/OpenAI/API key changes.
 - Check public docs for realistic secret-like examples.
 - Verify unsigned/notarization wording is accurate for release docs.
+- 로컬 운영 기록이나 그 요약이 공개 문서·릴리즈 본문·첨부·커밋에
+  포함되지 않았는지 확인한다.
 
 ## Required Inputs
 

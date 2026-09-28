@@ -70,5 +70,3 @@ Codex Computer Use는 최신 빌드에서도 자막 설정 선택과 스크린�
 ## 파일과 기록
 
 핵심 파일은 `FloatingCaptionStyle.swift`, `FloatingCaptionSettingsView.swift`, `CaptionStyleCopy.swift`, `FloatingCaptionWindowView.swift`, `FloatingCaptionWindowController.swift`, `FloatingWindowConfigurator.swift`, `TranslationSessionStore.swift`, `FloatingCaptionTextFormatter.swift`다. 회귀는 `FloatingCaptionStyleTests.swift`와 `FloatingCaptionOverlayRenderingTests.swift`에 있다. README 네 언어·기능 맵도 자막 전용 동작에 맞췄다.
-
-Dev-doc의 자막 하단 앵커 기록을 읽는 위치 유지에 활용했다. 작업·도구 장애 교훈을 최종 자막 전용 요구와 검증 경계에 맞게 갱신했다. 앞선 보관함 전체 검사는 기존 다른 프로젝트 두 기록의 비밀정보 형태·UID 불일치로 실패했다. 무관한 기록은 수정하거나 내용을 출력하지 않았다. Obsidian CLI 응답이 없어 그래프 검증도 미실행이다. 사용자 후속 요청의 변경·검증은 하네스 성숙도 기록 54회차에 남겼다.

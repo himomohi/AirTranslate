@@ -155,7 +155,7 @@
 - 수정: 둘 다 `.gitignore`에 추가.
 
 ### E3. 로컬 전용 ignore + 내부 문서 공개 배포 — Low
-- 위치: `.git/info/exclude:9-10`이 `AGENTS.md`/`프로젝트하네스.md`를 로컬만 숨김; `하네스성숙도기록.md`(내부 한국어 하네스 노트)는 **추적·공개 중**, 루트 `intro.html`/`design-qa.md`도.
+- 위치: `.git/info/exclude:9-10`이 `AGENTS.md`/`프로젝트하네스.md`를 로컬만 숨김; 루트 `intro.html`/`design-qa.md`는 추적 중.
 - 수정: exclude 규칙을 `.gitignore`로 이동; 내부 노트의 공개 리포 포함 여부를 의도적으로 결정(`git rm --cached`).
 
 ### E4. Gemini API 키 URL 쿼리 전송 — Medium

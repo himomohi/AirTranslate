@@ -38,4 +38,5 @@
 - Run the security gate before public upload or release actions.
 - Present a fenced approval report before any GitHub push, tag, release, or
   asset upload.
-- Record repeated harness execution and failure absorption in the maturity log.
+- 반복 실행·실패 흡수 기록은 Git에서 제외한 로컬 기록에만 남긴다.
+  공개 문서·GitHub 릴리즈 본문·첨부·게시용 문구에 포함하지 않는다.
