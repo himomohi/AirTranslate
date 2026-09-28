@@ -44,10 +44,6 @@ All notable changes to AirTranslate are documented in this file.
 
 - AirTranslate now declares itself as a single-instance macOS app so launching it again does not create parallel app processes.
 
-### Changed
-
-- The local build-and-run harness no longer kills a running AirTranslate process or force-opens a second copy; it asks the operator to quit the app before rebuilding.
-
 ## 1.12.0 - 2026-09-23
 
 ### Added
@@ -204,7 +200,6 @@ All notable changes to AirTranslate are documented in this file.
 - Fixed the top Start control so it begins a Gemini Live capture using the selected Gemini mode instead of being blocked by the workspace state.
 - Avoided the macOS SwiftUI/AppKit `NSSegmentedCell` disabled-state focus cycle that could drive AttributeGraph CPU use near 100% while a capture starts; locked segmented controls now keep their visible state while ignoring interaction.
 - Replaced transient start-error overlays with an in-window recovery message that offers the relevant API-key Settings, macOS Privacy Settings, or retry action.
-- Made local verification confirm that the current `dist/AirTranslate.app` executable is the process that launched, preventing a stale 1.5.1 copy with the same bundle identifier from being mistaken for the current build.
 - Clarified privacy guidance for the current signed app build: keep the active copy, refresh the affected macOS permission once when necessary, then quit and relaunch instead of routinely resetting all TCC grants.
 
 ## 1.6.0 - 2026-08-27
@@ -370,7 +365,7 @@ All notable changes to AirTranslate are documented in this file.
 
 - Applied `lidge-jun` / YEEE's PR #4, "fix: wrap floating captions while streaming", as part of the 1.3.3 floating-caption behavior.
 - Applied `lidge-jun` / YEEE's PR #5, "fix: improve transcribe-only mode behavior", with follow-up fixes for hidden target-language sync and Transcribe Only floating-display limits.
-- Included PR #7, "Release AirTranslate 1.3.3", by `himomohi` / Appcaster to ship the aligned version, release notes, artifacts, and harness record.
+- Included PR #7, "Release AirTranslate 1.3.3", by `himomohi` / Appcaster to ship the aligned version, release notes, and artifacts.
 - Release preparation also includes `lidge-jun` / YEEE's PR #3, "docs: add repository structure guide".
 
 ## 1.3.2 - 2026-05-17

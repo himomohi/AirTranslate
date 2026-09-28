@@ -62,13 +62,6 @@ cat AirTranslate.dmg.sha256
 
 AirTranslate 会在一个工作区中保留原文转写和译文，也可以在使用其他应用观看或收听时显示悬浮字幕。
 
-<details>
-<summary>API 密钥页面</summary>
-
-![AirTranslate API Keys](docs/assets/airtranslate-api-keys.jpg)
-
-</details>
-
 ## 3 步开始
 
 1. 安装应用，启动你实际要使用的那一份副本，并在 macOS 请求时允许屏幕录制和系统音频录制权限。

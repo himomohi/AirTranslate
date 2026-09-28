@@ -97,11 +97,6 @@ right files before changing the app.
 - `script`
   - Local build metadata and helper scripts.
 
-## Local-Only Notes
-
-Contributor-local planning notes can live in `devlog/`. That directory is
-ignored so private investigation notes do not appear in pull requests.
-
 ## Apple 인식·번역·자막 검증 맵
 
 | 기능 | 진입점 | 핵심 파일·심볼 | 데이터·외부 의존성 | 검증 |
@@ -113,7 +108,7 @@ ignored so private investigation notes do not appear in pull requests.
 | 긴 자막 병합·종료 시 보존 | 인식 대기열 → 화면 대기열 → 일시정지/정지/종료 | `TranslationSessionStore.flushPendingRecognizedCaption`, `flushPendingCaptionPresentation` | 최신 텍스트 병합, DEBUG 전용 수동 flush 검증 경로, 사용자 저장소와 분리한 테스트 저장소 | `swift test --filter LongSessionCaptionPresentationTests` |
 | 선택형 기록 파일 저장 | 설정 → 기록 → 기록 파일 저장 | `SettingsView`, `TranslationSessionStore.isTranscriptPersistenceEnabled`, `checkpointPendingTranscriptSave`, `flushPendingTranscriptSave` | 기본 꺼짐; 켰을 때만 로컬 `.txt` 저장, 설정은 UserDefaults에 보존 | `swift test --filter TranscriptPersistenceTests` |
 | 오래된 플로팅 번역 만료 | 새 원문 표시 → 이전 번역 유지 | `TranslationSessionStore.scheduleFloatingTranslationHoldExpiry` | 요청 시점의 ContinuousClock 만료 시각을 사용; 새 번역 수신 시 취소 | `swift test --filter FloatingTranslationPresentationTests` |
-| 단계별 지연 측정 | `AIRTRANSLATE_LATENCY_TRACE=1`로 로컬 앱 실행 | `PipelineDiagnostics`, `script/summarize_latency_trace.py`, `script/build_and_run.sh` | 타임스탬프·문자 수·구간 ID만 출력; 전사·번역 본문·키는 기록하지 않음 | 동일 음성·설정·release 빌드의 trace 비교; [2026-09-08 검증 보고서](../docs/adversarial-review/08-apple-caption-pipeline-2026-09-08.md) |
+| 단계별 지연 측정 | `AIRTRANSLATE_LATENCY_TRACE=1`로 로컬 앱 실행 | `PipelineDiagnostics`, `script/summarize_latency_trace.py`, `script/build_and_run.sh` | 타임스탬프·문자 수·구간 ID만 출력; 전사·번역 본문·키는 기록하지 않음 | 동일 음성·설정·release 빌드의 trace 비교 |
 
 플로팅 창의 읽기 대기 정책과 사용자 지정 외형 저장은 `TranslationSessionStore`에 유지한다.
 번역만 표시하는 모드에서 원문만 도착했을 때는

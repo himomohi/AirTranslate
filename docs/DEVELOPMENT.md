@@ -49,8 +49,6 @@ The app version and build number live in:
 script/app_metadata.sh
 ```
 
-Release update sets should keep this file aligned with `CHANGELOG.md`, `Release/VERSION-HISTORY.md`, localized READMEs, `Release/GITHUB-RELEASE-<version>.md`, generated artifacts, checksums, and GitHub release state.
-
 ## Key Implementation Areas
 
 - `SystemAudioCapture`: captures Mac system audio through ScreenCaptureKit.
@@ -66,15 +64,3 @@ Release update sets should keep this file aligned with `CHANGELOG.md`, `Release/
 - `CaptionBoardView`: displays live transcript, translation, controls, and audio meter.
 - `TranscriptLibraryView`: manages saved transcript files.
 - `FloatingCaptionWindowController`: owns floating caption window lifecycle.
-
-## Release Checks
-
-For public release preparation, run the project checks selected by the release harness. The usual local bundle is:
-
-```bash
-swift test
-swift build -c release
-./script/build_and_run.sh --verify
-```
-
-The public update-set audit should include localized README semantic checks. Keep generated artifacts under `Release/product/` out of commits unless the release process intentionally tracks that exact path.

@@ -62,13 +62,6 @@ cat AirTranslate.dmg.sha256
 
 AirTranslateは原文の文字起こしと翻訳文を1つのワークスペースに保ち、別のアプリで視聴または作業している間はフローティング字幕で表示できます。
 
-<details>
-<summary>APIキー画面</summary>
-
-![AirTranslate API Keys](docs/assets/airtranslate-api-keys.jpg)
-
-</details>
-
 ## 3ステップで開始
 
 1. アプリをインストールし、実際に使うコピーを起動して、macOSが求める画面収録とシステムオーディオ録音の権限を許可します。

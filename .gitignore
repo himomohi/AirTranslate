@@ -25,7 +25,25 @@ Release/product/
 
 # Local contributor notes
 devlog/
+AGENTS.md
+AGENTS.override.md
+프로젝트하네스.md
 하네스성숙도기록.md
+design-qa.md
+docs/adversarial-review/
+docs/design/
+docs/harness/
+docs/release/
+docs/caption-ux.md
+docs/grok-stt-verification-*.md
+docs/model-capability-classification-*.md
+docs/assets/airtranslate-api-keys.jpg
+Release/README.md
+Release/assets/README.md
+Release/assets/imagegen-prompts.md
+Release/product-hunt/PRODUCT-HUNT-LAUNCH.md
+Release/readme-video/DESIGN.md
+Release/scripts/
 
 # Local secrets and signing material
 .env

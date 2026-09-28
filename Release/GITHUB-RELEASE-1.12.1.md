@@ -6,10 +6,6 @@ AirTranslate 1.12.1 is a focused singleton release. It keeps the packaged macOS 
 
 - **Single-instance app launch**: the packaged app now declares macOS single-instance behavior, preventing duplicate AirTranslate processes from normal Finder or `open` launches.
 
-## Changed
-
-- **Safer local release verification**: the local build-and-run harness no longer kills a running AirTranslate process or force-opens another copy. It asks the operator to quit AirTranslate before rebuilding, so verification uses one active app bundle.
-
 ## Verification Boundary
 
 This release verifies the packaged app metadata and local launcher behavior. It does not change Qwen model selection, live provider authentication, billing, translation or transcription quality, latency, macOS Screen Recording approval, or Gatekeeper notarization status.

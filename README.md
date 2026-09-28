@@ -62,13 +62,6 @@ AirTranslate workspace before starting capture.
 
 AirTranslate keeps the source transcript and translated text in one workspace, with a floating caption option for watching or listening in another app.
 
-<details>
-<summary>API Keys screen</summary>
-
-![AirTranslate API Keys](docs/assets/airtranslate-api-keys.jpg)
-
-</details>
-
 ## Start In 3 Steps
 
 1. Install the app, launch the exact copy you want to use, and allow Screen Recording and System Audio Recording when macOS asks.

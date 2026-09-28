@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - master
-      - "codex/release-airtranslate-*"
   workflow_dispatch:
 
 concurrency:

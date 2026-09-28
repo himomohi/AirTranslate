@@ -36,9 +36,8 @@ AirTranslate is an independent open-source project and is not affiliated with Ap
 ## Verification
 
 - The final GA and saved-free-model recovery changes passed 315 tests in 36 suites and a release build on 2026-09-16.
-- The rebuilt-app UI gate passed for five API-key provider rows, keyboard focus, the Keychain information popover, GA billing notices, blocked free-model starts, General settings recovery, and clearing the old error after an explicit GA selection or return to Apple Mode. Detailed evidence is in [the publication report](https://github.com/himomohi/AirTranslate/blob/master/docs/release/1.9.0-publication-2026-09-16.md).
+- The rebuilt app was checked for five API-key provider rows, keyboard focus, the Keychain information popover, GA billing notices, blocked free-model starts, General settings recovery, and clearing the old error after an explicit GA selection or return to Apple Mode.
 - Rebuilt ZIPs and DMGs passed bundle-version, license, signature, entitlement, checksum, and secret/sensitive-file checks. The source and final rebuilt-artifact security gates passed. Release signatures remain ad-hoc; Apple notarization has not been performed.
-- The public update-set audit passed with 48 localized README content checks and all six release assets. GitHub publication and downloaded-asset verification are tracked by the release harness.
 - Real Nari account authorization, live service connectivity, provider quota, real microphone or Mac-audio accuracy, and latency remain unverified until tested with an actual Nari account and audio source.
 
 ## Download

@@ -62,13 +62,6 @@ cat AirTranslate.dmg.sha256
 
 AirTranslate는 원문 기록과 번역문을 한 작업 공간에 유지하며, 다른 앱을 보거나 들을 때 플로팅 자막으로 볼 수 있습니다.
 
-<details>
-<summary>API 키 화면</summary>
-
-![AirTranslate API Keys](docs/assets/airtranslate-api-keys.jpg)
-
-</details>
-
 ## 3단계 시작
 
 1. 앱을 설치하고 실제로 사용할 사본을 실행한 뒤 macOS가 요청하는 화면 기록과 시스템 오디오 녹음 권한을 허용합니다.
