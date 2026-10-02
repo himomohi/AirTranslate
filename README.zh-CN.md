@@ -23,7 +23,7 @@
 
 AirTranslate 会捕获 Mac 正在播放的音频，实时转写；当你选择翻译流程时，它会进行翻译，并可将字幕悬浮在其他应用上方。Apple Mode 仍然是默认的本地优先流程。云端引擎为可选项，配置对应提供方密钥后即可使用。
 
-AirTranslate **1.14.2/build1142** 可直接在主工作区右下角控件中选择各提供方的模型。模型选择器会区分实时翻译与原文转写。Gemini TTS 是单独的译文语音选项，仅用于文本翻译。实时提供方继续使用自己的原生音频。
+AirTranslate **1.15.0/build1150** 新增 Microsoft Foundry 的 MAI-Transcribe-2-Streaming 原文字幕，以及 OpenRouter 的 MAI-Voice-2.1 / MAI-Voice-2.1-Flash 译文语音。可在主工作区或设置中选择模型。实时提供方继续使用自己的原生音频。
 
 请在设置 > API 密钥 > Qwen 中输入 **阿里云新加坡 API 密钥**。Qwen3.8 LiveTranslate 还需要工作空间 ID；Qwen Audio 3.1 Realtime Plus 和 Filetrans 仅使用密钥。密钥单独保存在 macOS Keychain 中，开始捕获后会将所选实时音频直接发送到阿里云新加坡。在设置 > 通用中，可选择默认模型 `qwen3.8-livetranslate-flash-realtime` 或 `qwen-audio-3.1-realtime-plus`。Qwen Audio 3.1 Realtime Plus 是接收 AirTranslate 翻译指令的全双工实时语音对话模型；Qwen3.8 LiveTranslate 是专用实时翻译模型。**语音输出为可选项，默认关闭**。请在 Model Studio 中查看当前 Qwen Audio 价格。
 
@@ -35,14 +35,14 @@ AirTranslate **1.14.2/build1142** 可直接在主工作区右下角控件中选�
 
 **Qwen 停止前会等待最终字幕**。空的最终响应会撤回临时字幕，Qwen 记录仅保存已确认的结果，包括定期保存。Apple Mode 仍为默认模式，记录文件保存仍需主动启用。
 
-**可以选择译文语音输出模型**。在设置或主工作区单独的译文语音选择器中选择 Apple 系统语音、Gemini 3.8 Flash TTS 或 Flash-Lite TTS。实时模式下也会保存此选择，但仅用于文本翻译；实时提供方继续使用自己的原生音频。Gemini TTS 会使用你的 Gemini 密钥，只将稳定的译文文本发送给 Google。
+**可以选择译文语音输出模型**。在设置或主工作区单独的译文语音选择器中选择 Apple 系统语音、Gemini 3.8 Flash TTS、Flash-Lite TTS 或 MAI Voice 2.1 / Flash。实时模式下也会保存此选择，但仅用于文本翻译；实时提供方继续使用自己的原生音频。Gemini TTS 会使用你的 Gemini 密钥，只将稳定的译文文本发送给 Google。
 
 ## 下载
 
-当前公开最新版：**v1.14.1**。
+当前公开最新版：**v1.15.0**。
 
 - [下载 AirTranslate.dmg](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [下载 AirTranslate-1.14.2.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.14.2/AirTranslate-1.14.2.zip)
+- [下载 AirTranslate-1.15.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.15.0/AirTranslate-1.15.0.zip)
 - [下载 AirTranslate.dmg.sha256](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [查看版本历史](Release/VERSION-HISTORY.md)
 
@@ -88,7 +88,7 @@ API 驱动的引擎在 **Settings > API Keys** 中配置密钥后即可使用。
 | OpenAI 语音 | 在同一提供方内选择翻译或原文转写。通过输出图标切换 `gpt-realtime-translate` 与 `gpt-live-transcribe`，并在提示中查看模型和费用。 | OpenAI |
 | Gemini Live | 按文档区分的实时翻译模型，或支持自动语音语言检测的原文转写模型。 | Gemini |
 | Meta Scribe | 在 AirTranslate 翻译前生成带说话人标签的多语言转写。 | Meta |
-| Azure MAI | 预览云端转写以 REST API 顺序处理 5 秒 WAV 分段，并与 Apple Translation 字幕配合。 | Azure Speech 密钥和终结点 |
+| Azure MAI | 5 秒 REST 分段 MAI-Transcribe-2，或提供中间字幕的 MAI-Transcribe-2-Streaming，并使用 Apple 翻译。 | 资源密钥和终结点；流式转写还需要 Foundry 部署名称 |
 | Nari STT | Nari Qwen3-ASR 原文转写，可使用麦克风或 Mac 音频。 | Nari |
 | Grok STT | 使用 Grok Voice Transcribe 2.0 转写麦克风或 Mac 音频的原文。 | SpaceXAI (xAI) |
 | Qwen LiveTranslate | Qwen3.8 是专用实时翻译模型。Qwen Audio 3.1 Realtime Plus 是接收 AirTranslate 翻译指令的全双工实时语音对话模型，并可返回语音。 | 阿里云新加坡 API 密钥；Qwen3.8 还需要工作空间 ID |
@@ -109,9 +109,17 @@ Nari 支持手动选择输入语言及自动检测语音语言，包括韩语。
 
 提供日常、影院、讲座、高对比度和明亮画面五种文字样式，以及四种字体、字重、行距、阴影/描边、文字颜色、对齐、行数和译文置顶选项。预览可在明暗示例画面中显示实际18–72pt字号，也可在不录音的情况下显示示例字幕。在设置中调整宽度和置顶状态。已有外观偏好仍会恢复，但旧背景设置不会显示为窗口背景。
 
+## Microsoft MAI 音频 (1.15.0)
+
+在 Azure MAI 中选择 **MAI-Transcribe-2-Streaming** 可显示中间原文字幕。请在 API 密钥设置中输入 Microsoft Foundry 资源终结点（`https://<resource>.services.ai.azure.com`）、该资源的密钥和部署名称。每 3 秒以及暂停或停止时提交音频，最终文本由 Apple 翻译。现有的 5 秒分段 MAI-Transcribe-2 仍可选择。
+
+在译文语音输出中选择 **MAI-Voice-2.1** 或 **MAI-Voice-2.1-Flash**，并保存 **OpenRouter** 密钥。语音会匹配目标语言和公开语音列表。支持韩语，目前不支持日语。语音生成仅发送译文文本，提供方费用另行计费。[设置指南](docs/microsoft-mai-audio.md)。
+
+停止 Azure 捕获时，会在限定时间内等待最后的最终译文。空的 Azure 最终结果会清除主工作区和悬浮字幕中的临时文本。
+
 ## API 密钥
 
-API 密钥页面通过一个提供方列表管理 **OpenAI**、**Gemini**、**Meta**、**Azure**、**Nari** 和 **SpaceXAI (xAI)** · **Alibaba Cloud (Qwen)**。每行会显示配置/准备状态、提供方图标、密钥控制台链接，以及说明“已配置密钥并不代表提供方授权已验证”的信息弹窗。
+API 密钥页面通过一个提供方列表管理 **OpenAI**、**Gemini**、**Meta**、**Azure**、**Nari** 和 **SpaceXAI (xAI)** · **Alibaba Cloud (Qwen)** · **OpenRouter**。每行会显示配置/准备状态、提供方图标、密钥控制台链接，以及说明“已配置密钥并不代表提供方授权已验证”的信息弹窗。
 
 密钥保存在 macOS 钥匙串中。AirTranslate 不包含账号系统、开发者运营的中继服务器，也不包含硬编码的提供方密钥。
 

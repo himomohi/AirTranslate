@@ -104,6 +104,16 @@ struct ProcessingModePicker: View {
                         .accessibilityValue(session.speechSynthesisModel.title)
                         .accessibilityIdentifier("mainSpeechSynthesisModelPicker")
                     }
+                    if session.speechSynthesisModel.isMAIVoice && !session.hasOpenRouterAPIKey {
+                        Button(MAIVoiceCopy.configure) {
+                            session.requestedSettingsCategoryID = "apiKeys"
+                            session.requestedAPIKeyProvider = .openRouter
+                            isPresented = false
+                            openSettings()
+                        }
+                        .help(MAIVoiceCopy.keyRequired)
+                        .accessibilityIdentifier("mainMAIVoiceConfigure")
+                    }
                 }
             }
             .padding(10)
@@ -123,7 +133,7 @@ struct ProcessingModePicker: View {
         case .meta:
             MetaTranscriptionModel.museVoiceTranscribe.title
         case .azure:
-            "MAI-Transcribe-2"
+            session.azureTranscriptionModel.title
         case .nari:
             (session.nariTranscriptionModel.isEnabled ? session.nariTranscriptionModel : .qwen3ASRFast).title
         case .grok:
@@ -260,9 +270,16 @@ struct ProcessingModePicker: View {
                     .accessibilityValue(MetaTranscriptionModel.museVoiceTranscribe.title)
                     .accessibilityIdentifier("mainProviderModelPicker.meta")
             case .azure:
-                Text("MAI-Transcribe-2")
+                Picker(ModePickerCopy.model, selection: Binding(
+                    get: { session.azureTranscriptionModel },
+                    set: { if !session.isRunning && !session.isStarting { session.azureTranscriptionModel = $0 } }
+                )) {
+                    ForEach(AzureTranscriptionModel.allCases) { model in Text(model.title).tag(model) }
+                }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
                     .accessibilityLabel(ModePickerCopy.model)
-                    .accessibilityValue("MAI-Transcribe-2")
+                    .accessibilityValue(session.azureTranscriptionModel.title)
                     .accessibilityIdentifier("mainProviderModelPicker.azure")
             }
         }
@@ -429,10 +446,10 @@ private enum ModePickerCopy {
     static let qwenDedicatedTranslation = AppText.localized(english: "Dedicated realtime translation", korean: "실시간 번역 전용", japanese: "リアルタイム翻訳専用", chineseSimplified: "专用实时翻译")
     static let qwenPromptedVoiceConversation = AppText.localized(english: "Voice conversation · app translation instructions", korean: "음성 대화 · 앱 번역 지시 적용", japanese: "音声会話 · アプリの翻訳指示を適用", chineseSimplified: "语音对话 · 应用翻译指令")
     static let speechModelAvailabilityDetail = AppText.localized(
-        english: "Choose how AirTranslate reads translated text in its Apple TranslationSession workflow, including text transcribed by STT providers: Apple system speech or Gemini TTS. Realtime speech-translation providers use their own audio output.",
-        korean: "Apple TranslationSession으로 텍스트를 번역하는 흐름(전사 제공자의 결과를 번역하는 경우 포함)에서 번역문을 읽을 음성을 선택합니다(Apple 시스템 음성 또는 Gemini TTS). 실시간 음성 번역 제공자는 자체 오디오 출력을 사용합니다.",
-        japanese: "Apple TranslationSessionでテキストを翻訳するフロー（音声認識プロバイダーの文字起こし結果を翻訳する場合を含む）で読み上げる音声を選択します（Appleシステム音声またはGemini TTS）。リアルタイム音声翻訳プロバイダーは独自の音声出力を使用します。",
-        chineseSimplified: "选择在 Apple TranslationSession 文本翻译流程中朗读译文的语音，也包括翻译语音识别提供方转写出的文本（Apple 系统语音或 Gemini TTS）。实时语音翻译提供方使用自己的音频输出。"
+        english: "Choose how AirTranslate reads translated text in its Apple TranslationSession workflow, including text transcribed by STT providers: Apple system speech, Gemini TTS, or MAI Voice through OpenRouter. Realtime speech-translation providers use their own audio output.",
+        korean: "Apple TranslationSession으로 텍스트를 번역하는 흐름(전사 제공자의 결과를 번역하는 경우 포함)에서 번역문을 읽을 음성을 선택합니다(Apple 시스템 음성, Gemini TTS 또는 OpenRouter의 MAI Voice). 실시간 음성 번역 제공자는 자체 오디오 출력을 사용합니다.",
+        japanese: "Apple TranslationSessionでテキストを翻訳するフロー（音声認識プロバイダーの文字起こし結果を翻訳する場合を含む）で読み上げる音声を選択します（Appleシステム音声、Gemini TTS または OpenRouter の MAI Voice）。リアルタイム音声翻訳プロバイダーは独自の音声出力を使用します。",
+        chineseSimplified: "选择在 Apple TranslationSession 文本翻译流程中朗读译文的语音，也包括翻译语音识别提供方转写出的文本（Apple 系统语音、Gemini TTS 或 OpenRouter 的 MAI Voice）。实时语音翻译提供方使用自己的音频输出。"
     )
     static let keyRequired = AppText.localized(english: "API key required", korean: "API 키 필요", japanese: "APIキーが必要", chineseSimplified: "需要 API 密钥")
     static let keySaved = AppText.localized(english: "API key saved", korean: "API 키 저장됨", japanese: "APIキー保存済み", chineseSimplified: "API 密钥已保存")

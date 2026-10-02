@@ -11,6 +11,7 @@
 | Gemini · `gemini-3.5-transcribe-live` | 유료 약 US$0.009/분 · 토큰 기준 | [Google 요금표](https://ai.google.dev/gemini-api/docs/pricing): 오디오 입력 US$3.50/100만 토큰, 텍스트 출력 US$21/100만 토큰. 입력 25토큰/초·출력 약175토큰/분 가정의 공식 추정치 |
 | Meta · `muse-voice-transcribe-1.0` | US$0.18/시간 | [Meta 모델 문서](https://dev.meta.ai/models/muse-voice-transcribe), [개요](https://dev.meta.ai/docs/overview). 화자 구분을 지원하는 실시간 전사 모델 |
 | Azure · `MAI-Transcribe-2` | US$0.10/시간 · 할인 ~2026-12-31 | [Microsoft 모델 요금](https://microsoft.ai/models/mai-transcribe-2/), [Azure Speech 요금 조건](https://azure.microsoft.com/en-us/pricing/details/speech/). Preview 할인은 2026-12-31까지, 오디오 초 단위 청구. 앱은 5초 구간으로 전송 |
+| Azure · `MAI-Transcribe-2-Streaming` | US$0.54/시간 · 도입 요금 ~2026-12-31 | [Microsoft 공식 출시 안내](https://microsoft.ai/news/our-first-streaming-transcription-model/). 2026-10-02 확인; Foundry 스트리밍 전사이며 기존 REST 전사와 별도 모델 |
 | Nari · `qwen3-asr` | US$0.06/시간 | [Nari 공식 요금](https://narilabs.com/pricing/), [STT 설명](https://narilabs.com/product/stt/). Standard 입력 오디오 길이 기준 |
 | Nari · `qwen3-asr-fast` | US$0.12/시간 | [Nari 공식 요금](https://narilabs.com/pricing/). Fast 입력 오디오 길이 기준 |
 | Nari · `qwen3-asr:free`, `qwen3-asr-fast:free` | 사용 불가 · GA 모델 선택 필요 | [Nari GA 공지](https://narilabs.com/blog/nari-model-apis-general-availability/): 무료 베타는 2026-09-16 23:59 PT 종료. US$0로 안내하지 않음 |

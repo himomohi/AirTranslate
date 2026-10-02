@@ -216,6 +216,8 @@ enum SpeechSynthesisModel: String, CaseIterable, Identifiable, Sendable {
     case appleSystem = "apple-system"
     case gemini38Flash = "gemini-3.8-flash-tts"
     case gemini38FlashLite = "gemini-3.8-flash-lite-tts"
+    case maiVoice21 = "microsoft/mai-voice-2.1"
+    case maiVoice21Flash = "microsoft/mai-voice-2.1-flash"
 
     var id: String { rawValue }
 
@@ -232,15 +234,23 @@ enum SpeechSynthesisModel: String, CaseIterable, Identifiable, Sendable {
             "Gemini 3.8 Flash TTS"
         case .gemini38FlashLite:
             "Gemini 3.8 Flash-Lite TTS"
+        case .maiVoice21:
+            "MAI-Voice-2.1"
+        case .maiVoice21Flash:
+            "MAI-Voice-2.1-Flash"
         }
     }
 
     var isGeminiTTS: Bool {
-        self != .appleSystem
+        self == .gemini38Flash || self == .gemini38FlashLite
+    }
+
+    var isMAIVoice: Bool {
+        self == .maiVoice21 || self == .maiVoice21Flash
     }
 
     var apiModelID: String? {
-        isGeminiTTS ? rawValue : nil
+        self == .appleSystem ? nil : rawValue
     }
 }
 

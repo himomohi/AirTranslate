@@ -160,6 +160,9 @@ struct StartConfiguration: Equatable {
     let usesGrokSourceAutoDetection: Bool
     let azureMAIEnabled: Bool
     let azureSpeechEndpoint: String
+    let azureTranscriptionModel: AzureTranscriptionModel
+    let maiStreamingEndpoint: String
+    let maiStreamingDeployment: String
     let usesMetaSpeakerLabels: Bool
     let usesAppleSourceAutoDetection: Bool
 
@@ -182,6 +185,9 @@ struct StartConfiguration: Equatable {
         usesNariSourceAutoDetection: Bool = false,
         azureMAIEnabled: Bool = false,
         azureSpeechEndpoint: String = "",
+        azureTranscriptionModel: AzureTranscriptionModel = .transcribe2,
+        maiStreamingEndpoint: String = "",
+        maiStreamingDeployment: String = "",
         usesMetaSpeakerLabels: Bool = true,
         usesAppleSourceAutoDetection: Bool
     ) {
@@ -203,6 +209,9 @@ struct StartConfiguration: Equatable {
         self.usesNariSourceAutoDetection = usesNariSourceAutoDetection
         self.azureMAIEnabled = azureMAIEnabled
         self.azureSpeechEndpoint = azureSpeechEndpoint
+        self.azureTranscriptionModel = azureTranscriptionModel
+        self.maiStreamingEndpoint = maiStreamingEndpoint
+        self.maiStreamingDeployment = maiStreamingDeployment
         self.usesMetaSpeakerLabels = usesMetaSpeakerLabels
         self.usesAppleSourceAutoDetection = usesAppleSourceAutoDetection
     }
@@ -558,6 +567,7 @@ final class TranslationSessionStore {
     var hasOpenAIAPIKey = OpenAIAPIKeyStore.hasAPIKey()
     var hasGeminiAPIKey = GeminiAPIKeyStore.hasAPIKey()
     var hasAzureSpeechAPIKey = AzureSpeechAPIKeyStore.hasAPIKey()
+    var hasOpenRouterAPIKey = OpenRouterAPIKeyStore.hasAPIKey()
     var hasNariAPIKey = NariAPIKeyStore.hasAPIKey()
     var nariTranscriptionModel = NariTranscriptionModel.off {
         didSet {
@@ -689,6 +699,46 @@ final class TranslationSessionStore {
     private var grokFinalizedItemIDs: Set<String> = []
     private var grokItemOrder: [String] = []
     private var grokSavedTranscriptText = ""
+    private var selectedAzureTranscriptionModel = AzureTranscriptionModel.transcribe2
+    var azureTranscriptionModel: AzureTranscriptionModel {
+        get { selectedAzureTranscriptionModel }
+        set {
+            guard !isRunning, !isStarting, selectedAzureTranscriptionModel != newValue else { return }
+            selectedAzureTranscriptionModel = newValue
+            persistSelectedSettings()
+        }
+    }
+    var maiStreamingEndpoint = "" { didSet { persistSelectedSettings() } }
+    var maiStreamingDeployment = "" { didSet { persistSelectedSettings() } }
+    var azureSelectedEndpoint: String { azureTranscriptionModel.isStreaming ? maiStreamingEndpoint : azureSpeechEndpoint }
+    var hasValidAzureEndpoint: Bool { (try? azureTranscriptionModel.validateEndpoint(azureSelectedEndpoint)) != nil }
+    var hasAzureConfiguration: Bool {
+        hasValidAzureEndpoint && (!azureTranscriptionModel.isStreaming || !maiStreamingDeployment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+    var maiVoiceName = "" {
+        didSet { persistSelectedSettings(); stopSpeaking() }
+    }
+    private(set) var availableMAIVoices: [String] = []
+    private(set) var maiVoiceCatalogMessage: String?
+
+    func refreshMAIVoices() async {
+        guard speechSynthesisModel.isMAIVoice else { return }
+        let model = speechSynthesisModel
+        let languageID = targetLanguage.id
+        maiVoiceCatalogMessage = MAIVoiceCopy.loadingVoices
+        availableMAIVoices = []
+        do {
+            let voices = try await MAIVoiceCatalog.shared.voices(for: model)
+            guard !Task.isCancelled, model == speechSynthesisModel, languageID == targetLanguage.id else { return }
+            availableMAIVoices = MAIVoiceCatalog.matchingVoices(voices, languageID: languageID)
+                .map { $0.split(separator: ":").first.map(String.init) ?? $0 }
+            maiVoiceCatalogMessage = availableMAIVoices.isEmpty ? MAIVoiceCopy.languageUnsupported : nil
+        } catch {
+            guard !Task.isCancelled, model == speechSynthesisModel, languageID == targetLanguage.id else { return }
+            maiVoiceCatalogMessage = MAIVoiceCopy.catalogFailed
+        }
+    }
+
     var azureSpeechEndpoint = "" {
         didSet { persistSelectedSettings() }
     }
@@ -713,6 +763,10 @@ final class TranslationSessionStore {
     @ObservationIgnored private var azureMAITranscriber = AzureMAITranscriber()
     @ObservationIgnored private var azureFinishTask: Task<Void, Never>?
     private var azureSavedTranscriptText = ""
+    private var azurePartialLineID: UUID?
+#if DEBUG
+    var azureTranslationForTesting: (@MainActor (String) async throws -> String)?
+#endif
     var hasMetaAPIKey = MetaAPIKeyStore.hasAPIKey()
     var requestedSettingsCategoryID: String?
     var requestedAPIKeyProvider: CredentialProvider?
@@ -947,6 +1001,7 @@ final class TranslationSessionStore {
     private let foundationTranscriptPolisher = FoundationTranscriptPolisher()
     private let speechOutput = TranslatedSpeechOutput()
     private let geminiSpeechOutput = GeminiSpeechOutput()
+    private let maiSpeechOutput = MAIVoiceSpeechOutput()
     private let openAIRealtimeAudioOutput = OpenAIRealtimeAudioOutput()
     private let spellChecker = NSSpellChecker.shared
     private let spellDocumentTag = NSSpellChecker.uniqueSpellDocumentTag()
@@ -1191,6 +1246,9 @@ final class TranslationSessionStore {
         geminiSpeechOutput.onFailure = { [weak self] in
             self?.statusMessage = AppText.geminiSpeechOutputFailed
         }
+        maiSpeechOutput.onFailure = { [weak self] error in
+            self?.statusMessage = error.localizedDescription
+        }
         applyTranslatedVoiceVolume()
         syncLiveOutputModeWithLanguagePair()
         systemAudioCapture.delegate = self
@@ -1399,15 +1457,29 @@ final class TranslationSessionStore {
                 await stopCapture()
                 await service.finish()
                 guard !Task.isCancelled, service === azureMAITranscriber, isRunning else { return }
+                let translated: Bool
+                do { translated = try await drainAzureTranslations() }
+                catch { return }
+                guard !Task.isCancelled, service === azureMAITranscriber, isRunning else { return }
                 isFinishingAzureMAI = false
                 pipelineLifecycle.stop()
-                finishPipeline(statusOverride: nil)
+                finishPipeline(statusOverride: translated ? nil : AzureMAICopy.translationFinishTimedOut)
                 azureFinishTask = nil
             }
             return
         }
         pipelineLifecycle.stop()
         finishPipeline(statusOverride: nil)
+    }
+
+    private func drainAzureTranslations() async throws -> Bool {
+        guard !isTranscribeOnlyMode else { return true }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(15))
+        while translationTask != nil, ContinuousClock.now < deadline {
+            try Task.checkCancellation()
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        return translationTask == nil
     }
 
     private func finishPipeline(statusOverride: String?) {
@@ -1541,6 +1613,9 @@ final class TranslationSessionStore {
             usesNariSourceAutoDetection: isNariSourceAutoDetectionEnabled,
             azureMAIEnabled: isUsingAzureMAI,
             azureSpeechEndpoint: azureSpeechEndpoint,
+            azureTranscriptionModel: azureTranscriptionModel,
+            maiStreamingEndpoint: maiStreamingEndpoint,
+            maiStreamingDeployment: maiStreamingDeployment,
             usesMetaSpeakerLabels: isMetaSpeakerLabelsEnabled,
             usesAppleSourceAutoDetection: isUsingAppleSourceAutoDetection
         )
@@ -1653,7 +1728,7 @@ final class TranslationSessionStore {
                 return StartReadinessAssessment(issue: .nariLanguageUnsupported)
             }
         }
-        if isUsingAzureMAI, !hasAzureSpeechAPIKey || (try? AzureMAITranscriber.endpointURL(azureSpeechEndpoint)) == nil {
+        if isUsingAzureMAI, !hasAzureSpeechAPIKey || !hasAzureConfiguration {
             return StartReadinessAssessment(issue: .azureConfigurationMissing)
         }
         return StartReadinessPolicy.assess(
@@ -2185,6 +2260,19 @@ final class TranslationSessionStore {
         guard !isRunning, !isStarting else { return }
         try GrokAPIKeyStore.deleteAPIKey()
         hasGrokAPIKey = false
+    }
+
+    func saveOpenRouterAPIKey(_ key: String) throws {
+        try OpenRouterAPIKeyStore.saveAPIKey(key)
+        hasOpenRouterAPIKey = true
+        statusMessage = AzureMAICopy.keySaved
+    }
+
+    func removeOpenRouterAPIKey() throws {
+        maiSpeechOutput.stop()
+        try OpenRouterAPIKeyStore.deleteAPIKey()
+        hasOpenRouterAPIKey = false
+        statusMessage = MAIVoiceCopy.keyRequired
     }
 
     func saveAzureSpeechAPIKey(_ key: String) throws {
@@ -2987,12 +3075,22 @@ final class TranslationSessionStore {
         } else if configuration.azureMAIEnabled {
             azureMAITranscriber = AzureMAITranscriber()
             let service = azureMAITranscriber
-            try service.start(
-                endpoint: configuration.azureSpeechEndpoint,
-                key: try AzureSpeechAPIKeyStore.readAPIKey() ?? "",
-                language: configuration.sourceLanguage.id.split(separator: "-").first.map(String.init)
-            ) { [weak self, weak service] result in
+            let key = try AzureSpeechAPIKeyStore.readAPIKey() ?? ""
+            let language = configuration.sourceLanguage.id.split(separator: "-").first.map(String.init)
+            let handler: @Sendable (Result<String, AzureMAIError>) async -> Void = { [weak self, weak service] result in
                 await self?.receiveAzureMAI(result, service: service, generation: generation)
+            }
+            if configuration.azureTranscriptionModel.isStreaming {
+                try await service.startStreaming(
+                    endpoint: configuration.maiStreamingEndpoint, key: key,
+                    deployment: configuration.maiStreamingDeployment, language: language,
+                    handler: handler
+                ) { [weak self, weak service] text in
+                    await self?.receiveAzureMAIPartial(text, service: service, generation: generation)
+                }
+            } else {
+                try service.start(endpoint: configuration.azureSpeechEndpoint, key: key,
+                                  language: language, handler: handler)
             }
         } else if configuration.metaTranscriptionModel.isEnabled {
             try await metaVoiceTranscriber.start(
@@ -3767,6 +3865,7 @@ final class TranslationSessionStore {
         nariItemOrder.removeAll()
         if clearsVisibleLines { nariSavedTranscriptText = "" }
         if clearsVisibleLines { azureSavedTranscriptText = "" }
+        azurePartialLineID = nil
         audioSampleCount = 0
         latestAudioLevel = nil
         lastRecognizedText = ""
@@ -4099,6 +4198,10 @@ final class TranslationSessionStore {
             && defaults.bool(forKey: SettingsKey.isAppleSourceAutoDetectionEnabled)
         refreshMicrophoneInputDevices()
         azureSpeechEndpoint = defaults.string(forKey: "azureSpeechEndpoint") ?? ""
+        azureTranscriptionModel = defaults.string(forKey: "azureTranscriptionModel").flatMap(AzureTranscriptionModel.init(rawValue:)) ?? .transcribe2
+        maiStreamingEndpoint = defaults.string(forKey: "maiStreamingEndpoint") ?? ""
+        maiStreamingDeployment = defaults.string(forKey: "maiStreamingDeployment") ?? ""
+        maiVoiceName = defaults.string(forKey: "maiVoiceName") ?? ""
         let restoredAzureMode = defaults.bool(forKey: "azureMAIEnabled")
         let restoredGPTTranscriptionMode =
             defaults.string(forKey: SettingsKey.openAITranscriptionModelID)
@@ -4199,6 +4302,10 @@ final class TranslationSessionStore {
         defaults.set(preferredGeminiModel.id, forKey: SettingsKey.preferredGeminiModelID)
         defaults.set(isUsingAzureMAI, forKey: "azureMAIEnabled")
         defaults.set(azureSpeechEndpoint, forKey: "azureSpeechEndpoint")
+        defaults.set(azureTranscriptionModel.rawValue, forKey: "azureTranscriptionModel")
+        defaults.set(maiStreamingEndpoint, forKey: "maiStreamingEndpoint")
+        defaults.set(maiStreamingDeployment, forKey: "maiStreamingDeployment")
+        defaults.set(maiVoiceName, forKey: "maiVoiceName")
         defaults.set(metaTranscriptionModel.id, forKey: SettingsKey.metaTranscriptionModelID)
         defaults.set(qwenTranslationModel.rawValue, forKey: "qwenTranslationModelID")
         defaults.set((qwenTranslationModel.isEnabled ? qwenTranslationModel : preferredQwenModel).rawValue,
@@ -5984,6 +6091,9 @@ final class TranslationSessionStore {
         progress: @escaping @MainActor @Sendable (String) -> Void = { _ in }
     ) async throws -> String {
 #if DEBUG
+        if isUsingAzureMAI, let azureTranslationForTesting {
+            return try await azureTranslationForTesting(text)
+        }
         if isUsingGrokSTT, let grokTranslationForTesting {
             return try await grokTranslationForTesting(text)
         }
@@ -6452,6 +6562,20 @@ final class TranslationSessionStore {
         }
     }
 
+    private func receiveAzureMAIPartial(_ text: String, service: AzureMAITranscriber?, generation: UInt64) {
+        guard let service, service === azureMAITranscriber,
+              pipelineLifecycle.acceptsSample(generation: generation), isRunning, isUsingAzureMAI else { return }
+        let previous = azurePartialLineID.flatMap { id in lines.first(where: { $0.id == id }) }
+        let line = CaptionLine(id: previous?.id ?? UUID(), sourceText: text,
+                               translatedText: AppText.translating, createdAt: previous?.createdAt ?? Date(),
+                               isFinal: false, revision: (previous?.revision ?? 0) + 1,
+                               usesLongSessionDisplay: usesLongSessionMode)
+        if let index = lines.firstIndex(where: { $0.id == line.id }) { lines[index] = line }
+        else if !text.isEmpty { lines.append(line) }
+        azurePartialLineID = line.id
+        presentFloatingSourceText(text)
+    }
+
     private func receiveAzureMAI(_ result: Result<String, AzureMAIError>, service: AzureMAITranscriber?, generation: UInt64) {
         guard let service, service === azureMAITranscriber,
               pipelineLifecycle.acceptsSample(generation: generation), isRunning, isUsingAzureMAI else { return }
@@ -6462,10 +6586,19 @@ final class TranslationSessionStore {
             pipelineLifecycle.stop()
             finishPipeline(statusOverride: error.localizedDescription)
         case .success(let text):
-            let line = CaptionLine(sourceText: text, translatedText: AppText.translating,
-                                   createdAt: Date(), isFinal: true, revision: 1,
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                if let id = azurePartialLineID { lines.removeAll { $0.id == id }; sourceLanguageByLineID.removeValue(forKey: id) }
+                azurePartialLineID = nil
+                rehydrateFloatingCaptionDisplayFromCurrentLine()
+                return
+            }
+            let previous = azurePartialLineID.flatMap { id in lines.first(where: { $0.id == id }) }
+            let line = CaptionLine(id: previous?.id ?? UUID(), sourceText: text, translatedText: AppText.translating,
+                                   createdAt: previous?.createdAt ?? Date(), isFinal: true, revision: (previous?.revision ?? 0) + 1,
                                    usesLongSessionDisplay: usesLongSessionMode)
-            lines.append(line)
+            if let index = lines.firstIndex(where: { $0.id == line.id }) { lines[index] = line }
+            else { lines.append(line) }
+            azurePartialLineID = nil
             sourceLanguageByLineID[line.id] = sourceLanguage
             lastRecognizedText = text
             lastRecognizedWasFinal = true
@@ -7244,6 +7377,8 @@ final class TranslationSessionStore {
             speechOutput.speak(text, language: targetLanguage)
         case .gemini38Flash, .gemini38FlashLite:
             geminiSpeechOutput.speak(text, model: speechSynthesisModel)
+        case .maiVoice21, .maiVoice21Flash:
+            maiSpeechOutput.speak(text, model: speechSynthesisModel, language: targetLanguage, voiceName: maiVoiceName)
         }
     }
 
@@ -7304,12 +7439,14 @@ final class TranslationSessionStore {
     private func stopSpeaking() {
         speechOutput.stop()
         geminiSpeechOutput.stop()
+        maiSpeechOutput.stop()
         openAIRealtimeAudioOutput.stop()
     }
 
     private func applyTranslatedVoiceVolume() {
         speechOutput.setVolume(translatedVoiceVolume)
         geminiSpeechOutput.setVolume(translatedVoiceVolume)
+        maiSpeechOutput.setVolume(translatedVoiceVolume)
         openAIRealtimeAudioOutput.setVolume(translatedVoiceVolume)
     }
 
@@ -7385,6 +7522,11 @@ final class TranslationSessionStore {
     }
 
 #if DEBUG
+    func deliverAzureTranscriptForTesting(_ text: String, isFinal: Bool, generation: UInt64) {
+        if isFinal { receiveAzureMAI(.success(text), service: azureMAITranscriber, generation: generation) }
+        else { receiveAzureMAIPartial(text, service: azureMAITranscriber, generation: generation) }
+    }
+
     func deliverNariTranscriptForTesting(_ update: NariTranscriptUpdate, generation: UInt64) {
         receiveNariTranscript(update, service: nariTranscriber, generation: generation)
     }

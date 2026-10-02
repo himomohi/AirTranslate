@@ -2,6 +2,18 @@
 
 All notable changes to AirTranslate are documented in this file.
 
+## 1.15.0 - 2026-10-02
+
+### Added
+
+- Optional MAI-Transcribe-2-Streaming transcription through Microsoft Foundry, with intermediate source captions and Apple translation of finalized text. Configure the resource endpoint, resource key, and deployment name in API Keys.
+- MAI-Voice-2.1 and MAI-Voice-2.1-Flash translated speech through OpenRouter, with a separate Keychain entry and voices matched to the target language. Korean is supported; Japanese is currently absent from the provider's voice catalog.
+
+### Fixed
+
+- Stopping Azure capture waits for the last finalized translations within a bounded timeout before ending the session.
+- Empty final Azure results remove provisional captions from both the main workspace and floating captions.
+
 ## 1.14.2 - 2026-09-24
 
 ### Changed

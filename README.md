@@ -23,7 +23,7 @@ Live Mac audio captions and translation for meetings, videos, lectures, intervie
 
 AirTranslate captures audio playing on your Mac, transcribes it live, translates it when you choose a translation workflow, and can keep captions floating above other apps. Apple Mode remains the default local-first workflow. Cloud engines are optional and become available after you configure the matching provider key.
 
-AirTranslate **1.14.2/build1142** lets you choose provider-specific models from the bottom-right control on the main workspace. The model picker separates realtime translation and source-transcription models. Gemini TTS is a separate translated-speech choice used only for text translation. Realtime providers keep their native audio.
+AirTranslate **1.15.0/build1150** adds MAI-Transcribe-2-Streaming source captions through Microsoft Foundry and MAI-Voice-2.1 / MAI-Voice-2.1-Flash translated speech through OpenRouter. Choose models from the main workspace or Settings. Realtime providers continue using their native audio.
 
 Configure an **Alibaba Cloud Singapore API key** in Settings > API Keys > Qwen. Qwen3.8 LiveTranslate also requires a workspace ID; Qwen Audio 3.1 Realtime Plus and Filetrans use the key without one. The key is stored separately in macOS Keychain; selected realtime audio is sent directly to Alibaba Cloud Singapore when capture starts. Choose the existing `qwen3.8-livetranslate-flash-realtime` default or `qwen-audio-3.1-realtime-plus` in Settings > General. Qwen Audio 3.1 Realtime Plus is a full-duplex voice-conversation model that receives translation instructions from AirTranslate; Qwen3.8 LiveTranslate is the dedicated realtime translation model. **Speech output is optional and initially off**. Current Qwen Audio pricing is shown in Model Studio.
 
@@ -35,14 +35,14 @@ The **key-aware mode picker** shows unavailable providers in gray and provides a
 
 **Qwen final captions are drained before stopping**. Empty final results retract provisional captions, and saved Qwen transcripts contain confirmed results only, including periodic checkpoints. Apple Mode remains the default; transcript file saving remains opt-in.
 
-**Translated speech output is selectable** in Settings and the main workspace's separate translated-speech control. Choose Apple system speech or Gemini 3.8 Flash or Flash-Lite TTS. The choice is saved during realtime modes but used only for text translation; realtime providers keep their native audio. Gemini TTS sends only stable translated text to Google with your Gemini key.
+**Translated speech output is selectable** in Settings and the main workspace's separate translated-speech control. Choose Apple system speech, Gemini 3.8 Flash or Flash-Lite TTS, or MAI Voice 2.1 or Flash. The choice is saved during realtime modes but used only for text translation; realtime providers keep their native audio. Gemini TTS sends only stable translated text to Google with your Gemini key.
 
 ## Download
 
-Latest public release: **v1.14.1**.
+Latest public release: **v1.15.0**.
 
 - [Download AirTranslate.dmg](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [Download AirTranslate-1.14.2.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.14.2/AirTranslate-1.14.2.zip)
+- [Download AirTranslate-1.15.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.15.0/AirTranslate-1.15.0.zip)
 - [Download AirTranslate.dmg.sha256](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [View release history](Release/VERSION-HISTORY.md)
 
@@ -88,7 +88,7 @@ API-backed engines become available after you configure their keys in **Settings
 | OpenAI Audio | Choose translation or source transcription within one provider. The output icons select `gpt-realtime-translate` or `gpt-live-transcribe`; tooltips show the active model and rate. | OpenAI |
 | Gemini Live | Select the documented realtime translation model or the separate source-only transcription model with automatic spoken-language detection. | Gemini |
 | Meta Scribe | Speaker-labeled multilingual transcription before AirTranslate translation. | Meta |
-| Azure MAI | Preview cloud transcription via sequential five-second WAV REST requests, with Apple Translation captions. | Azure Speech key and endpoint |
+| Azure MAI | MAI-Transcribe-2 via five-second REST chunks, or MAI-Transcribe-2-Streaming with partial captions and Apple translation. | Resource key and endpoint; Foundry deployment name for streaming |
 | Nari STT | Nari Qwen3-ASR source transcription from microphone or Mac audio. | Nari |
 | Grok STT | Grok Voice Transcribe 2.0 source transcription from microphone or Mac audio. | SpaceXAI (xAI) |
 | Qwen LiveTranslate | Qwen3.8 is the dedicated realtime translation model. Qwen Audio 3.1 Realtime Plus is a full-duplex voice-conversation model used with AirTranslate translation instructions and can return speech. | Alibaba Cloud Singapore API key; workspace ID for Qwen3.8 |
@@ -109,9 +109,17 @@ Floating captions show only the original and/or translated text over your conten
 
 Choose from five text styles (Everyday, Cinema, Lecture, High contrast, and Light scene), four font families, weight, line spacing, shadow or outline, text color, alignment, line count, and translation-first ordering. The preview uses the actual 18–72 pt text size over a light or dark sample scene. Preview sample captions without recording, and adjust their width and always-on-top behavior in Settings. Existing appearance preferences still load; legacy background settings do not create a visible window.
 
+## Microsoft MAI audio (1.15.0)
+
+Choose **MAI-Transcribe-2-Streaming** under Azure MAI for partial source captions. Configure the Microsoft Foundry resource endpoint (`https://<resource>.services.ai.azure.com`), its key and your deployment name in API Keys. AirTranslate commits audio every three seconds and at pause/stop, then translates finalized text with Apple. The existing five-second MAI-Transcribe-2 option remains available.
+
+Choose **MAI-Voice-2.1** or **MAI-Voice-2.1-Flash** in translated speech output and save an **OpenRouter** key. Voice selection follows the target language and the published voice catalog. Korean is supported; Japanese currently is not. Only translated text is sent for voice generation. Provider usage is billed separately. [Configuration details](docs/microsoft-mai-audio.md).
+
+Stopping Azure capture waits for the last finalized translations within a bounded timeout. Empty final Azure results clear provisional text from both the main workspace and floating captions.
+
 ## API Keys
 
-The API Keys screen manages **OpenAI**, **Gemini**, **Meta**, **Azure**, **Nari**, and **SpaceXAI (xAI)** · **Alibaba Cloud (Qwen)** in one provider list. Rows show configured/setup state, provider icons, key console links, and an information popover explaining that configured keys do not prove provider authorization.
+The API Keys screen manages **OpenAI**, **Gemini**, **Meta**, **Azure**, **Nari**, and **SpaceXAI (xAI)** · **Alibaba Cloud (Qwen)** · **OpenRouter** in one provider list. Rows show configured/setup state, provider icons, key console links, and an information popover explaining that configured keys do not prove provider authorization.
 
 Keys are stored in macOS Keychain. AirTranslate does not ship with an account system, a developer-operated relay server, or hardcoded provider keys.
 

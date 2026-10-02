@@ -51,11 +51,17 @@ Meta API keys are user-provided runtime data. AirTranslate stores them in macOS 
 
 ## Optional Azure MAI Transcription
 
-Azure MAI is optional and works only after the user provides an Azure Speech endpoint and API key.
+Azure MAI is optional and works only after the user provides the selected Microsoft resource's endpoint and API key. MAI-Transcribe-2-Streaming also requires the Foundry deployment name.
 
-When Azure MAI is enabled, AirTranslate sends audio in the selected source language to Azure Speech MAI-Transcribe-2 in 5-second segments, then uses Apple Translation for captions. Azure charges apply separately, and service availability depends on the user's Azure resource.
+When Azure MAI is enabled, AirTranslate sends audio in the selected source language to Azure Speech MAI-Transcribe-2 in 5-second segments, or streams 16 kHz mono audio to Microsoft Foundry for MAI-Transcribe-2-Streaming. Streaming displays intermediate source captions and uses Apple Translation for finalized text. Microsoft charges apply separately, and service availability depends on the user's resource and deployment.
 
-Azure Speech API keys are user-provided runtime data. AirTranslate stores them in macOS Keychain and does not include API keys in the source tree, release scripts, or generated release bundles. The Azure Speech endpoint is stored locally with macOS app preferences.
+Microsoft resource keys are user-provided runtime data. AirTranslate stores them in macOS Keychain and sends them in the API request header. Keys are not included in the source tree, release scripts, or generated release bundles. Resource endpoints and the Foundry deployment name are stored locally with macOS app preferences.
+
+## Optional MAI Voice Output (1.15.0+)
+
+When the user selects MAI-Voice-2.1 or MAI-Voice-2.1-Flash for translated speech, AirTranslate sends stable translated text directly to OpenRouter and receives generated audio for playback. This path does not send microphone or system audio. AirTranslate reads OpenRouter's public voice catalog to match the chosen voice to the target language. Realtime audio providers continue using their own speech output.
+
+The user supplies an OpenRouter API key, stored in a separate device-local macOS Keychain item and sent only in the authorization header. OpenRouter and its model provider's account access, data handling, retention, quotas, pricing, and service terms apply. Real-account authentication, billing, voice quality, and latency remain unverified.
 
 ## Optional Nari STT
 

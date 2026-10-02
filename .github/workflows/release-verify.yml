@@ -142,6 +142,19 @@ jobs:
           diff -rq "$scan_root/build-zip/$APP_NAME.app" "$scan_root/stable-zip/$APP_NAME.app"
           cmp "Release/product/$APP_NAME.dmg" "Release/product/$APP_NAME-$VERSION.dmg"
 
+          # 압축 해제·마운트한 공개 앱에 빌드 컴퓨터의 경로가 남지 않게 한다.
+          set +e
+          /usr/bin/grep -aERq '/(Users|home)/[^[:space:]]+' \
+            "$scan_root/build-zip/$APP_NAME.app" \
+            "$scan_root/stable-zip/$APP_NAME.app" \
+            "$mount_point/$APP_NAME.app"
+          path_scan_status=$?
+          set -e
+          if [[ "$path_scan_status" -ne 1 ]]; then
+            echo "Release artifact build-path gate failed." >&2
+            exit 1
+          fi
+
           if find "$scan_root/build-zip" "$scan_root/stable-zip" "$mount_point" \
             -type f \( -name '.env' -o -name '*.p12' -o -name '*.mobileprovision' \
             -o -name '*.provisionprofile' -o -name '*.key' \) -print | grep -q .; then

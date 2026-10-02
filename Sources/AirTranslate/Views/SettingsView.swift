@@ -183,7 +183,12 @@ struct SettingsView: View {
             }
 
             if processingModeSelection.wrappedValue == .azure {
-                SettingsNoticeRow(text: AzureMAICopy.detail, systemImage: "waveform")
+                Picker(AzureMAICopy.modelLabel, selection: lockedSessionConfigurationBinding($session.azureTranscriptionModel)) {
+                    ForEach(AzureTranscriptionModel.allCases) { model in Text(model.title).tag(model) }
+                }
+                .disabled(isSessionConfigurationLocked)
+                .accessibilityIdentifier("settingsAzureModelPicker")
+                SettingsNoticeRow(text: AzureMAICopy.detail(for: session.azureTranscriptionModel), systemImage: "waveform")
                 if let azureConfigurationIssue {
                     SettingsNoticeActionRow(
                         text: azureConfigurationIssue,
@@ -425,6 +430,39 @@ struct SettingsView: View {
                     .accessibilityHint(SettingsCopy.translatedSpeechModelDetail)
                 }
                 .disabled(isSessionConfigurationLocked)
+
+                if session.speechSynthesisModel.isMAIVoice {
+                    SettingsControlRow(title: MAIVoiceCopy.voice, detail: MAIVoiceCopy.detail, systemImage: "person.wave.2") {
+                        Picker(MAIVoiceCopy.voice, selection: lockedSessionConfigurationBinding($session.maiVoiceName)) {
+                            Text(MAIVoiceCopy.automaticVoice).tag("")
+                            if !session.maiVoiceName.isEmpty, !session.availableMAIVoices.contains(session.maiVoiceName) {
+                                Text(session.maiVoiceName).tag(session.maiVoiceName)
+                            }
+                            ForEach(session.availableMAIVoices, id: \.self) { voice in Text(voice).tag(voice) }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .disabled(isSessionConfigurationLocked)
+                        .accessibilityLabel(MAIVoiceCopy.voice)
+                        .accessibilityIdentifier("maiVoicePicker")
+                    }
+                    .task(id: session.speechSynthesisModel.rawValue + session.targetLanguage.id) {
+                        await session.refreshMAIVoices()
+                    }
+                    if let message = session.maiVoiceCatalogMessage {
+                        SettingsNoticeRow(text: message, systemImage: "info.circle")
+                    }
+                    if !session.maiVoiceName.isEmpty, !session.availableMAIVoices.isEmpty,
+                       !session.availableMAIVoices.contains(session.maiVoiceName) {
+                        SettingsNoticeRow(text: MAIVoiceCopy.languageUnsupported, systemImage: "exclamationmark.circle")
+                    }
+                    if !session.hasOpenRouterAPIKey {
+                        SettingsNoticeActionRow(text: MAIVoiceCopy.keyRequired, systemImage: "key", actionTitle: MAIVoiceCopy.configure) {
+                            session.requestedAPIKeyProvider = .openRouter
+                            selectedCategory.wrappedValue = .apiKeys
+                        }
+                    }
+                }
 
                 if session.speechSynthesisModel.isGeminiTTS,
                    !session.hasGeminiAPIKey,
@@ -779,12 +817,12 @@ struct SettingsView: View {
     }
 
     private var azureConfigurationIssue: String? {
-        let hasValidEndpoint = (try? AzureMAITranscriber.endpointURL(session.azureSpeechEndpoint)) != nil
+        let hasValidEndpoint = session.hasAzureConfiguration
         switch (hasValidEndpoint, session.hasAzureSpeechAPIKey) {
         case (false, false):
             return AzureMAICopy.configurationRequired
         case (false, true):
-            return AzureMAICopy.endpointRequired
+            return session.azureTranscriptionModel.isStreaming ? AzureMAICopy.configurationRequired : AzureMAICopy.endpointRequired
         case (true, false):
             return AzureMAICopy.keyRequired
         case (true, true):
@@ -1342,10 +1380,10 @@ private enum SettingsCopy {
         chineseSimplified: "译文语音模型"
     )
     static let translatedSpeechModelDetail = AppText.localized(
-        english: "Choose how AirTranslate reads translated text in its Apple TranslationSession workflow, including text transcribed by STT providers: Apple system speech or Gemini 3.8 Flash / Flash-Lite TTS. Realtime speech-translation providers use their own audio output.",
-        korean: "Apple TranslationSession으로 텍스트를 번역하는 흐름(전사 제공자의 결과를 번역하는 경우 포함)에서 번역문을 읽을 음성을 선택합니다(Apple 시스템 음성 또는 Gemini 3.8 Flash·Flash-Lite TTS). 실시간 음성 번역 제공자는 자체 오디오 출력을 사용합니다.",
-        japanese: "Apple TranslationSessionでテキストを翻訳するフロー（音声認識プロバイダーの文字起こし結果を翻訳する場合を含む）で読み上げる音声を選択します（Appleシステム音声またはGemini 3.8 Flash / Flash-Lite TTS）。リアルタイム音声翻訳プロバイダーは独自の音声出力を使用します。",
-        chineseSimplified: "选择在 Apple TranslationSession 文本翻译流程中朗读译文的语音，也包括翻译语音识别提供方转写出的文本（Apple 系统语音或 Gemini 3.8 Flash / Flash-Lite TTS）。实时语音翻译提供方使用自己的音频输出。"
+        english: "Choose how AirTranslate reads translated text in its Apple TranslationSession workflow, including text transcribed by STT providers: Apple system speech, Gemini 3.8 Flash / Flash-Lite TTS, or MAI Voice 2.1 / Flash through OpenRouter. Realtime speech-translation providers use their own audio output.",
+        korean: "Apple TranslationSession으로 텍스트를 번역하는 흐름(전사 제공자의 결과를 번역하는 경우 포함)에서 번역문을 읽을 음성을 선택합니다(Apple 시스템 음성, Gemini 3.8 Flash·Flash-Lite TTS 또는 OpenRouter의 MAI Voice 2.1·Flash). 실시간 음성 번역 제공자는 자체 오디오 출력을 사용합니다.",
+        japanese: "Apple TranslationSessionでテキストを翻訳するフロー（音声認識プロバイダーの文字起こし結果を翻訳する場合を含む）で読み上げる音声を選択します（Appleシステム音声、Gemini 3.8 Flash / Flash-Lite TTS または OpenRouter の MAI Voice 2.1 / Flash）。リアルタイム音声翻訳プロバイダーは独自の音声出力を使用します。",
+        chineseSimplified: "选择在 Apple TranslationSession 文本翻译流程中朗读译文的语音，也包括翻译语音识别提供方转写出的文本（Apple 系统语音、Gemini 3.8 Flash / Flash-Lite TTS 或 OpenRouter 的 MAI Voice 2.1 / Flash）。实时语音翻译提供方使用自己的音频输出。"
     )
     static let liveTranslationVolume = AppText.localized(
         english: "Volume",

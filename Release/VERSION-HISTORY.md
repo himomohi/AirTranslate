@@ -1,5 +1,16 @@
 # AirTranslate Version History
 
+## 1.15.0 - 2026-10-02
+
+### Added
+
+- MAI-Transcribe-2-Streaming is a selectable Microsoft Foundry transcription model with intermediate source captions and Apple translation of finalized text. The existing five-second MAI-Transcribe-2 model remains available.
+- MAI-Voice-2.1 and MAI-Voice-2.1-Flash are selectable OpenRouter translated-speech models with target-language voice selection and a dedicated Keychain entry.
+
+### Fixed
+
+- Azure capture waits for final translations when stopped, with a bounded timeout, and empty final results clear provisional text from main and floating captions.
+
 ## 1.14.2 - 2026-09-24
 
 ### Changed

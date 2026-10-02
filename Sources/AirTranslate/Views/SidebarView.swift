@@ -134,7 +134,7 @@ struct StageHeaderView: View {
         switch ProcessingEngine.current(for: session) {
         case .openAI: !session.hasOpenAIAPIKey
         case .gemini: !session.hasGeminiAPIKey
-        case .azure: !session.hasAzureSpeechAPIKey || (try? AzureMAITranscriber.endpointURL(session.azureSpeechEndpoint)) == nil
+        case .azure: !session.hasAzureSpeechAPIKey || !session.hasAzureConfiguration
         case .qwen: !session.hasQwenConfiguration
         case .grok: !session.hasGrokAPIKey
         case .nari: !session.hasNariAPIKey

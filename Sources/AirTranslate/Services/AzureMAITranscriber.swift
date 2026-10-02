@@ -8,6 +8,7 @@ final class AzureMAITranscriber: @unchecked Sendable {
     static let maxPendingChunks = 6
     private let lock = NSLock()
     private let configuration: URLSessionConfiguration
+    private var streaming: AzureMAIStreamingTranscriber?
 
     init(configuration: URLSessionConfiguration = .ephemeral) {
         self.configuration = configuration
@@ -41,7 +42,24 @@ final class AzureMAITranscriber: @unchecked Sendable {
         }
     }
 
+    func startStreaming(endpoint: String, key: String, deployment: String, language: String?,
+                        handler: @escaping @Sendable (Result<String, AzureMAIError>) async -> Void,
+                        partialHandler: @escaping @Sendable (String) async -> Void) async throws {
+        stop()
+        let service = AzureMAIStreamingTranscriber()
+        lock.withLock { streaming = service }
+        do {
+            try await service.start(endpoint: endpoint, key: key, deployment: deployment,
+                                    language: language, handler: handler, partialHandler: partialHandler)
+        } catch {
+            service.stop()
+            lock.withLock { if streaming === service { streaming = nil } }
+            throw error
+        }
+    }
+
     func append(_ sampleBuffer: CMSampleBuffer) {
+        if let service = lock.withLock({ streaming }) { service.append(sampleBuffer); return }
         lock.withLock {
             guard active, !paused, !failed else { return }
             guard let pcm = Self.pcm16(sampleBuffer) else {
@@ -58,6 +76,7 @@ final class AzureMAITranscriber: @unchecked Sendable {
     }
 
     func setPaused(_ value: Bool) {
+        if let service = lock.withLock({ streaming }) { service.setPaused(value); return }
         lock.withLock {
             paused = value
             if value, active, !buffer.isEmpty {
@@ -69,6 +88,7 @@ final class AzureMAITranscriber: @unchecked Sendable {
     }
 
     func finish() async {
+        if let service = lock.withLock({ streaming }) { await service.finish(); return }
         let task = lock.withLock {
             active = false
             if !buffer.isEmpty, !failed {
@@ -82,6 +102,8 @@ final class AzureMAITranscriber: @unchecked Sendable {
     }
 
     func stop() {
+        let service = lock.withLock { let value = streaming; streaming = nil; return value }
+        service?.stop()
         lock.withLock {
             active = false
             handler = nil
@@ -243,6 +265,26 @@ enum AzureMAIError: LocalizedError, Sendable {
 
 enum AzureMAICopy {
     static let title = "Azure MAI (Preview)"
+    static let modelLabel = AppText.localized(english: "Transcription model", korean: "전사 모델", japanese: "文字起こしモデル", chineseSimplified: "转写模型")
+    static let translationFinishTimedOut = AppText.localized(english: "Capture stopped. Some final translations did not finish in time; the source transcript was saved.", korean: "캡처를 중지했습니다. 일부 마지막 번역이 제한 시간 안에 끝나지 않았으며 원문 전사는 저장했습니다.", japanese: "キャプチャを停止しました。一部の最終翻訳が時間内に完了しませんでした。原文は保存しました。", chineseSimplified: "已停止捕获。部分最终翻译未能及时完成，原文转写已保存。")
+    static let deploymentLabel = AppText.localized(english: "Foundry deployment name", korean: "Foundry 배포 이름", japanese: "Foundry デプロイ名", chineseSimplified: "Foundry 部署名称")
+    static let streamingEndpointLabel = AppText.localized(english: "Foundry resource endpoint", korean: "Foundry 리소스 엔드포인트", japanese: "Foundry リソースのエンドポイント", chineseSimplified: "Foundry 资源终结点")
+    static let streamingEndpointRequired = AppText.localized(english: "Enter your Foundry resource’s HTTPS endpoint ending in services.ai.azure.com.", korean: "services.ai.azure.com으로 끝나는 Foundry 리소스의 HTTPS 주소를 입력하세요.", japanese: "services.ai.azure.com で終わる Foundry リソースの HTTPS アドレスを入力してください。", chineseSimplified: "请输入以 services.ai.azure.com 结尾的 Foundry 资源 HTTPS 地址。")
+    static let streamingConfigurationDetail = AppText.localized(
+        english: "Use the endpoint, key and deployment name from the Foundry resource hosting MAI-Transcribe-2-Streaming. The key must belong to this resource.",
+        korean: "MAI-Transcribe-2-Streaming을 배포한 Foundry 리소스의 엔드포인트·키·배포 이름을 입력하세요. 키는 이 리소스의 키여야 합니다.",
+        japanese: "MAI-Transcribe-2-Streaming を配置した Foundry リソースのエンドポイント・キー・デプロイ名を入力してください。キーは同じリソースのものを使用してください。",
+        chineseSimplified: "请输入部署 MAI-Transcribe-2-Streaming 的 Foundry 资源终结点、密钥和部署名称。密钥必须属于该资源。"
+    )
+    static func detail(for model: AzureTranscriptionModel) -> String {
+        model.isStreaming ? streamingDetail : detail
+    }
+    static let streamingDetail = AppText.localized(
+        english: "Streams 16 kHz audio to Microsoft Foundry and displays partial captions. Audio is committed every 3 seconds and when paused or stopped; finalized text is translated with Apple. Microsoft usage is billed separately.",
+        korean: "16 kHz 오디오를 Microsoft Foundry로 전송하고 중간 자막을 표시합니다. 3초마다, 일시정지·중지 시 오디오를 확정하며 확정된 텍스트는 Apple로 번역합니다. Microsoft 사용료는 별도입니다.",
+        japanese: "16 kHz 音声を Microsoft Foundry に送信し、中間字幕を表示します。3 秒ごと、および一時停止・停止時に音声を確定し、確定テキストを Apple で翻訳します。Microsoft の利用料金は別途発生します。",
+        chineseSimplified: "将 16 kHz 音频流发送到 Microsoft Foundry 并显示中间字幕。每 3 秒以及暂停或停止时提交音频，最终文本由 Apple 翻译。Microsoft 使用费用另行计费。"
+    )
     static let detail = AppText.localized(
         english: "Optional MAI-Transcribe-2 cloud transcription. Audio in the selected source language is sent to Azure in 5-second segments, then translated with Apple. Results arrive after each request. Azure usage is billed separately.",
         korean: "선택형 MAI-Transcribe-2 클라우드 전사입니다. 선택한 원문 언어의 오디오를 5초 구간으로 Azure에 보내고 Apple로 번역합니다. 요청 완료 후 결과가 표시되며 Azure 사용료는 별도입니다.",
@@ -250,10 +292,10 @@ enum AzureMAICopy {
         chineseSimplified: "可选的 MAI-Transcribe-2 云端转写。所选源语言的音频会以 5 秒分段发送到 Azure，然后使用 Apple 翻译。每次请求完成后显示结果。Azure 使用费用另行计费。"
     )
     static let configurationRequired = AppText.localized(
-        english: "Set an Azure Speech resource endpoint and key in API Keys settings.",
-        korean: "API 키 설정에서 Azure Speech 리소스 엔드포인트와 키를 입력하세요.",
-        japanese: "API キー設定で Azure Speech リソースのエンドポイントとキーを入力してください。",
-        chineseSimplified: "请在 API 密钥设置中输入 Azure Speech 资源终结点和密钥。"
+        english: "Set the Microsoft resource endpoint and key in API Keys settings. Streaming also requires a Foundry deployment name.",
+        korean: "API 키 설정에서 Microsoft 리소스 엔드포인트와 키를 입력하세요. 스트리밍은 Foundry 배포 이름도 필요합니다.",
+        japanese: "API キー設定で Microsoft リソースのエンドポイントとキーを入力してください。ストリーミングには Foundry デプロイ名も必要です。",
+        chineseSimplified: "请在 API 密钥设置中输入 Microsoft 资源终结点和密钥。流式转写还需要 Foundry 部署名称。"
     )
     static let endpointRequired = AppText.localized(
         english: "Set a valid Azure Speech resource endpoint in API Keys settings.",
@@ -262,16 +304,16 @@ enum AzureMAICopy {
         chineseSimplified: "请在 API 密钥设置中输入有效的 Azure Speech 资源终结点。"
     )
     static let keyRequired = AppText.localized(
-        english: "Save an Azure Speech API key in API Keys settings.",
-        korean: "API 키 설정에서 Azure Speech API 키를 저장하세요.",
-        japanese: "API キー設定で Azure Speech API キーを保存してください。",
-        chineseSimplified: "请在 API 密钥设置中保存 Azure Speech API 密钥。"
+        english: "Save your Azure / Microsoft Foundry resource key in API Keys settings.",
+        korean: "API 키 설정에서 Azure / Microsoft Foundry 리소스 키를 저장하세요.",
+        japanese: "API キー設定で Azure / Microsoft Foundry リソースのキーを保存してください。",
+        chineseSimplified: "请在 API 密钥设置中保存 Azure / Microsoft Foundry 资源密钥。"
     )
     static let configureSpeech = AppText.localized(
-        english: "Configure Azure Speech",
-        korean: "Azure Speech 설정",
-        japanese: "Azure Speech を設定",
-        chineseSimplified: "配置 Azure Speech"
+        english: "Configure Azure / Foundry",
+        korean: "Azure / Foundry 설정",
+        japanese: "Azure / Foundry を設定",
+        chineseSimplified: "配置 Azure / Foundry"
     )
     static let endpointLabel = AppText.localized(
         english: "Azure Speech endpoint",

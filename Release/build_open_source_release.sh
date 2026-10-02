@@ -69,6 +69,19 @@ swift build -c release
 BUILD_BINARY="$(swift build -c release --show-bin-path)/$APP_NAME"
 
 install -m 755 "$BUILD_BINARY" "$APP_BINARY"
+# 배포 실행 파일의 디버그 심볼을 제거한 뒤 서명한다.
+/usr/bin/strip -S "$APP_BINARY"
+set +e
+/usr/bin/grep -aEq '/(Users|home)/[^[:space:]]+' "$APP_BINARY"
+build_path_status=$?
+set -e
+if [[ "$build_path_status" -eq 0 ]]; then
+  echo "Release executable contains a local build path." >&2
+  exit 1
+elif [[ "$build_path_status" -ne 1 ]]; then
+  echo "Release executable path scan failed." >&2
+  exit 1
+fi
 install -m 644 "$ROOT_DIR/Resources/AppIcon.icns" "$APP_RESOURCES/AppIcon.icns"
 install -m 644 "$ROOT_DIR/LICENSE" "$APP_RESOURCES/LICENSE"
 install -m 644 "$ROOT_DIR/NOTICE" "$APP_RESOURCES/NOTICE"

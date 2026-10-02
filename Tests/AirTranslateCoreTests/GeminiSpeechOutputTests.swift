@@ -8,7 +8,7 @@ struct GeminiSpeechOutputTests {
 
     @Test
     func appleAndBothGeminiSpeechModelsAreSelectable() {
-        #expect(SpeechSynthesisModel.allCases.map(\.rawValue) == [
+        #expect(SpeechSynthesisModel.allCases.filter { $0 == .appleSystem || $0.isGeminiTTS }.map(\.rawValue) == [
             "apple-system",
             "gemini-3.8-flash-tts",
             "gemini-3.8-flash-lite-tts",

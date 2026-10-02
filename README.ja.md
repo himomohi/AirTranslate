@@ -23,7 +23,7 @@
 
 AirTranslateはMacで再生中の音声を取り込み、ライブで文字起こしし、翻訳ワークフローを選んだ場合は翻訳し、必要に応じて他のアプリの上にフローティング字幕を表示します。Apple Modeは引き続きローカル優先の標準ワークフローです。クラウドエンジンは任意で、対応するプロバイダーキーを設定すると利用できます。
 
-AirTranslate **1.14.2/build1142** では、メインワークスペース右下のコントロールからプロバイダー別モデルを選択できます。モデル選択ではリアルタイム翻訳と原文文字起こしを分けています。Gemini TTSは別の翻訳音声項目で、テキスト翻訳でのみ使用します。リアルタイムプロバイダーは引き続き独自の音声を使用します。
+AirTranslate **1.15.0/build1150** は Microsoft Foundry の MAI-Transcribe-2-Streaming 原文字幕と OpenRouter の MAI-Voice-2.1 / MAI-Voice-2.1-Flash 翻訳音声を追加します。メイン画面または設定でモデルを選択してください。リアルタイムプロバイダーは引き続き独自の音声を使用します。
 
 設定 > APIキー > Qwenに **Alibaba CloudシンガポールのAPIキー** を入力してください。Qwen3.8 LiveTranslateにはワークスペースIDも必要ですが、Qwen Audio 3.1 Realtime PlusとFiletransはキーだけで利用できます。キーはmacOS Keychainの専用項目に保存し、キャプチャ開始時に選択したリアルタイム音声をAlibaba Cloudシンガポールへ直接送信します。設定 > 一般で既定の `qwen3.8-livetranslate-flash-realtime` または `qwen-audio-3.1-realtime-plus` を選べます。Qwen Audio 3.1 Realtime PlusはAirTranslateから翻訳指示を受ける全二重のリアルタイム音声会話モデルです。Qwen3.8 LiveTranslateは専用のリアルタイム翻訳モデルです。**音声出力は任意で、初期状態ではオフです**。Qwen Audioの料金はModel Studioで確認してください。
 
@@ -35,14 +35,14 @@ AirTranslate **1.14.2/build1142** では、メインワークスペース右下�
 
 **Qwenは停止前に最終字幕の受信を待ちます**。空の最終応答は暫定字幕を取り消し、定期保存を含むQwenの記録には確定結果だけを保存します。Apple Modeを標準とし、記録ファイル保存は任意のままです。
 
-**翻訳音声出力モデルを選択できます**。設定またはメイン画面の別の翻訳音声選択欄でAppleシステム音声、Gemini 3.8 Flash TTS、Flash-Lite TTSを選びます。リアルタイムモードでも選択は保存されますが、テキスト翻訳でのみ使用されます。リアルタイムプロバイダーは引き続き独自の音声を使用します。Gemini TTSは安定した翻訳テキストだけをGoogleへ送信します。
+**翻訳音声出力モデルを選択できます**。設定またはメイン画面の別の翻訳音声選択欄でAppleシステム音声、Gemini 3.8 Flash TTS、Flash-Lite TTS、MAI Voice 2.1、Flashを選びます。リアルタイムモードでも選択は保存されますが、テキスト翻訳でのみ使用されます。リアルタイムプロバイダーは引き続き独自の音声を使用します。Gemini TTSは安定した翻訳テキストだけをGoogleへ送信します。
 
 ## ダウンロード
 
-現在の公開最新版: **v1.14.1**。
+現在の公開最新版: **v1.15.0**。
 
 - [AirTranslate.dmgをダウンロード](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [AirTranslate-1.14.2.zipをダウンロード](https://github.com/himomohi/AirTranslate/releases/download/v1.14.2/AirTranslate-1.14.2.zip)
+- [AirTranslate-1.15.0.zipをダウンロード](https://github.com/himomohi/AirTranslate/releases/download/v1.15.0/AirTranslate-1.15.0.zip)
 - [AirTranslate.dmg.sha256をダウンロード](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [バージョン履歴を見る](Release/VERSION-HISTORY.md)
 
@@ -88,7 +88,7 @@ API連携エンジンは、**Settings > API Keys**でキーを設定すると利
 | OpenAI 音声 | 1つのプロバイダー内で翻訳または原文文字起こしを選びます。出力アイコンで `gpt-realtime-translate`・`gpt-live-transcribe` を切り替え、ツールチップでモデルと料金を確認できます。 | OpenAI |
 | Gemini Live | 文書化されたリアルタイム翻訳モデル、または音声言語を自動検出する原文文字起こしモデルを選択できます。 | Gemini |
 | Meta Scribe | AirTranslate翻訳の前段にある、話者ラベル付き多言語文字起こしです。 | Meta |
-| Azure MAI | 5秒のWAVチャンクをREST APIで順次文字起こしし、Apple Translationの字幕と組み合わせるプレビュー機能です。 | Azure Speechキーとエンドポイント |
+| Azure MAI | 5 秒 REST チャンクの MAI-Transcribe-2、または中間字幕付き MAI-Transcribe-2-Streaming と Apple 翻訳。 | リソースキーとエンドポイント。ストリーミングには Foundry デプロイ名も必要 |
 | Nari STT | Nari Qwen3-ASR原文文字起こしです。マイクまたはMac音声を使えます。 | Nari |
 | Grok STT | マイクまたはMac音声をGrok Voice Transcribe 2.0で原文に文字起こしします。 | SpaceXAI (xAI) |
 | Qwen LiveTranslate | Qwen3.8は専用のリアルタイム翻訳モデルです。Qwen Audio 3.1 Realtime PlusはAirTranslateから翻訳指示を受ける全二重音声会話モデルで、音声応答を返せます。 | Alibaba CloudシンガポールのAPIキー。Qwen3.8にはワークスペースIDも必要 |
@@ -109,9 +109,17 @@ Nariを新しく選択すると、Nariクレジットが必要なGA Fastモデ�
 
 標準・映画・講義・高コントラスト・明るい画面用の5つの文字スタイル、4種類のフォント、太さ・行間・影/縁取り・文字色・配置・行数・翻訳を上に表示する設定を用意しています。明暗のサンプル画面で実際の18–72ptサイズを確認し、録音せずにサンプル字幕を表示できます。幅と最前面表示は設定で変更します。既存の外観設定は復元しますが、以前の背景設定が残っていてもウインドウ背景は表示しません。
 
+## Microsoft MAI 音声 (1.15.0)
+
+Azure MAI で **MAI-Transcribe-2-Streaming** を選ぶと中間の原文字幕を表示します。API キー設定に Microsoft Foundry リソースのエンドポイント（`https://<resource>.services.ai.azure.com`）、同じリソースのキーとデプロイ名を入力してください。3 秒ごと、および一時停止・停止時に音声を確定し、確定テキストを Apple で翻訳します。従来の 5 秒単位の MAI-Transcribe-2 も選択できます。
+
+翻訳音声出力で **MAI-Voice-2.1** または **MAI-Voice-2.1-Flash** を選び、**OpenRouter** キーを保存してください。翻訳先の言語と公開音声一覧に合う音声を使用します。韓国語に対応していますが、日本語は現在対応していません。音声生成には翻訳テキストのみを送信し、プロバイダー利用料金は別途発生します。[設定案内](docs/microsoft-mai-audio.md)。
+
+Azure キャプチャの停止時は、制限時間内で最後の確定翻訳を待ちます。空の Azure 最終結果は、メイン画面とフローティング字幕の仮テキストを消去します。
+
 ## APIキー
 
-APIキー画面は、**OpenAI**、**Gemini**、**Meta**、**Azure**、**Nari**、**SpaceXAI (xAI)** · **Alibaba Cloud (Qwen)**を1つのプロバイダー一覧で管理します。各行には、設定/準備状態、プロバイダーアイコン、キー管理コンソールへのリンク、設定済みキーがプロバイダー権限の検証を意味しないことを説明する情報ポップオーバーが表示されます。
+APIキー画面は、**OpenAI**、**Gemini**、**Meta**、**Azure**、**Nari**、**SpaceXAI (xAI)** · **Alibaba Cloud (Qwen)** · **OpenRouter**を1つのプロバイダー一覧で管理します。各行には、設定/準備状態、プロバイダーアイコン、キー管理コンソールへのリンク、設定済みキーがプロバイダー権限の検証を意味しないことを説明する情報ポップオーバーが表示されます。
 
 キーはmacOS Keychainに保存されます。AirTranslateにはアカウントシステム、開発者運用の中継サーバー、ハードコードされたプロバイダーキーは含まれていません。
 

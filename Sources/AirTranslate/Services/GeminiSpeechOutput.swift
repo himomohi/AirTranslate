@@ -181,7 +181,7 @@ final class GeminiSpeechOutput: NSObject, AVAudioPlayerDelegate {
     }
 
     static func makeRequest(text: String, model: SpeechSynthesisModel, apiKey: String) throws -> URLRequest {
-        guard let modelID = model.apiModelID else {
+        guard model.isGeminiTTS, let modelID = model.apiModelID else {
             throw GeminiSpeechOutputError.invalidModel
         }
         guard !apiKey.isEmpty, apiKey.utf8.allSatisfy({ $0 >= 0x21 && $0 <= 0x7E }) else {
