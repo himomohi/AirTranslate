@@ -13,13 +13,21 @@ All notable changes to AirTranslate are documented in this file.
 
 ### Changed
 
-- Floating captions reuse bounded layouts, and the minimized main window avoids caption display work while transcription and translation continue.
+- Reading older captions pauses automatic scrolling. Returning to the latest captions resumes following, and the main window retains the reading position when minimized or hidden.
+- Current floating captions keep their position without repeated replacement fades. Bounded layout reuse and processing only the visible text reduce repeated formatting of long transcripts.
+- The minimized main window skips caption display work. Closing floating captions also stops their display timers and layout work while recognition and translation continue.
+- Main-window, menu-bar, and keyboard controls share capture availability and preparation, finishing, and reconnecting states. Caption display mode and font-size controls are shared across menus.
+- Apple transcription retains surrounding recognition context. Short, changing fragments wait for a quiet interval after the last text change, while complete phrases can proceed sooner; punctuation-only results do not trigger translation.
 - On macOS 27, Apple speech input adapts differing PCM formats while preserving the existing 16 kHz mono path.
 - Source builds now require Xcode 27, the macOS 27 SDK, and Swift 6.4 or later. The app's minimum runtime remains macOS 26.
 
 ### Fixed
 
-- Apple transcription uses surrounding recognition context and preserves final speech when stopping. Superseded translation work no longer overwrites newer captions.
+- Matching interim and final transcripts reuse the in-flight translation, and identical results are not applied twice.
+- Revised final text supersedes stale interim translation. Late results and errors from stopped sessions cannot overwrite a restarted session, while repeated phrases in distinct utterances keep their order.
+- Apple-finalized speech is retained when recognition advances to a new utterance, including when Apple confirms the previous segment without sending a separate final-text event. This avoids losing or duplicating the previous segment.
+- Reopening floating captions restores the latest available text without retranslating it. Corrected source text no longer leaves an outdated translation visible past its hold period, and interim text is not duplicated on reopening.
+- Closing floating captions automatically restores only the main windows minimized by floating-only mode, including when closed during minimization. Explicitly opening the main window brings it back to the foreground.
 
 ## 1.15.0 - 2026-10-02
 
