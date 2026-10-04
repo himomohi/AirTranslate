@@ -172,6 +172,7 @@ struct MAIVoiceSpeechOutputTests {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(name)
         defer { defaults.removePersistentDomain(forName: name); try? FileManager.default.removeItem(at: directory) }
         let session = TranslationSessionStore(modelAvailabilityProvider: { _, _ in [:] }, settingsDefaults: defaults, transcriptsDirectoryURL: directory)
+        session.setFloatingCaptionPresentationActive(true)
         session.sourceLanguage = .english
         session.targetLanguage = .korean
         session.useAzureMAIMode()

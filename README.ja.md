@@ -23,7 +23,16 @@
 
 AirTranslateはMacで再生中の音声を取り込み、ライブで文字起こしし、翻訳ワークフローを選んだ場合は翻訳し、必要に応じて他のアプリの上にフローティング字幕を表示します。Apple Modeは引き続きローカル優先の標準ワークフローです。クラウドエンジンは任意で、対応するプロバイダーキーを設定すると利用できます。
 
-AirTranslate **1.15.0/build1150** は Microsoft Foundry の MAI-Transcribe-2-Streaming 原文字幕と OpenRouter の MAI-Voice-2.1 / MAI-Voice-2.1-Flash 翻訳音声を追加します。メイン画面または設定でモデルを選択してください。リアルタイムプロバイダーは引き続き独自の音声を使用します。
+AirTranslate **1.16.0/build1160** は Apple 翻訳オプション、実験的な Jev 候補選択、キャプチャを開始するフローティング専用モードを追加します。
+
+- **フローティング専用の開始と操作:** 待機中はキャプチャを開始し、一時停止中は再開して、実行状態になってからメイン画面を最小化します。開始に失敗した場合はメイン操作画面を維持します。メニューバーとアプリメニューからも開始・停止、一時停止・再開できます。
+- **直前の字幕表示:** 現在の字幕とともに直前の字幕を1ブロック、最大2行で8秒間表示します。「視差効果を減らす」に対応します。
+- **フローティング字幕の描画:** サイズを制限したテキストレイアウトを再利用し、メイン画面の最小化中はメイン字幕の表示処理を減らします。音声認識と翻訳は継続します。
+- **Apple 文字起こしと翻訳の処理:** 周辺の認識文脈を利用し、停止時の最後の発話を保持して、古い翻訳処理による新しい字幕の上書きを防ぎます。
+- **実験的な Jev 候補選択:** 初期状態はオフです。Apple の文字起こしと翻訳を併用する際、確定した認識候補から翻訳するテキストを選べます。有効にすると、候補テキストと直前の最大6区間の文字起こし（1,000 UTF-8 バイト）を、Keychain に保存したユーザーのキーで TypeSafe に直接送信します。API 使用量と1リクエストあたり最大1.2秒の応答待機が加わります。候補なし・不確実・エラー・時間切れでは原文を保持し、精度向上は保証しません。[設定とデータ処理](docs/apple-translation-options.md)。
+- **Apple 翻訳品質と用語保持:** macOS 26.4 以降でリアルタイム（標準）または品質優先を選び、表記を保持する用語を登録できます。品質優先は時間がかかる場合があり、Apple のモデルの利用可否に依存します。失敗した言語ペアはアプリの再起動までリアルタイム翻訳に戻ります。登録用語が変更された場合、該当区間を原文のまま保持します。Apple のテキスト翻訳に適用されます。
+- **macOS 27 の音声入力互換性:** 既存の16 kHz モノラル経路を維持しつつ、異なる PCM 入力形式を Apple 音声認識に合わせて変換します。
+- **ソースのビルド要件:** macOS 27 SDK を含む Xcode 27 と Swift 6.4 以降が必要です。配布アプリは引き続き macOS 26 以降で動作します。
 
 設定 > APIキー > Qwenに **Alibaba CloudシンガポールのAPIキー** を入力してください。Qwen3.8 LiveTranslateにはワークスペースIDも必要ですが、Qwen Audio 3.1 Realtime PlusとFiletransはキーだけで利用できます。キーはmacOS Keychainの専用項目に保存し、キャプチャ開始時に選択したリアルタイム音声をAlibaba Cloudシンガポールへ直接送信します。設定 > 一般で既定の `qwen3.8-livetranslate-flash-realtime` または `qwen-audio-3.1-realtime-plus` を選べます。Qwen Audio 3.1 Realtime PlusはAirTranslateから翻訳指示を受ける全二重のリアルタイム音声会話モデルです。Qwen3.8 LiveTranslateは専用のリアルタイム翻訳モデルです。**音声出力は任意で、初期状態ではオフです**。Qwen Audioの料金はModel Studioで確認してください。
 
@@ -39,10 +48,10 @@ AirTranslate **1.15.0/build1150** は Microsoft Foundry の MAI-Transcribe-2-Str
 
 ## ダウンロード
 
-現在の公開最新版: **v1.15.0**。
+現在の公開最新版: **v1.16.0**。
 
 - [AirTranslate.dmgをダウンロード](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [AirTranslate-1.15.0.zipをダウンロード](https://github.com/himomohi/AirTranslate/releases/download/v1.15.0/AirTranslate-1.15.0.zip)
+- [AirTranslate-1.16.0.zipをダウンロード](https://github.com/himomohi/AirTranslate/releases/download/v1.16.0/AirTranslate-1.16.0.zip)
 - [AirTranslate.dmg.sha256をダウンロード](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [バージョン履歴を見る](Release/VERSION-HISTORY.md)
 
@@ -119,7 +128,7 @@ Azure キャプチャの停止時は、制限時間内で最後の確定翻訳�
 
 ## APIキー
 
-APIキー画面は、**OpenAI**、**Gemini**、**Meta**、**Azure**、**Nari**、**SpaceXAI (xAI)** · **Alibaba Cloud (Qwen)** · **OpenRouter**を1つのプロバイダー一覧で管理します。各行には、設定/準備状態、プロバイダーアイコン、キー管理コンソールへのリンク、設定済みキーがプロバイダー権限の検証を意味しないことを説明する情報ポップオーバーが表示されます。
+APIキー画面は、**OpenAI**、**Gemini**、**Meta**、**Azure**、**Nari**、**SpaceXAI (xAI)** · **Alibaba Cloud (Qwen)** · **OpenRouter** · **TypeSafe (Jev)**を1つのプロバイダー一覧で管理します。各行には、設定/準備状態、プロバイダーアイコン、キー管理コンソールへのリンク、設定済みキーがプロバイダー権限の検証を意味しないことを説明する情報ポップオーバーが表示されます。
 
 キーはmacOS Keychainに保存されます。AirTranslateにはアカウントシステム、開発者運用の中継サーバー、ハードコードされたプロバイダーキーは含まれていません。
 
@@ -135,7 +144,7 @@ GeminiキーはGemini Liveと任意のGemini翻訳音声出力で共有します
 ## 必要条件
 
 - macOS 26.0以降
-- ソースビルド用Swift 6.2以降
+- ソースビルド用Swift 6.4以降
 - システムオーディオ取り込みに対応したMac
 - Apple SpeechとApple Translationフレームワークが利用できる環境
 - 任意: OpenAI、Gemini、Meta、Azure Speech、Nari、xAI、Alibaba Cloudのプロバイダーキー

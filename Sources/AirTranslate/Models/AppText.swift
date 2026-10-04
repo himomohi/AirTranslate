@@ -73,6 +73,62 @@ enum AppText {
         japanese: "リスニングを開始",
         chineseSimplified: "开始聆听"
     )
+    static let preparingToListen = localized(
+        english: "Preparing to listen",
+        korean: "듣기 준비 중",
+        japanese: "リスニングを準備中",
+        chineseSimplified: "正在准备聆听"
+    )
+    static let finishingCapture = localized(
+        english: "Finishing…",
+        korean: "마무리 중…",
+        japanese: "終了処理中…",
+        chineseSimplified: "正在结束…"
+    )
+    static let jumpToLatestCaptions = localized(
+        english: "Jump to latest captions",
+        korean: "최신 자막으로 이동",
+        japanese: "最新の字幕へ移動",
+        chineseSimplified: "跳转到最新字幕"
+    )
+    static let followLatestCaptionsHint = localized(
+        english: "Show the latest captions and follow new captions as they arrive.",
+        korean: "최신 자막으로 이동하고 새 자막을 자동으로 따라갑니다.",
+        japanese: "最新の字幕を表示し、新しい字幕を自動的に追います。",
+        chineseSimplified: "显示最新字幕，并自动跟随新字幕。"
+    )
+    static let showCaptionsOnly = localized(
+        english: "Show captions only",
+        korean: "자막만 보기",
+        japanese: "字幕のみを表示",
+        chineseSimplified: "仅显示字幕"
+    )
+    static let showCaptionsOnlyDetail = localized(
+        english: "Start or resume listening, then minimize the main window and show floating captions.",
+        korean: "듣기를 시작하거나 재개한 뒤 메인 창을 최소화하고 플로팅 자막을 표시합니다.",
+        japanese: "リスニングを開始または再開してから、メインウインドウを最小化し、フローティング字幕を表示します。",
+        chineseSimplified: "开始或恢复聆听后，最小化主窗口并显示浮动字幕。"
+    )
+    static let floatingCaptionModeChoiceTitle = localized(
+        english: "Use floating captions only?",
+        korean: "플로팅 자막 전용으로 볼까요?",
+        japanese: "フローティング字幕のみで表示しますか？",
+        chineseSimplified: "仅使用浮动字幕吗？"
+    )
+    static let floatingCaptionModeChoiceDetail = localized(
+        english: "Captions only starts or resumes listening, then minimizes the main window. If listening cannot start, the main window stays open. Turn off floating captions to restore it.",
+        korean: "전용으로 보면 듣기를 시작하거나 재개한 뒤 메인 창을 최소화합니다. 시작하지 못하면 메인 창에서 원인을 확인할 수 있습니다. 플로팅 자막을 끄면 메인 창이 돌아옵니다.",
+        japanese: "字幕専用にするとリスニングを開始または再開し、メインウインドウを最小化します。開始できない場合はメインウインドウで原因を確認できます。字幕をオフにすると元に戻ります。",
+        chineseSimplified: "仅显示字幕会先开始或恢复聆听，再最小化主窗口。若无法开始，可在主窗口查看原因。关闭浮动字幕后将恢复主窗口。"
+    )
+    static let useFloatingCaptionsOnly = localized(
+        english: "Captions Only", korean: "전용으로 보기",
+        japanese: "字幕のみ", chineseSimplified: "仅显示字幕"
+    )
+    static let showCaptionsAlongsideMain = localized(
+        english: "Show Both Windows", korean: "함께 보기",
+        japanese: "両方を表示", chineseSimplified: "同时显示"
+    )
     static let permissionRequired = localized(
         english: "Permission required",
         korean: "권한이 필요합니다",
@@ -647,7 +703,16 @@ enum AppText {
     static let library = localized(english: "Library", korean: "저장소", japanese: "ライブラリ", chineseSimplified: "资料库")
     static let dubbing = localized(english: "Dubbing", korean: "더빙", japanese: "音声出力", chineseSimplified: "配音")
     static let voiceOutput = localized(english: "Voice Output", korean: "음성 출력", japanese: "音声出力", chineseSimplified: "语音输出")
-    static let menuBarTitle = localized(english: "Captions", korean: "자막")
+    static let menuBarTitle = localized(english: "Captions", korean: "자막", japanese: "字幕", chineseSimplified: "字幕")
+    static let captionDisplayMode = localized(
+        english: "Caption Mode", korean: "자막 모드", japanese: "字幕モード", chineseSimplified: "字幕模式"
+    )
+    static let makeCaptionTextSmaller = localized(
+        english: "Smaller Text", korean: "글자 작게", japanese: "文字を小さく", chineseSimplified: "缩小文字"
+    )
+    static let makeCaptionTextLarger = localized(
+        english: "Larger Text", korean: "글자 크게", japanese: "文字を大きく", chineseSimplified: "放大文字"
+    )
     static let menuBarRunningTitle = localized(english: "Live", korean: "기록 중")
     static let menuBarPausedTitle = localized(english: "Paused", korean: "일시정지")
     static let floatingCaptions = localized(english: "Floating Captions", korean: "플로팅 자막")
@@ -666,7 +731,9 @@ enum AppText {
         japanese: "フローティング字幕を隠す",
         chineseSimplified: "隐藏悬浮字幕"
     )
-    static let openMainWindow = localized(english: "Open Main Window", korean: "메인 창 열기")
+    static let openMainWindow = localized(
+        english: "Open Main Window", korean: "메인 창 열기", japanese: "メインウインドウを開く", chineseSimplified: "打开主窗口"
+    )
     static let openAirTranslate = localized(
         english: "Open AirTranslate",
         korean: "AirTranslate 열기",

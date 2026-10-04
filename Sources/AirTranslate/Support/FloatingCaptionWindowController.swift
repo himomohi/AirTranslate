@@ -14,8 +14,28 @@ final class FloatingCaptionWindowController: NSObject, NSWindowDelegate {
     }
 
     static func open(session: TranslationSessionStore, preview: Bool = false) {
+        cancelPendingExclusiveStart()
         session.isPreviewingFloatingCaptions = preview && !session.isRunning && !session.isStarting
         shared.open(session: session)
+    }
+
+    static func openExclusive(session: TranslationSessionStore, showMainWindow: @escaping @MainActor () -> Void) {
+        guard session.captureControlState.phase != .finishing else { return }
+        open(session: session)
+        let coordinator = FloatingCaptionStartCoordinator(
+            phase: { session.captureControlState.phase },
+            start: { session.start() },
+            resume: { session.resume() },
+            minimizeMainWindows: { MainCaptionWindowObserver.minimizeMainWindowsForFloatingCaptions() },
+            showMainWindows: showMainWindow
+        )
+        shared.exclusiveStartCoordinator = coordinator
+        coordinator.begin()
+    }
+
+    static func cancelPendingExclusiveStart() {
+        shared.exclusiveStartCoordinator?.cancel()
+        shared.exclusiveStartCoordinator = nil
     }
 
     static func close() {
@@ -45,11 +65,20 @@ final class FloatingCaptionWindowController: NSObject, NSWindowDelegate {
 
     private var window: NSPanel?
     private weak var currentSession: TranslationSessionStore?
+    private var exclusiveStartCoordinator: FloatingCaptionStartCoordinator?
 
     private func open(session: TranslationSessionStore) {
+        if let previousSession = currentSession, previousSession !== session {
+            previousSession.setFloatingCaptionPresentationActive(false)
+            window?.contentView = nil
+        }
         currentSession = session
+        session.setFloatingCaptionPresentationActive(true)
         let isFirstOpen = window == nil
         let panel = window ?? makeWindow(session: session)
+        if panel.contentView == nil {
+            panel.contentView = NSHostingView(rootView: FloatingCaptionWindowView(session: session))
+        }
         configure(panel, session: session)
         let screenFrames = NSScreen.screens.map(\.visibleFrame)
         let needsPlacement = isFirstOpen || !Self.frameIsReasonablyVisible(panel.frame, within: screenFrames)
@@ -62,16 +91,24 @@ final class FloatingCaptionWindowController: NSObject, NSWindowDelegate {
     }
 
     private func close() {
+        Self.cancelPendingExclusiveStart()
         currentSession?.isPreviewingFloatingCaptions = false
+        currentSession?.setFloatingCaptionPresentationActive(false)
+        MainCaptionWindowObserver.restoreMainWindowsAfterFloatingCaptions()
         guard let panel = window else { return }
         persistFrame(of: panel)
         panel.orderOut(nil)
+        // 닫힌 패널의 SwiftUI 관찰·레이아웃·자막 애니메이션을 함께 해제한다.
+        panel.contentView = nil
         notifyVisibilityChanged()
     }
 
     func windowWillClose(_ notification: Notification) {
         guard notification.object as? NSWindow === window else { return }
+        Self.cancelPendingExclusiveStart()
         currentSession?.isPreviewingFloatingCaptions = false
+        currentSession?.setFloatingCaptionPresentationActive(false)
+        MainCaptionWindowObserver.restoreMainWindowsAfterFloatingCaptions()
         if let panel = window {
             persistFrame(of: panel)
         }

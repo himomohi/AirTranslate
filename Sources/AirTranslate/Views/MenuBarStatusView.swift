@@ -2,9 +2,8 @@ import SwiftUI
 
 struct MenuBarStatusView: View {
     @Bindable var session: TranslationSessionStore
-    @Environment(\.openWindow) private var openWindow
+    let openWindow: OpenWindowAction
     @Environment(\.openSettings) private var openSettings
-    @State private var isFloatingCaptionVisible = FloatingCaptionWindowController.isOpen
 
     var body: some View {
         VStack(alignment: .leading, spacing: AirTranslateDesign.Spacing.sm) {
@@ -22,12 +21,6 @@ struct MenuBarStatusView: View {
         .frame(width: 350)
         .tint(AirTranslateDesign.Palette.accent)
         .background(.regularMaterial)
-        .onAppear {
-            syncFloatingCaptionVisibility()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: FloatingCaptionWindowController.visibilityDidChangeNotification)) { _ in
-            syncFloatingCaptionVisibility()
-        }
     }
 
     private var header: some View {
@@ -77,12 +70,13 @@ struct MenuBarStatusView: View {
                 )
             }
             .buttonStyle(AirTranslatePressButtonStyle())
+            .disabled(!session.captureControlState.canToggleCapture)
             .help(capturePhase.actionTitle)
             .accessibilityLabel(capturePhase.actionTitle)
             .accessibilityValue(capturePhase.actionSubtitle(statusMessage: session.statusMessage))
 
             Button {
-                toggleFloatingCaptions()
+                CaptionControlActions.toggleVisibility(session: session, using: openWindow)
             } label: {
                 IconPanelButtonLabel(
                     systemImage: isFloatingCaptionVisible ? "captions.bubble.fill" : "captions.bubble",
@@ -100,12 +94,26 @@ struct MenuBarStatusView: View {
             .accessibilityValue(isFloatingCaptionVisible ? AppText.floatingCaptionPowerOn : AppText.floatingCaptionPowerOff)
 
             Button {
-                openWindow(id: AirTranslateWindowID.main)
-                NSApp.activate(ignoringOtherApps: true)
+                CaptionControlActions.showCaptionsOnly(session: session, using: openWindow)
+            } label: {
+                IconPanelButtonLabel(
+                    systemImage: "captions.bubble",
+                    title: AppText.showCaptionsOnly,
+                    subtitle: AppText.showCaptionsOnlyDetail,
+                    tint: AirTranslateDesign.Palette.accent
+                )
+            }
+            .buttonStyle(AirTranslatePressButtonStyle())
+            .accessibilityLabel(AppText.showCaptionsOnly)
+            .accessibilityHint(AppText.showCaptionsOnlyDetail)
+            .disabled(session.captureControlState.phase == .finishing)
+
+            Button {
+                CaptionControlActions.showMainWindow(using: openWindow)
             } label: {
                 IconPanelButtonLabel(
                     systemImage: "macwindow",
-                    title: AppText.openAirTranslate,
+                    title: AppText.openMainWindow,
                     subtitle: AppText.mainWindow,
                     tint: AirTranslateDesign.Palette.textSecondary
                 )
@@ -120,12 +128,13 @@ struct MenuBarStatusView: View {
                     IconPanelButtonLabel(
                         systemImage: session.isPaused ? "play.fill" : "pause.fill",
                         title: session.isPaused ? AppText.resume : AppText.pause,
-                        subtitle: session.isPaused ? AppText.paused : AppText.menuBarRunningTitle,
+                        subtitle: capturePhase.actionSubtitle(statusMessage: session.statusMessage),
                         tint: session.isPaused ? AirTranslateDesign.Palette.accent : AirTranslateDesign.Palette.paused,
                         isSelected: session.isPaused
                     )
                 }
                 .buttonStyle(AirTranslatePressButtonStyle())
+                .disabled(!session.captureControlState.canTogglePause)
             }
         }
         .padding(AirTranslateDesign.Spacing.xs)
@@ -136,26 +145,12 @@ struct MenuBarStatusView: View {
         VStack(alignment: .leading, spacing: AirTranslateDesign.Spacing.xs) {
             ControlSectionHeader(
                 systemImage: "rectangle.split.2x1",
-                title: AppText.floatingDisplay
+                title: AppText.captionDisplayMode
             )
 
-            HStack(spacing: 8) {
-                ForEach(session.availableFloatingCaptionDisplayModes) { mode in
-                    Button {
-                        session.floatingCaptionDisplayMode = mode
-                    } label: {
-                        IconChoiceLabel(
-                            systemImage: mode.systemImage,
-                            title: compactDisplayTitle(for: mode),
-                            isSelected: session.floatingCaptionDisplayMode == mode
-                        )
-                    }
-                    .buttonStyle(AirTranslatePressButtonStyle())
-                    .help(mode.title)
-                    .accessibilityLabel(mode.title)
-                    .accessibilityValue(session.floatingCaptionDisplayMode == mode ? AppText.selected : "")
-                }
-            }
+            CaptionDisplayModePicker(session: session)
+                .pickerStyle(.segmented)
+                .labelsHidden()
         }
         .padding(AirTranslateDesign.Spacing.sm)
         .airRaisedSurface()
@@ -167,6 +162,12 @@ struct MenuBarStatusView: View {
                 systemImage: "slider.horizontal.3",
                 title: AppText.captionStyle
             )
+
+            HStack(spacing: 8) {
+                CaptionTextSizeButtons(session: session)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
 
             HStack(spacing: 8) {
                 Menu {
@@ -228,8 +229,7 @@ struct MenuBarStatusView: View {
     private var appControls: some View {
         HStack(spacing: 12) {
             Button {
-                NSApp.activate(ignoringOtherApps: true)
-                openSettings()
+                CaptionControlActions.showSettings(using: openSettings)
             } label: {
                 AirChip(
                     text: AppText.settings,
@@ -260,8 +260,10 @@ struct MenuBarStatusView: View {
         switch capturePhase {
         case .idle:
             "captions.bubble.fill"
-        case .starting:
+        case .starting, .finishing:
             "hourglass.circle.fill"
+        case .reconnecting:
+            "arrow.triangle.2.circlepath"
         case .running:
             "waveform.circle.fill"
         case .paused:
@@ -273,7 +275,7 @@ struct MenuBarStatusView: View {
         switch capturePhase {
         case .idle:
             AirTranslateDesign.Palette.textSecondary
-        case .starting, .paused:
+        case .starting, .paused, .finishing, .reconnecting:
             AirTranslateDesign.Palette.paused
         case .running:
             AirTranslateDesign.Palette.live
@@ -284,7 +286,7 @@ struct MenuBarStatusView: View {
         switch capturePhase {
         case .idle:
             AirTranslateDesign.Palette.raisedHover
-        case .starting, .paused:
+        case .starting, .paused, .finishing, .reconnecting:
             AirTranslateDesign.Palette.pausedSoft
         case .running:
             AirTranslateDesign.Palette.liveSoft
@@ -292,25 +294,20 @@ struct MenuBarStatusView: View {
     }
 
     private var capturePhase: MenuBarCapturePhase {
-        MenuBarCapturePhase(
-            isRunning: session.isRunning,
-            isStarting: session.isStarting,
-            isPaused: session.isPaused
-        )
+        session.captureControlState.phase
     }
 
     private var captureActionColor: Color {
         switch capturePhase {
         case .idle:
             AirTranslateDesign.Palette.accent
-        case .starting, .running, .paused:
+        case .starting, .running, .paused, .finishing, .reconnecting:
             AirTranslateDesign.Palette.danger
         }
     }
 
-    private func toggleFloatingCaptions() {
-        FloatingCaptionWindowController.toggle(session: session)
-        syncFloatingCaptionVisibility()
+    private var isFloatingCaptionVisible: Bool {
+        session.isFloatingCaptionPresentationActive
     }
 
     private func toggleCapture() {
@@ -320,21 +317,6 @@ struct MenuBarStatusView: View {
             session.start()
         }
     }
-
-    private func syncFloatingCaptionVisibility() {
-        isFloatingCaptionVisible = FloatingCaptionWindowController.isOpen
-    }
-
-    private func compactDisplayTitle(for mode: FloatingCaptionDisplayMode) -> String {
-        switch mode {
-        case .original:
-            AppText.originalOnly
-        case .originalAndTranslation:
-            AppText.both
-        case .translation:
-            AppText.translationOnly
-        }
-    }
 }
 
 enum MenuBarCapturePhase: Equatable {
@@ -342,12 +324,26 @@ enum MenuBarCapturePhase: Equatable {
     case starting
     case running
     case paused
+    case finishing
+    case reconnecting
 
-    init(isRunning: Bool, isStarting: Bool, isPaused: Bool) {
+    init(
+        isRunning: Bool,
+        isStarting: Bool,
+        isPaused: Bool,
+        isFinishing: Bool = false,
+        isReconnecting: Bool = false
+    ) {
         if isStarting {
             self = .starting
         } else if isRunning {
-            self = isPaused ? .paused : .running
+            if isFinishing {
+                self = .finishing
+            } else if isReconnecting {
+                self = .reconnecting
+            } else {
+                self = isPaused ? .paused : .running
+            }
         } else {
             self = .idle
         }
@@ -357,10 +353,12 @@ enum MenuBarCapturePhase: Equatable {
         switch self {
         case .idle:
             "play.fill"
-        case .starting:
+        case .starting, .reconnecting:
             "xmark"
         case .running, .paused:
             "stop.fill"
+        case .finishing:
+            "hourglass"
         }
     }
 
@@ -368,10 +366,12 @@ enum MenuBarCapturePhase: Equatable {
         switch self {
         case .idle:
             AppText.start
-        case .starting:
+        case .starting, .reconnecting:
             AppText.cancel
         case .running, .paused:
             AppText.stop
+        case .finishing:
+            AppText.finishingCapture
         }
     }
 
@@ -379,13 +379,17 @@ enum MenuBarCapturePhase: Equatable {
         switch self {
         case .idle:
             AppText.ready
-        case .starting:
+        case .starting, .finishing, .reconnecting:
             statusMessage
         case .running:
             AppText.menuBarRunningTitle
         case .paused:
             AppText.paused
         }
+    }
+
+    var showsProgress: Bool {
+        self == .starting || self == .finishing || self == .reconnecting
     }
 }
 
@@ -440,30 +444,6 @@ private struct IconPanelButtonLabel: View {
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity, minHeight: 38)
         .airTranslateInteractiveSurface(isSelected: isSelected, tint: tint)
-        .contentShape(RoundedRectangle(cornerRadius: AirTranslateDesign.controlRadius, style: .continuous))
-    }
-}
-
-private struct IconChoiceLabel: View {
-    let systemImage: String
-    let title: String
-    let isSelected: Bool
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: systemImage)
-                .font(.system(size: AirTranslateDesign.iconSmall, weight: .semibold))
-
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
-        }
-        .foregroundStyle(isSelected ? AirTranslateDesign.Palette.accent : AirTranslateDesign.Palette.textPrimary)
-        .padding(.horizontal, 7)
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, minHeight: 34)
-        .airTranslateInteractiveSurface(isSelected: isSelected)
         .contentShape(RoundedRectangle(cornerRadius: AirTranslateDesign.controlRadius, style: .continuous))
     }
 }

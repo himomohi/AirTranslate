@@ -4,8 +4,11 @@ struct ContentView: View {
     @Bindable var session: TranslationSessionStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
     @State private var isLibraryPresented = false
     @State private var isFloatingCaptionVisible = FloatingCaptionWindowController.isOpen
+    @State private var isMainCaptionVisible = false
+    @State private var captionViewport = CaptionFeedViewportState()
 
     var body: some View {
         GeometryReader { geometry in
@@ -13,36 +16,45 @@ struct ContentView: View {
                 AirTranslateDesign.Palette.canvas
                     .ignoresSafeArea()
 
-                VStack(spacing: 0) {
-                    StageHeaderView(session: session)
-                    CaptionBoardView(session: session)
-                }
-
-                VStack(spacing: AirTranslateDesign.Spacing.xs) {
-                    if let failureMessage = session.captureStartFailureMessage {
-                        CaptureStartFailureView(
-                            message: failureMessage,
-                            recoveryAction: session.captureStartRecoveryAction,
-                            recover: recoverFromCaptureStartFailure,
-                            dismiss: session.dismissCaptureStartFailure
-                        )
-                        .transition(.move(edge: .top).combined(with: .opacity))
+                if isMainCaptionVisible {
+                    VStack(spacing: 0) {
+                        StageHeaderView(session: session)
+                        CaptionBoardView(session: session, viewportState: $captionViewport)
                     }
 
-                    if let toastMessage = session.toastMessage {
-                        ToastMessageView(message: toastMessage)
+                    VStack(spacing: AirTranslateDesign.Spacing.xs) {
+                        if let failureMessage = session.captureStartFailureMessage {
+                            CaptureStartFailureView(
+                                message: failureMessage,
+                                recoveryAction: session.captureStartRecoveryAction,
+                                recover: recoverFromCaptureStartFailure,
+                                dismiss: session.dismissCaptureStartFailure
+                            )
                             .transition(.move(edge: .top).combined(with: .opacity))
+                        }
+
+                        if let toastMessage = session.toastMessage {
+                            ToastMessageView(message: toastMessage)
+                                .transition(.move(edge: .top).combined(with: .opacity))
+                        }
                     }
+                    .padding(.top, AirTranslateDesign.Spacing.sm)
+                    .padding(.horizontal, AirTranslateDesign.Spacing.lg)
                 }
-                .padding(.top, AirTranslateDesign.Spacing.sm)
-                .padding(.horizontal, AirTranslateDesign.Spacing.lg)
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                ConsoleBarView(session: session, isCompact: geometry.size.width < 1040)
-                    .padding(.horizontal, AirTranslateDesign.Spacing.lg)
-                    .padding(.top, AirTranslateDesign.Spacing.sm)
-                    .padding(.bottom, AirTranslateDesign.Spacing.md)
+                if isMainCaptionVisible {
+                    ConsoleBarView(session: session, isCompact: geometry.size.width < 1040)
+                        .padding(.horizontal, AirTranslateDesign.Spacing.lg)
+                        .padding(.top, AirTranslateDesign.Spacing.sm)
+                        .padding(.bottom, AirTranslateDesign.Spacing.md)
+                }
             }
+        }
+        .background {
+            MainCaptionWindowObserver(isCaptionVisible: $isMainCaptionVisible)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
@@ -87,6 +99,12 @@ struct ContentView: View {
         }
         .animation(reduceMotion ? nil : AirTranslateDesign.Motion.state, value: session.toastSequence)
         .animation(reduceMotion ? nil : AirTranslateDesign.Motion.enter, value: session.toastMessage)
+        .onChange(of: session.captureControlState.phase) { oldPhase, newPhase in
+            // 시작 실패 배너의 알림과 중복하지 않고 준비·전환의 진입/완료만 알린다.
+            guard isMainCaptionVisible, session.captureStartFailureMessage == nil,
+                  oldPhase.showsProgress || newPhase.showsProgress else { return }
+            AccessibilityNotification.Announcement(session.statusMessage).post()
+        }
         .confirmationDialog(
             AppText.autoDetectionLanguageChangeTitle,
             isPresented: autoDetectionLanguageChangeBinding,
@@ -128,7 +146,7 @@ struct ContentView: View {
     }
 
     private func toggleFloatingCaptions() {
-        FloatingCaptionWindowController.toggle(session: session)
+        CaptionControlActions.toggleVisibility(session: session, using: openWindow)
         syncFloatingCaptionVisibility()
     }
 

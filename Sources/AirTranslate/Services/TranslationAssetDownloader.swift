@@ -8,6 +8,13 @@ final class TranslationAssetDownloader {
         let id = UUID()
         let source: LanguageOption
         let target: LanguageOption
+        let quality: AppleTranslationQuality
+
+        init(source: LanguageOption, target: LanguageOption, quality: AppleTranslationQuality = .realtime) {
+            self.source = source
+            self.target = target
+            self.quality = quality
+        }
     }
 
     typealias Completion = @MainActor (Result<Void, Error>) -> Void
@@ -27,11 +34,13 @@ final class TranslationAssetDownloader {
         self.present = present
     }
 
-    func download(source: LanguageOption, target: LanguageOption) async throws {
+    func download(
+        source: LanguageOption, target: LanguageOption, quality: AppleTranslationQuality = .realtime
+    ) async throws {
         try Task.checkCancellation()
         // 호출 측에서도 중복을 막지만, 이미 진행 중인 승인 창을 교체하지 않는다.
         guard request == nil else { throw CancellationError() }
-        let request = Request(source: source, target: target)
+        let request = Request(source: source, target: target, quality: quality)
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 guard !Task.isCancelled else {
@@ -65,18 +74,28 @@ final class TranslationAssetDownloader {
     static func waitUntilInstalled(
         source: LanguageOption,
         target: LanguageOption,
+        quality: AppleTranslationQuality = .realtime,
         isCancelled: @MainActor () -> Bool,
-        status: @MainActor (LanguageOption, LanguageOption) async -> LanguageAvailability.Status = { source, target in
-            await LanguageAvailability().status(
-                from: Locale.Language(identifier: source.id), to: Locale.Language(identifier: target.id)
-            )
-        },
+        status: (@MainActor (LanguageOption, LanguageOption) async -> LanguageAvailability.Status)? = nil,
         wait: @MainActor () async throws -> Void = { try await Task.sleep(for: .milliseconds(500)) }
     ) async throws {
+        let availability: LanguageAvailability
+        if #available(macOS 26.4, *) {
+            availability = LanguageAvailability(preferredStrategy: quality.strategy)
+        } else {
+            availability = LanguageAvailability()
+        }
         while true {
             try Task.checkCancellation()
             guard !isCancelled() else { throw CancellationError() }
-            let currentStatus = await status(source, target)
+            let currentStatus: LanguageAvailability.Status
+            if let status {
+                currentStatus = await status(source, target)
+            } else {
+                currentStatus = await availability.status(
+                    from: Locale.Language(identifier: source.id), to: Locale.Language(identifier: target.id)
+                )
+            }
             try Task.checkCancellation()
             guard !isCancelled() else { throw CancellationError() }
             switch currentStatus {

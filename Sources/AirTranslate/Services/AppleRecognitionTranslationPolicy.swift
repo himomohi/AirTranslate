@@ -25,7 +25,7 @@ struct AppleRecognitionTranslationPolicy: Sendable {
 
     struct PendingSmallPartial: Equatable, Sendable {
         let sourceText: String
-        let firstSeenAt: Date
+        let lastChangedAt: Date
     }
 
     enum Decision: Equatable, Sendable {
@@ -55,6 +55,14 @@ struct AppleRecognitionTranslationPolicy: Sendable {
 
         guard !isStaleRecognition(metadata, state: state) else {
             return .ignoreStale
+        }
+
+        // 잡음에서 나온 구두점은 번역하지 않되 확정 범위의 중복 방지는 유지한다.
+        guard Self.hasTranslatableContent(trimmedSourceText) else {
+            state.pendingSmallPartialBySegmentID[identity.segmentKey] = nil
+            if metadata?.isFinal == true { markFinal(metadata, state: &state) }
+            pruneTrackedSegments(state: &state)
+            return .unchanged
         }
 
         if metadata?.isFinal == true {
@@ -103,7 +111,7 @@ struct AppleRecognitionTranslationPolicy: Sendable {
             return .unchanged
         }
 
-        let dueAt = pending.firstSeenAt.addingTimeInterval(smallPartialSilenceFallback)
+        let dueAt = pending.lastChangedAt.addingTimeInterval(smallPartialSilenceFallback)
         guard now >= dueAt else {
             return .hold(until: dueAt)
         }
@@ -143,11 +151,13 @@ struct AppleRecognitionTranslationPolicy: Sendable {
         state: inout State
     ) -> Decision {
         if let pending = state.pendingSmallPartialBySegmentID[identity.segmentKey] {
+            // 같은 문자열로 타이머가 재진입할 때는 마감을 밀지 않는다.
+            let lastChangedAt = pending.sourceText == sourceText ? pending.lastChangedAt : now
             state.pendingSmallPartialBySegmentID[identity.segmentKey] = PendingSmallPartial(
                 sourceText: sourceText,
-                firstSeenAt: pending.firstSeenAt
+                lastChangedAt: lastChangedAt
             )
-            let dueAt = pending.firstSeenAt.addingTimeInterval(smallPartialSilenceFallback)
+            let dueAt = lastChangedAt.addingTimeInterval(smallPartialSilenceFallback)
             guard now >= dueAt else {
                 return .hold(until: dueAt)
             }
@@ -160,7 +170,7 @@ struct AppleRecognitionTranslationPolicy: Sendable {
         let dueAt = now.addingTimeInterval(smallPartialSilenceFallback)
         state.pendingSmallPartialBySegmentID[identity.segmentKey] = PendingSmallPartial(
             sourceText: sourceText,
-            firstSeenAt: now
+            lastChangedAt: now
         )
         pruneTrackedSegments(state: &state)
         return .hold(until: dueAt)
@@ -216,11 +226,21 @@ struct AppleRecognitionTranslationPolicy: Sendable {
 
     private func isSmallPartial(_ sourceText: String) -> Bool {
         let tokens = sourceText.split(whereSeparator: { $0.isWhitespace || $0.isNewline })
+        let hasLatinLetter = sourceText.unicodeScalars.contains {
+            (0x41...0x5A).contains($0.value) || (0x61...0x7A).contains($0.value)
+        }
+        if tokens.count <= 4, hasLatinLetter,
+           sourceText.filter({ !$0.isWhitespace }).count <= 12 {
+            return true
+        }
         if tokens.count <= 1 {
-            let isSingleLatinWord = sourceText.unicodeScalars.contains { (0x41...0x5A).contains($0.value) || (0x61...0x7A).contains($0.value) }
-            return sourceText.count <= 3 || isShortCJK(sourceText) || (isSingleLatinWord && sourceText.count <= 12)
+            return sourceText.count <= 3 || isShortCJK(sourceText)
         }
         return false
+    }
+
+    static func hasTranslatableContent(_ text: String) -> Bool {
+        text.unicodeScalars.contains { CharacterSet.alphanumerics.contains($0) }
     }
 
     private func isShortCJK(_ sourceText: String) -> Bool {

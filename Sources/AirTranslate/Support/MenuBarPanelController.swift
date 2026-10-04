@@ -19,10 +19,13 @@ final class MenuBarPanelController: NSObject {
         popover.contentViewController = hostingController
     }
 
-    func install(session: TranslationSessionStore) {
+    func install(session: TranslationSessionStore, openWindow: OpenWindowAction) {
         if self.session !== session {
             self.session = session
-            hostingController.rootView = AnyView(MenuBarStatusView(session: session))
+            // AppKit이 호스팅하는 상태바 패널에도 실제 Scene의 창 열기 동작을 전달한다.
+            hostingController.rootView = AnyView(
+                MenuBarStatusView(session: session, openWindow: openWindow)
+            )
         }
         ensureStatusItem()
         updateStatusButton(using: session)

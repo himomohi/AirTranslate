@@ -3,9 +3,10 @@ import SwiftUI
 
 struct CaptionBoardView: View {
     @Bindable var session: TranslationSessionStore
+    @Binding var viewportState: CaptionFeedViewportState
 
     var body: some View {
-        CaptionTranscriptFeed(session: session)
+        CaptionTranscriptFeed(session: session, viewportState: $viewportState)
             .frame(maxWidth: 928, maxHeight: .infinity)
             .padding(.horizontal, AirTranslateDesign.Spacing.lg)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -16,9 +17,21 @@ private struct CaptionTranscriptFeed: View {
     private static let stageVisibleLineLimit = 12
 
     @Bindable var session: TranslationSessionStore
+    @Binding var viewportState: CaptionFeedViewportState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var longSessionAutoScrollTask: Task<Void, Never>?
-    @State private var isFollowingLatest = true
+    @State private var scrollPosition = ScrollPosition(idType: UUID.self)
+    @State private var lineFrames: [UUID: CGRect] = [:]
+    @State private var scrollMetrics: CaptionFeedScrollMetrics?
+    @State private var restorationAnchor: CaptionFeedReadingAnchor?
+    @State private var initialScrollAnchor: UnitPoint
+
+    init(session: TranslationSessionStore, viewportState: Binding<CaptionFeedViewportState>) {
+        self.session = session
+        _viewportState = viewportState
+        _restorationAnchor = State(initialValue: viewportState.wrappedValue.restorationAnchor)
+        _initialScrollAnchor = State(initialValue: viewportState.wrappedValue.followState.isFollowingLatest ? .bottom : .top)
+    }
 
     private struct LatestLineKey: Equatable {
         let id: UUID
@@ -54,7 +67,7 @@ private struct CaptionTranscriptFeed: View {
 
     private var transcriptScrollView: some View {
         GeometryReader { viewport in
-            ScrollViewReader { proxy in
+            Group {
                 ScrollView {
                     VStack(alignment: .leading, spacing: AirTranslateDesign.Spacing.xs) {
                         if session.shouldShowTranscript && session.lines.isEmpty {
@@ -74,37 +87,82 @@ private struct CaptionTranscriptFeed: View {
                             )
                             .equatable()
                             .id(line.id)
+                            .background {
+                                GeometryReader { lineGeometry in
+                                    Color.clear.preference(
+                                        key: CaptionFeedLineFramesKey.self,
+                                        value: [line.id: lineGeometry.frame(in: .named("captionFeedContent"))]
+                                    )
+                                }
+                            }
                             .transition(.opacity)
                         }
                     }
                     .padding(.vertical, AirTranslateDesign.Spacing.lg)
                     .frame(minHeight: viewport.size.height, alignment: .bottom)
-                    .background {
-                        GeometryReader { bottomProxy in
-                            AirTranslateDesign.Palette.transparent
-                                .preference(
-                                    key: CaptionFeedBottomOffsetKey.self,
-                                    value: bottomProxy.frame(in: .named("captionFeed")).maxY
-                                )
-                        }
+                    .coordinateSpace(name: "captionFeedContent")
+                }
+                .defaultScrollAnchor(initialScrollAnchor)
+                .scrollPosition($scrollPosition)
+                .onPreferenceChange(CaptionFeedLineFramesKey.self) { frames in
+                    guard !frames.isEmpty else { return }
+                    lineFrames = frames
+                    restoreOrRecordReadingPosition()
+                }
+                .onScrollGeometryChange(for: CaptionFeedScrollMetrics.self) { geometry in
+                    CaptionFeedScrollMetrics(
+                        offsetY: geometry.contentOffset.y,
+                        minimumY: -geometry.contentInsets.top,
+                        maximumY: max(-geometry.contentInsets.top,
+                                      geometry.contentSize.height - geometry.containerSize.height + geometry.contentInsets.bottom)
+                    )
+                } action: { _, metrics in
+                    scrollMetrics = metrics
+                    restoreOrRecordReadingPosition()
+                }
+                .onScrollPhaseChange { _, phase in
+                    switch phase {
+                    case .tracking, .interacting, .decelerating:
+                        restorationAnchor = nil
+                        viewportState.followState.setUserScrolling(true)
+                        restoreOrRecordReadingPosition()
+                        longSessionAutoScrollTask?.cancel()
+                        longSessionAutoScrollTask = nil
+                    case .idle:
+                        viewportState.followState.setUserScrolling(false)
+                    case .animating:
+                        break
                     }
                 }
-                .coordinateSpace(name: "captionFeed")
-                .defaultScrollAnchor(.bottom)
-                .onPreferenceChange(CaptionFeedBottomOffsetKey.self) { bottomOffset in
-                    isFollowingLatest = bottomOffset <= viewport.size.height + 48
-                }
                 .onChange(of: latestLineKey) { oldValue, newValue in
-                    guard let newValue, isFollowingLatest else { return }
+                    guard let newValue, viewportState.followState.shouldFollowUpdates else { return }
 
                     if newValue.id != oldValue?.id {
                         longSessionAutoScrollTask?.cancel()
                         longSessionAutoScrollTask = nil
                         withAnimation(reduceMotion ? nil : AirTranslateDesign.Motion.enter) {
-                            proxy.scrollTo(newValue.id, anchor: .bottom)
+                            scrollPosition.scrollTo(edge: .bottom)
                         }
                     } else {
-                        scrollToLatestRevision(newValue.id, proxy: proxy)
+                        scrollToLatestRevision()
+                    }
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    if !viewportState.followState.isFollowingLatest, !session.lines.isEmpty {
+                        Button {
+                            longSessionAutoScrollTask?.cancel()
+                            longSessionAutoScrollTask = nil
+                            restorationAnchor = nil
+                            viewportState.returnToLatest()
+                            scrollPosition.scrollTo(edge: .bottom)
+                        } label: {
+                            Label(AppText.jumpToLatestCaptions, systemImage: "arrow.down.to.line")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .airFocusRing(cornerRadius: AirTranslateDesign.Radius.control)
+                        .accessibilityHint(AppText.followLatestCaptionsHint)
+                        .padding(AirTranslateDesign.Spacing.md)
                     }
                 }
             }
@@ -114,30 +172,131 @@ private struct CaptionTranscriptFeed: View {
         .onDisappear {
             longSessionAutoScrollTask?.cancel()
             longSessionAutoScrollTask = nil
+            viewportState.followState.suspendInteraction()
         }
     }
 
-    private func scrollToLatestRevision(_ id: UUID, proxy: ScrollViewProxy) {
+    private func restoreOrRecordReadingPosition() {
+        guard let scrollMetrics else { return }
+        if scrollPosition.isPositionedByUser {
+            restorationAnchor = nil
+        }
+        if let restorationAnchor {
+            // 초기 레이아웃과 본문 첫 표시로 높이가 달라져도 저장한 읽기 위치를 기준으로 삼는다.
+            if let offset = restorationAnchor.resolvedOffset(in: lineFrames, metrics: scrollMetrics),
+               abs(offset - scrollMetrics.offsetY) > 0.5 {
+                scrollPosition.scrollTo(y: offset)
+            }
+            return
+        }
+        viewportState.followState.updateLatestVisibility(scrollMetrics.isLatestVisible)
+        viewportState.recordReadingPosition(offsetY: scrollMetrics.offsetY, lineFrames: lineFrames)
+    }
+
+    private func scrollToLatestRevision() {
         guard session.shouldCoalesceTranscriptAutoScroll else {
-            proxy.scrollTo(id, anchor: .bottom)
+            scrollPosition.scrollTo(edge: .bottom)
             return
         }
 
         longSessionAutoScrollTask?.cancel()
         longSessionAutoScrollTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(250))
-            guard !Task.isCancelled else { return }
-            proxy.scrollTo(id, anchor: .bottom)
+            guard !Task.isCancelled, viewportState.followState.shouldFollowUpdates else { return }
+            scrollPosition.scrollTo(edge: .bottom)
             longSessionAutoScrollTask = nil
         }
     }
 }
 
-private struct CaptionFeedBottomOffsetKey: PreferenceKey {
-    static let defaultValue = CGFloat.zero
+struct CaptionFeedFollowState: Equatable {
+    private(set) var isFollowingLatest = true
+    private var isLatestVisible = true
+    private var isUserScrolling = false
 
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
+    var shouldFollowUpdates: Bool { isFollowingLatest && !isUserScrolling }
+
+    mutating func updateLatestVisibility(_ isVisible: Bool) {
+        isLatestVisible = isVisible
+        // 새 자막으로 내용 높이가 늘어난 것만으로 사용자가 과거를 읽는다고 판단하지 않는다.
+        if isUserScrolling || !isFollowingLatest {
+            isFollowingLatest = isVisible
+        }
+    }
+
+    mutating func setUserScrolling(_ isScrolling: Bool) {
+        if isUserScrolling && !isScrolling {
+            isFollowingLatest = isLatestVisible
+        }
+        isUserScrolling = isScrolling
+    }
+
+    mutating func returnToLatest() {
+        isFollowingLatest = true
+        isUserScrolling = false
+    }
+
+    mutating func suspendInteraction() {
+        isUserScrolling = false
+    }
+}
+
+struct CaptionFeedViewportState: Equatable {
+    var followState = CaptionFeedFollowState()
+    private(set) var readingAnchor: CaptionFeedReadingAnchor?
+
+    var restorationAnchor: CaptionFeedReadingAnchor? {
+        followState.isFollowingLatest ? nil : readingAnchor
+    }
+
+    mutating func recordReadingPosition(offsetY: CGFloat, lineFrames: [UUID: CGRect]) {
+        guard !followState.isFollowingLatest, offsetY.isFinite else { return }
+        let orderedFrames = lineFrames.sorted { $0.value.minY < $1.value.minY }
+        guard let visibleLine = orderedFrames.first(where: { $0.value.maxY > offsetY }) ?? orderedFrames.last else { return }
+        let anchor = CaptionFeedReadingAnchor(
+            lineID: visibleLine.key,
+            offsetWithinLine: offsetY - visibleLine.value.minY
+        )
+        if readingAnchor != anchor { readingAnchor = anchor }
+    }
+
+    mutating func returnToLatest() {
+        readingAnchor = nil
+        followState.returnToLatest()
+    }
+}
+
+struct CaptionFeedReadingAnchor: Equatable {
+    let lineID: UUID
+    let offsetWithinLine: CGFloat
+
+    func resolvedOffset(in lineFrames: [UUID: CGRect], metrics: CaptionFeedScrollMetrics) -> CGFloat? {
+        let offset: CGFloat
+        if let frame = lineFrames[lineID] {
+            offset = frame.minY + offsetWithinLine
+        } else if let first = lineFrames.values.min(by: { $0.minY < $1.minY }) {
+            // 표시 개수 제한으로 읽던 자막이 빠지면 남은 가장 오래된 자막으로 복원한다.
+            offset = first.minY
+        } else {
+            return nil
+        }
+        return min(metrics.maximumY, max(metrics.minimumY, offset))
+    }
+}
+
+struct CaptionFeedScrollMetrics: Equatable {
+    let offsetY: CGFloat
+    let minimumY: CGFloat
+    let maximumY: CGFloat
+
+    var isLatestVisible: Bool { maximumY - offsetY <= 48 }
+}
+
+private struct CaptionFeedLineFramesKey: PreferenceKey {
+    static let defaultValue: [UUID: CGRect] = [:]
+
+    static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, latest in latest })
     }
 }
 
@@ -147,30 +306,39 @@ private struct StageEmptyStateView: View {
 
     var body: some View {
         VStack(spacing: AirTranslateDesign.Spacing.lg) {
-            AudioLevelWaveform(
-                level: nil,
-                date: Date(timeIntervalSinceReferenceDate: 0),
-                barCount: 13,
-                width: 132,
-                height: 54,
-                barWidth: 5,
-                barSpacing: 5
-            )
+            Group {
+                if session.isStarting {
+                    ProgressView()
+                        .controlSize(.large)
+                        .frame(width: 132, height: 54)
+                        .accessibilityHidden(true)
+                } else {
+                    AudioLevelWaveform(
+                        level: nil,
+                        date: Date(timeIntervalSinceReferenceDate: 0),
+                        barCount: 13,
+                        width: 132,
+                        height: 54,
+                        barWidth: 5,
+                        barSpacing: 5
+                    )
+                }
+            }
             .padding(.bottom, AirTranslateDesign.Spacing.xs)
 
             VStack(spacing: AirTranslateDesign.Spacing.xs) {
-                Text(AppText.readyToStartListening)
+                Text(session.isStarting ? AppText.preparingToListen : AppText.readyToStartListening)
                     .font(.system(size: 28, weight: .semibold))
                     .foregroundStyle(AirTranslateDesign.Palette.textPrimary)
                     .multilineTextAlignment(.center)
 
-                Text("\(session.languageSummary) · \(ProcessingEngine.current(for: session).title)")
+                Text("\(session.languageSummary) · \(session.processingEngineTitle)")
                     .font(AirTranslateDesign.Typography.label)
                     .foregroundStyle(AirTranslateDesign.Palette.textSecondary)
                     .lineLimit(1)
             }
 
-            if PermissionActionButton(session: session).needsPermissionAction {
+            if !session.isStarting, PermissionActionButton(session: session).needsPermissionAction {
                 HStack(spacing: AirTranslateDesign.Spacing.sm) {
                     Image(systemName: "lock.shield.fill")
                         .foregroundStyle(AirTranslateDesign.Palette.warning)
@@ -191,15 +359,22 @@ private struct StageEmptyStateView: View {
             }
 
             Button {
-                session.start()
+                if session.isStarting {
+                    session.stop()
+                } else {
+                    session.start()
+                }
             } label: {
-                Label(AppText.startListening, systemImage: "play.fill")
+                Label(
+                    session.isStarting ? AppText.cancel : AppText.startListening,
+                    systemImage: session.isStarting ? "xmark" : "play.fill"
+                )
                     .frame(minHeight: 48)
             }
-            .buttonStyle(AirPillButtonStyle(kind: .start))
-            .accessibilityHint(description)
+            .buttonStyle(AirPillButtonStyle(kind: session.isStarting ? .stop : .start))
+            .accessibilityHint(session.isStarting ? session.statusMessage : description)
 
-            Text(description)
+            Text(session.isStarting ? session.statusMessage : description)
                 .font(AirTranslateDesign.Typography.meta)
                 .foregroundStyle(AirTranslateDesign.Palette.textSecondary)
                 .multilineTextAlignment(.center)

@@ -23,7 +23,16 @@
 
 AirTranslate 会捕获 Mac 正在播放的音频，实时转写；当你选择翻译流程时，它会进行翻译，并可将字幕悬浮在其他应用上方。Apple Mode 仍然是默认的本地优先流程。云端引擎为可选项，配置对应提供方密钥后即可使用。
 
-AirTranslate **1.15.0/build1150** 新增 Microsoft Foundry 的 MAI-Transcribe-2-Streaming 原文字幕，以及 OpenRouter 的 MAI-Voice-2.1 / MAI-Voice-2.1-Flash 译文语音。可在主工作区或设置中选择模型。实时提供方继续使用自己的原生音频。
+AirTranslate **1.16.0/build1160** 新增 Apple 翻译选项、实验性 Jev 候选选择，以及可启动采集的仅悬浮字幕模式。
+
+- **仅悬浮模式启动与控制：** 空闲时启动采集，暂停时恢复，并在进入运行状态后最小化主窗口。启动失败时保留主控制界面。菜单栏和应用菜单也支持开始、停止、暂停与恢复。
+- **上一条字幕显示：** 在当前字幕旁短暂保留上一条字幕，最多一个文本块、两行，持续8秒，并遵循“减少动态效果”设置。
+- **悬浮字幕渲染：** 复用大小受限的文本布局，主窗口最小化时减少主字幕显示工作，语音识别与翻译继续运行。
+- **Apple 转写与翻译流程：** 利用周围的识别上下文，停止时保留最后的语音，并防止过时的翻译任务覆盖新字幕。
+- **实验性 Jev 候选选择：** 默认关闭。在同时使用 Apple 转写与翻译时，可从最终识别候选中选择要翻译的文本。启用后，会使用保存在 Keychain 中的用户密钥，将候选文本及之前最多6段转写上下文（1,000 UTF-8 字节）直接发送给 TypeSafe。每次请求增加 API 用量及最多1.2秒的响应等待。无候选、不确定、错误或超时均保留原文，不保证准确率提升。[设置与数据处理](docs/apple-translation-options.md)。
+- **Apple 翻译质量与术语保留：** macOS 26.4 及以上可选择实时（默认）或质量优先，并注册需要保持拼写的术语。质量优先可能耗时更长，取决于 Apple 模型的可用性。某语言对失败后会使用实时翻译，直到重启应用。若注册术语被更改，相关片段保留原文。仅适用于 Apple 文本翻译。
+- **macOS 27 音频输入兼容性：** 保留现有16 kHz 单声道路径，同时将不同 PCM 输入格式转换为 Apple 语音识别所需格式。
+- **源码构建要求：** 需要包含 macOS 27 SDK 的 Xcode 27 及 Swift 6.4 或更高版本。分发应用仍支持 macOS 26 及以上。
 
 请在设置 > API 密钥 > Qwen 中输入 **阿里云新加坡 API 密钥**。Qwen3.8 LiveTranslate 还需要工作空间 ID；Qwen Audio 3.1 Realtime Plus 和 Filetrans 仅使用密钥。密钥单独保存在 macOS Keychain 中，开始捕获后会将所选实时音频直接发送到阿里云新加坡。在设置 > 通用中，可选择默认模型 `qwen3.8-livetranslate-flash-realtime` 或 `qwen-audio-3.1-realtime-plus`。Qwen Audio 3.1 Realtime Plus 是接收 AirTranslate 翻译指令的全双工实时语音对话模型；Qwen3.8 LiveTranslate 是专用实时翻译模型。**语音输出为可选项，默认关闭**。请在 Model Studio 中查看当前 Qwen Audio 价格。
 
@@ -39,10 +48,10 @@ AirTranslate **1.15.0/build1150** 新增 Microsoft Foundry 的 MAI-Transcribe-2-
 
 ## 下载
 
-当前公开最新版：**v1.15.0**。
+当前公开最新版：**v1.16.0**。
 
 - [下载 AirTranslate.dmg](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [下载 AirTranslate-1.15.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.15.0/AirTranslate-1.15.0.zip)
+- [下载 AirTranslate-1.16.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.16.0/AirTranslate-1.16.0.zip)
 - [下载 AirTranslate.dmg.sha256](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [查看版本历史](Release/VERSION-HISTORY.md)
 
@@ -119,7 +128,7 @@ Nari 支持手动选择输入语言及自动检测语音语言，包括韩语。
 
 ## API 密钥
 
-API 密钥页面通过一个提供方列表管理 **OpenAI**、**Gemini**、**Meta**、**Azure**、**Nari** 和 **SpaceXAI (xAI)** · **Alibaba Cloud (Qwen)** · **OpenRouter**。每行会显示配置/准备状态、提供方图标、密钥控制台链接，以及说明“已配置密钥并不代表提供方授权已验证”的信息弹窗。
+API 密钥页面通过一个提供方列表管理 **OpenAI**、**Gemini**、**Meta**、**Azure**、**Nari** 和 **SpaceXAI (xAI)** · **Alibaba Cloud (Qwen)** · **OpenRouter** · **TypeSafe (Jev)**。每行会显示配置/准备状态、提供方图标、密钥控制台链接，以及说明“已配置密钥并不代表提供方授权已验证”的信息弹窗。
 
 密钥保存在 macOS 钥匙串中。AirTranslate 不包含账号系统、开发者运营的中继服务器，也不包含硬编码的提供方密钥。
 
@@ -135,7 +144,7 @@ Gemini 密钥由 Gemini Live 和可选的 Gemini 译文语音输出共用。选�
 ## 要求
 
 - macOS 26.0 或更高版本
-- 源码构建需要 Swift 6.2 或更高版本
+- 源码构建需要 Swift 6.4 或更高版本
 - 支持系统音频捕获的 Mac
 - 可使用 Apple Speech 和 Apple Translation 框架
 - 可选：OpenAI、Gemini、Meta、Azure Speech、Nari、xAI 或阿里云 提供方密钥

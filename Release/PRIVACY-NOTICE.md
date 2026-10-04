@@ -19,6 +19,14 @@ AirTranslate uses Apple system frameworks, including ScreenCaptureKit, Speech, a
 
 Speech recognition and language assets may be processed or downloaded through Apple-managed system services. AirTranslate does not send audio, transcripts, or translations to a server operated by this app's developer.
 
+## Optional Jev Candidate Selection (1.16.0+)
+
+Jev is experimental and off by default. When explicitly enabled for Apple transcription with translation, AirTranslate sends final recognition candidates, source/target languages, and recent transcript context directly to TypeSafe over HTTPS. Context includes up to six earlier segments and is limited to 1,000 UTF-8 bytes. Each candidate is limited to 4,000 UTF-8 bytes, with the original and up to three alternatives. Audio is not sent to Jev. Up to four already queued segments may share a request.
+
+The user supplies a TypeSafe key stored in a separate device-local macOS Keychain item. It is sent in the API request header. The HTTP session has no persistent cookie storage or disk response cache, and redirects are rejected. Uncertain, missing, invalid, failed, or timed-out selections preserve the original transcript. TypeSafe's account, data handling, retention, quotas, pricing, and service terms apply; those service-side behaviors are not established by local checks.
+
+Apple protected terms and the translation-quality preference are stored locally in app preferences. They apply to Apple's system text-translation workflow. See [Apple translation and Jev setup](../docs/apple-translation-options.md).
+
 ## Optional OpenAI GPT Mode
 
 GPT mode is optional and works only after the user provides an OpenAI API key.

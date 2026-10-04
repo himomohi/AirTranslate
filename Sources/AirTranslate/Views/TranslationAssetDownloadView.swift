@@ -39,6 +39,7 @@ final class TranslationAssetDownloadWindowController: NSObject, NSWindowDelegate
                     try await session.prepareTranslation()
                     try await TranslationAssetDownloader.waitUntilInstalled(
                         source: request.source, target: request.target,
+                        quality: request.quality,
                         isCancelled: { self.dismissalRequested }
                     )
                     try Task.checkCancellation()
@@ -95,11 +96,17 @@ private struct TranslationAssetDownloadView: View {
         }
         .padding(24)
         .frame(width: 420, height: 180)
-        .translationTask(.init(
-            source: Locale.Language(identifier: request.source.id),
-            target: Locale.Language(identifier: request.target.id)
-        )) { session in
+        .translationTask(configuration) { session in
             await prepare(session)
         }
+    }
+
+    private var configuration: TranslationSession.Configuration {
+        let source = Locale.Language(identifier: request.source.id)
+        let target = Locale.Language(identifier: request.target.id)
+        if #available(macOS 26.4, *) {
+            return .init(source: source, target: target, preferredStrategy: request.quality.strategy)
+        }
+        return .init(source: source, target: target)
     }
 }

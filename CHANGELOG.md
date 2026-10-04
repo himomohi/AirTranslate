@@ -2,6 +2,25 @@
 
 All notable changes to AirTranslate are documented in this file.
 
+## 1.16.0 - 2026-10-04
+
+### Added
+
+- Floating-only mode starts or resumes capture and minimizes the main window only after capture is running. Menu-bar and app-menu controls provide start/stop and pause/resume. Startup failures keep the main controls available.
+- Previous-caption history shows one prior block for up to eight seconds and two lines, with Reduce Motion support.
+- Experimental, opt-in Jev selection chooses among Apple final recognition candidates before translation. Candidate text and recent transcript context go directly to TypeSafe with the user's Keychain-stored key. Requests add API usage and up to 1.2 seconds of response waiting, with original-text fallback on uncertainty or failure.
+- Apple text translation offers Realtime and Quality first choices plus protected terms on macOS 26.4+. Failed quality-first requests fall back to realtime for that language pair until restart. If Apple changes a registered term, the affected segment remains in its original language.
+
+### Changed
+
+- Floating captions reuse bounded layouts, and the minimized main window avoids caption display work while transcription and translation continue.
+- On macOS 27, Apple speech input adapts differing PCM formats while preserving the existing 16 kHz mono path.
+- Source builds now require Xcode 27, the macOS 27 SDK, and Swift 6.4 or later. The app's minimum runtime remains macOS 26.
+
+### Fixed
+
+- Apple transcription uses surrounding recognition context and preserves final speech when stopping. Superseded translation work no longer overwrites newer captions.
+
 ## 1.15.0 - 2026-10-02
 
 ### Added

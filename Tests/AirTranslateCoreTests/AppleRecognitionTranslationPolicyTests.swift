@@ -84,9 +84,9 @@ struct AppleRecognitionTranslationPolicyTests {
         var state = AppleRecognitionTranslationPolicy.State()
         let lineID = UUID()
         let now = Date(timeIntervalSinceReferenceDate: 300)
-        let first = metadata(text: "I want", isFinal: false, start: 3.0, end: 3.4, revision: 1, emittedAt: now)
+        let first = metadata(text: "Please translate this", isFinal: false, start: 3.0, end: 3.4, revision: 1, emittedAt: now)
         let second = metadata(
-            text: "I want this",
+            text: "Please translate this sentence",
             isFinal: false,
             start: 3.0,
             end: 3.8,
@@ -94,7 +94,7 @@ struct AppleRecognitionTranslationPolicyTests {
             emittedAt: now.addingTimeInterval(0.10)
         )
         let third = metadata(
-            text: "I want this translated",
+            text: "Please translate this sentence clearly",
             isFinal: false,
             start: 3.0,
             end: 4.2,
@@ -102,16 +102,16 @@ struct AppleRecognitionTranslationPolicyTests {
             emittedAt: now.addingTimeInterval(0.31)
         )
 
-        let firstDecision = policy.receive(sourceText: "I want", lineID: lineID, metadata: first, now: now, state: &state)
+        let firstDecision = policy.receive(sourceText: "Please translate this", lineID: lineID, metadata: first, now: now, state: &state)
         let secondDecision = policy.receive(
-            sourceText: "I want this",
+            sourceText: "Please translate this sentence",
             lineID: lineID,
             metadata: second,
             now: now.addingTimeInterval(0.10),
             state: &state
         )
         let thirdDecision = policy.receive(
-            sourceText: "I want this translated",
+            sourceText: "Please translate this sentence clearly",
             lineID: lineID,
             metadata: third,
             now: now.addingTimeInterval(0.31),
@@ -120,7 +120,7 @@ struct AppleRecognitionTranslationPolicyTests {
 
         #expect(firstDecision == .requestNow(AppleTranslationRequestIdentity(
             lineID: lineID,
-            sourceText: "I want",
+            sourceText: "Please translate this",
             segmentID: first.segmentID,
             revision: 1,
             isFinal: false
@@ -128,11 +128,77 @@ struct AppleRecognitionTranslationPolicyTests {
         #expect(secondDecision == .hold(until: now.addingTimeInterval(0.30)))
         #expect(thirdDecision == .requestNow(AppleTranslationRequestIdentity(
             lineID: lineID,
-            sourceText: "I want this translated",
+            sourceText: "Please translate this sentence clearly",
             segmentID: third.segmentID,
             revision: 3,
             isFinal: false
         )))
+    }
+
+    @Test
+    func growingShortPhraseWaitsAfterItsLastChangeWithoutTimerStarvation() {
+        var state = AppleRecognitionTranslationPolicy.State()
+        let lineID = UUID()
+        let now = Date(timeIntervalSinceReferenceDate: 350)
+        for (index, text) in ["I", "I want", "I want you to"].enumerated() {
+            let changedAt = now.addingTimeInterval(Double(index) * 0.4)
+            let result = policy.receive(
+                sourceText: text, lineID: lineID,
+                metadata: metadata(text: text, isFinal: false, start: 3, end: 4, revision: index + 1, emittedAt: changedAt),
+                now: changedAt, state: &state
+            )
+            #expect(result == .hold(until: changedAt.addingTimeInterval(0.70)))
+        }
+        let lastChange = now.addingTimeInterval(0.8)
+        let dueAt = lastChange.addingTimeInterval(0.70)
+        let latest = metadata(text: "I want you to", isFinal: false, start: 3, end: 4, revision: 3, emittedAt: lastChange)
+        // 실제 세션의 재시도는 flushSmallPartial 대신 receive를 호출한다.
+        #expect(policy.receive(sourceText: "I want you to", lineID: lineID, metadata: latest,
+                               now: now.addingTimeInterval(1.1), state: &state) == .hold(until: dueAt))
+        let result = policy.receive(sourceText: "I want you to", lineID: lineID, metadata: latest,
+                                    now: dueAt, state: &state)
+        guard case .requestNow(let request) = result else {
+            Issue.record("변하지 않은 짧은 구문은 마지막 변경 이후 한 번 번역되어야 한다.")
+            return
+        }
+        #expect(request.sourceText == "I want you to")
+    }
+
+    @Test
+    func completePhraseDoesNotWaitForShortPrefixDeadline() {
+        var state = AppleRecognitionTranslationPolicy.State()
+        let lineID = UUID()
+        let now = Date(timeIntervalSinceReferenceDate: 360)
+        _ = policy.receive(sourceText: "I want", lineID: lineID,
+                           metadata: metadata(text: "I want", isFinal: false, start: 3, end: 4, revision: 1, emittedAt: now),
+                           now: now, state: &state)
+        let text = "I want you to check the microphone"
+        let result = policy.receive(sourceText: text, lineID: lineID,
+                                    metadata: metadata(text: text, isFinal: false, start: 3, end: 5, revision: 2, emittedAt: now),
+                                    now: now.addingTimeInterval(0.2), state: &state)
+        guard case .requestNow(let request) = result else {
+            Issue.record("문맥이 충분해지면 짧은 구문 대기를 끝내야 한다.")
+            return
+        }
+        #expect(request.sourceText == text)
+        #expect(state.pendingSmallPartialBySegmentID.isEmpty)
+    }
+
+    @Test(arguments: ["...", ". . .", "?!", "。"])
+    func punctuationCorrectionCancelsPendingWordsAndFinalizesWithoutTranslation(_ text: String) {
+        var state = AppleRecognitionTranslationPolicy.State()
+        let lineID = UUID()
+        let now = Date(timeIntervalSinceReferenceDate: 370)
+        _ = policy.receive(sourceText: "I", lineID: lineID,
+                           metadata: metadata(text: "I", isFinal: false, start: 3, end: 4, revision: 1, emittedAt: now),
+                           now: now, state: &state)
+        let partial = metadata(text: text, isFinal: false, start: 3, end: 4, revision: 2, emittedAt: now)
+        #expect(policy.receive(sourceText: text, lineID: lineID, metadata: partial, now: now, state: &state) == .unchanged)
+        #expect(policy.flushSmallPartial(lineID: lineID, metadata: partial,
+                                        now: now.addingTimeInterval(1), state: &state) == .unchanged)
+        let final = metadata(text: text, isFinal: true, start: 3, end: 4, revision: 3, emittedAt: now)
+        #expect(policy.receive(sourceText: text, lineID: lineID, metadata: final, now: now, state: &state) == .unchanged)
+        #expect(!policy.acceptsRecognition(partial, state: state))
     }
 
     @Test

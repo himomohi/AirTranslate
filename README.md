@@ -23,7 +23,16 @@ Live Mac audio captions and translation for meetings, videos, lectures, intervie
 
 AirTranslate captures audio playing on your Mac, transcribes it live, translates it when you choose a translation workflow, and can keep captions floating above other apps. Apple Mode remains the default local-first workflow. Cloud engines are optional and become available after you configure the matching provider key.
 
-AirTranslate **1.15.0/build1150** adds MAI-Transcribe-2-Streaming source captions through Microsoft Foundry and MAI-Voice-2.1 / MAI-Voice-2.1-Flash translated speech through OpenRouter. Choose models from the main workspace or Settings. Realtime providers continue using their native audio.
+AirTranslate **1.16.0/build1160** adds Apple translation options, experimental Jev candidate selection, and a floating-only workflow that starts capture.
+
+- **Floating-only start and controls:** starts an idle session or resumes a paused one, then minimizes the main window after capture is running. If startup fails, the main controls remain available. Start/stop and pause/resume are also available from the menu bar and app menus.
+- **Previous-caption history:** keeps one previous caption block visible briefly alongside the current text, with up to two lines and an eight-second lifetime. It respects Reduce Motion.
+- **Floating-caption rendering:** reuses bounded text layouts and avoids main-caption display work while the main window is minimized, while recognition and translation continue.
+- **Apple transcription and translation flow:** uses surrounding recognition context, preserves final speech at stop, and prevents superseded translation work from overwriting newer captions.
+- **Experimental Jev candidate selection:** off by default. In Apple transcription with translation, Jev can choose among supplied final recognition candidates before translation. Enabling it sends candidate text and up to six recent transcript segments (1,000 UTF-8 bytes) directly to TypeSafe using your Keychain-stored key. It adds API usage and up to 1.2 seconds of response waiting per request. Missing candidates, uncertainty, errors, or timeout keep the original. Accuracy improvement is not guaranteed. [Setup and data handling](docs/apple-translation-options.md).
+- **Apple translation quality and protected terms:** on macOS 26.4+, choose Realtime (default) or Quality first and register terms to retain their spelling. Quality first may take longer and depends on Apple's available models. If it fails, the language pair uses realtime translation until app restart. If a registered term changes, the affected segment stays in its original language. These options apply to Apple text translation.
+- **macOS 27 audio input compatibility:** adapts differing PCM input formats for Apple speech recognition, while retaining the existing 16 kHz mono path.
+- **Source build requirements:** Xcode 27 with the macOS 27 SDK and Swift 6.4 or later. The distributed app still requires macOS 26 or later.
 
 Configure an **Alibaba Cloud Singapore API key** in Settings > API Keys > Qwen. Qwen3.8 LiveTranslate also requires a workspace ID; Qwen Audio 3.1 Realtime Plus and Filetrans use the key without one. The key is stored separately in macOS Keychain; selected realtime audio is sent directly to Alibaba Cloud Singapore when capture starts. Choose the existing `qwen3.8-livetranslate-flash-realtime` default or `qwen-audio-3.1-realtime-plus` in Settings > General. Qwen Audio 3.1 Realtime Plus is a full-duplex voice-conversation model that receives translation instructions from AirTranslate; Qwen3.8 LiveTranslate is the dedicated realtime translation model. **Speech output is optional and initially off**. Current Qwen Audio pricing is shown in Model Studio.
 
@@ -39,10 +48,10 @@ The **key-aware mode picker** shows unavailable providers in gray and provides a
 
 ## Download
 
-Latest public release: **v1.15.0**.
+Latest public release: **v1.16.0**.
 
 - [Download AirTranslate.dmg](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [Download AirTranslate-1.15.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.15.0/AirTranslate-1.15.0.zip)
+- [Download AirTranslate-1.16.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.16.0/AirTranslate-1.16.0.zip)
 - [Download AirTranslate.dmg.sha256](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [View release history](Release/VERSION-HISTORY.md)
 
@@ -119,7 +128,7 @@ Stopping Azure capture waits for the last finalized translations within a bounde
 
 ## API Keys
 
-The API Keys screen manages **OpenAI**, **Gemini**, **Meta**, **Azure**, **Nari**, and **SpaceXAI (xAI)** · **Alibaba Cloud (Qwen)** · **OpenRouter** in one provider list. Rows show configured/setup state, provider icons, key console links, and an information popover explaining that configured keys do not prove provider authorization.
+The API Keys screen manages **OpenAI**, **Gemini**, **Meta**, **Azure**, **Nari**, and **SpaceXAI (xAI)** · **Alibaba Cloud (Qwen)** · **OpenRouter** · **TypeSafe (Jev)** in one provider list. Rows show configured/setup state, provider icons, key console links, and an information popover explaining that configured keys do not prove provider authorization.
 
 Keys are stored in macOS Keychain. AirTranslate does not ship with an account system, a developer-operated relay server, or hardcoded provider keys.
 
@@ -135,7 +144,7 @@ The Gemini key is shared by Gemini Live and optional Gemini translated speech ou
 ## Requirements
 
 - macOS 26.0 or later
-- Swift 6.2 or later for source builds
+- Swift 6.4 or later for source builds
 - A Mac that supports system-audio capture
 - Apple Speech and Apple Translation framework availability
 - Optional provider keys for OpenAI, Gemini, Meta, Azure Speech, Nari, xAI, or Alibaba Cloud

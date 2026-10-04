@@ -4,6 +4,7 @@ import Foundation
 struct AppleSpeechRecognitionMetadata: Equatable, @unchecked Sendable {
     let segmentID: String
     let revision: Int
+    let alternatives: [String]
     let isFinal: Bool
     let audioRange: CMTimeRange
     let sourceTextFingerprint: UInt64
@@ -16,10 +17,12 @@ struct AppleSpeechRecognitionMetadata: Equatable, @unchecked Sendable {
         isFinal: Bool,
         audioRange: CMTimeRange,
         sourceText: String,
+        alternatives: [String] = [],
         emittedAt: Date,
         emittedAtUptime: TimeInterval = ProcessInfo.processInfo.systemUptime
     ) {
         self.segmentID = segmentID
+        self.alternatives = Array(alternatives.prefix(3))
         self.revision = revision
         self.isFinal = isFinal
         self.audioRange = audioRange
@@ -27,6 +30,8 @@ struct AppleSpeechRecognitionMetadata: Equatable, @unchecked Sendable {
         self.emittedAt = emittedAt
         self.emittedAtUptime = emittedAtUptime
     }
+
+    func matchesSourceText(_ text: String) -> Bool { Self.fingerprint(text) == sourceTextFingerprint }
 
     var audioStartSeconds: Double {
         audioRange.start.seconds
@@ -63,6 +68,8 @@ struct AppleSpeechRecognitionMetadata: Equatable, @unchecked Sendable {
 struct AppleSpeechRecognitionMetadataBuilder: Sendable {
     private var lastSegmentID: String?
     private var lastAudioRange: CMTimeRange?
+    private var lastSourceText: String?
+    private var lastAlternatives: [String] = []
     private var lastRevision = 0
     private var lastSegmentIsFinal = false
     private var nextFallbackSegmentIndex = 0
@@ -73,6 +80,7 @@ struct AppleSpeechRecognitionMetadataBuilder: Sendable {
 
     mutating func metadata(
         sourceText: String,
+        alternatives: [String] = [],
         language: LanguageOption,
         isFinal: Bool,
         audioRange: CMTimeRange,
@@ -83,6 +91,8 @@ struct AppleSpeechRecognitionMetadataBuilder: Sendable {
         let revision = segmentID == lastSegmentID ? lastRevision + 1 : 1
         lastSegmentID = segmentID
         lastAudioRange = audioRange
+        lastSourceText = sourceText
+        lastAlternatives = Array(alternatives.prefix(3))
         lastRevision = revision
         lastSegmentIsFinal = isFinal
 
@@ -92,9 +102,63 @@ struct AppleSpeechRecognitionMetadataBuilder: Sendable {
             isFinal: isFinal,
             audioRange: audioRange,
             sourceText: sourceText,
+            alternatives: lastAlternatives,
             emittedAt: emittedAt,
             emittedAtUptime: emittedAtUptime
         )
+    }
+
+    mutating func finalizedPreviousResult(
+        before newRange: CMTimeRange,
+        finalizedThrough: CMTime,
+        language: LanguageOption,
+        emittedAt: Date,
+        emittedAtUptime: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) -> (text: String, metadata: AppleSpeechRecognitionMetadata)? {
+        guard !lastSegmentIsFinal,
+              let previousRange = lastAudioRange,
+              let previousText = lastSourceText,
+              !previousText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              Self.isFiniteNonEmptyAudioRange(previousRange),
+              Self.isFiniteNonEmptyAudioRange(newRange),
+              finalizedThrough.isNumeric, finalizedThrough.seconds.isFinite,
+              finalizedThrough.epoch == previousRange.end.epoch,
+              newRange.start.epoch == previousRange.end.epoch,
+              emittedAt.timeIntervalSinceReferenceDate.isFinite,
+              emittedAtUptime.isFinite, emittedAtUptime >= 0
+        else {
+            return nil
+        }
+
+        // 변경 없는 volatile은 별도 final 없이 확정될 수 있다. 워터마크가 이전
+        // 전체 구간을 덮고 새 결과가 분리된 구간일 때만 마지막 원문을 확정한다.
+        guard CMTimeCompare(finalizedThrough, previousRange.end) >= 0,
+              newRange.start.seconds > previousRange.start.seconds,
+              newRange.start.seconds >= previousRange.end.seconds - 0.000_001
+        else {
+            return nil
+        }
+
+        let finalMetadata = metadata(
+            sourceText: previousText,
+            alternatives: lastAlternatives,
+            language: language,
+            isFinal: true,
+            audioRange: previousRange,
+            emittedAt: emittedAt,
+            emittedAtUptime: emittedAtUptime
+        )
+        return (text: previousText, metadata: finalMetadata)
+    }
+
+    private static func isFiniteNonEmptyAudioRange(_ range: CMTimeRange) -> Bool {
+        guard range.isValid, range.start.isNumeric, range.duration.isNumeric, range.end.isNumeric else {
+            return false
+        }
+        let start = range.start.seconds
+        let end = range.end.seconds
+        return start.isFinite && end.isFinite && range.duration.seconds.isFinite
+            && range.duration.seconds > 0 && end > start
     }
 
     private mutating func segmentID(language: LanguageOption, audioRange: CMTimeRange) -> String {

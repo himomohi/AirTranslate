@@ -81,6 +81,7 @@ struct FloatingPresentationPolicyTests {
         session.isAppleSourceAutoDetectionEnabled = false
         session.paragraphBreakSilenceInterval = 30
         session.isRunning = true
+        session.setFloatingCaptionPresentationActive(true)
         return session
     }
 

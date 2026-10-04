@@ -110,6 +110,7 @@ struct FloatingTranslationPresentationTests {
         session.targetLanguage = .korean
         session.isAppleSourceAutoDetectionEnabled = false
         session.isRunning = true
+        session.setFloatingCaptionPresentationActive(true)
         return session
     }
 

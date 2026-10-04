@@ -16,7 +16,7 @@ permissions:
 jobs:
   verify:
     name: Test, build, and package
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 45
 
     steps:
@@ -46,6 +46,9 @@ jobs:
 
       - name: Verify packaging permissions
         run: ./script/verify_packaging_permissions.sh
+
+      - name: Test latency trace summaries
+        run: python3 -m unittest discover -s script/tests -v
 
       - name: Stress metadata-grace regression
         run: |

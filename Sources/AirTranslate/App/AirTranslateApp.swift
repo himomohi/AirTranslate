@@ -24,7 +24,16 @@ struct AirTranslateApp: App {
         .commands {
             CommandGroup(replacing: .newItem) {}
             CaptureCommands(session: session)
+            CaptionCommands(session: session)
         }
+
+        Window(AppText.floatingCaptionModeChoiceTitle, id: AirTranslateWindowID.floatingCaptionModeChoice) {
+            FloatingCaptionModeChoiceView(session: session)
+                .windowMinimizeBehavior(.disabled)
+        }
+        .windowResizability(.contentSize)
+        .restorationBehavior(.disabled)
+        .defaultLaunchBehavior(.suppressed)
 
         Settings {
             SettingsView(session: session)
@@ -39,7 +48,7 @@ private struct CaptureCommands: Commands {
 
     var body: some Commands {
         CommandMenu(AppText.capture) {
-            Button(session.isRunning || session.isStarting ? AppText.stop : AppText.start) {
+            Button(session.captureControlState.phase.actionTitle) {
                 if session.isRunning || session.isStarting {
                     session.stop()
                 } else {
@@ -47,19 +56,13 @@ private struct CaptureCommands: Commands {
                 }
             }
             .keyboardShortcut(.return, modifiers: [.command])
+            .disabled(!session.captureControlState.canToggleCapture)
 
             Button(session.isPaused ? AppText.resume : AppText.pause) {
                 session.isPaused ? session.resume() : session.pause()
             }
             .keyboardShortcut(.space, modifiers: [.command, .shift])
-            .disabled(!session.isRunning)
-
-            Divider()
-
-            Button(CaptionStyleCopy.toggleCaptions) {
-                FloatingCaptionWindowController.toggle(session: session)
-            }
-            .keyboardShortcut("c", modifiers: [.command, .shift])
+            .disabled(!session.captureControlState.canTogglePause)
         }
     }
 }

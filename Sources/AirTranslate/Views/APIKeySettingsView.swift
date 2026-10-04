@@ -166,6 +166,7 @@ struct APIKeySettingsView: View {
     }
 
     private var activeProvider: CredentialProvider? {
+        if session.isUsingJevSelection { return .jev }
         if session.isUsingQwenTranslation { return .qwen }
         if session.isUsingGrokSTT { return .grok }
         if session.isUsingNariSTT { return .nari }
@@ -183,6 +184,7 @@ struct APIKeySettingsView: View {
         case .gemini: session.hasGeminiAPIKey
         case .meta: session.hasMetaAPIKey
         case .azure: session.hasAzureSpeechAPIKey
+        case .jev: session.hasJevAPIKey
         case .openRouter: session.hasOpenRouterAPIKey
         case .nari: session.hasNariAPIKey
         case .qwen: session.hasQwenAPIKey
@@ -197,6 +199,7 @@ struct APIKeySettingsView: View {
         case .gemini: (session.geminiTranslationModel.isEnabled ? session.geminiTranslationModel : session.preferredGeminiModel).title
         case .meta: MetaTranscriptionModel.museVoiceTranscribe.title
         case .azure: session.azureTranscriptionModel.title
+        case .jev: "jev-latest"
         case .openRouter: "MAI-Voice-2.1 · Flash"
         case .nari: "Qwen3-ASR"
         case .qwen: selectedQwenModel.rawValue
@@ -210,6 +213,7 @@ struct APIKeySettingsView: View {
         case .gemini: AppText.geminiAPIKeyDescription
         case .meta: AppText.metaScribeDetail
         case .azure: AzureMAICopy.detail(for: session.azureTranscriptionModel)
+        case .jev: JevCopy.detail
         case .openRouter: MAIVoiceCopy.detail
         case .nari: NariCopy.detail + "\n\n" + NariCopy.modelDetail
         case .qwen: QwenCopy.detail(for: selectedQwenModel) + "\n\n" + QwenCopy.price(for: selectedQwenModel)
@@ -228,6 +232,7 @@ struct APIKeySettingsView: View {
         case .gemini: try session.saveGeminiAPIKey(key)
         case .meta: try session.saveMetaAPIKey(key)
         case .azure: try session.saveAzureSpeechAPIKey(key)
+        case .jev: try session.saveJevAPIKey(key)
         case .openRouter: try session.saveOpenRouterAPIKey(key)
         case .nari: try session.saveNariAPIKey(key)
         case .qwen: try session.saveQwenAPIKey(key)
@@ -242,6 +247,7 @@ struct APIKeySettingsView: View {
         case .gemini: try session.removeGeminiAPIKey()
         case .meta: try session.removeMetaAPIKey()
         case .azure: try session.removeAzureSpeechAPIKey()
+        case .jev: try session.removeJevAPIKey()
         case .openRouter: try session.removeOpenRouterAPIKey()
         case .nari: try session.removeNariAPIKey()
         case .qwen: try session.removeQwenAPIKey()
@@ -251,7 +257,7 @@ struct APIKeySettingsView: View {
 }
 
 enum CredentialProvider: String, CaseIterable, Identifiable {
-    case openAI, gemini, meta, azure, nari, grok, qwen, openRouter
+    case openAI, gemini, meta, azure, nari, grok, qwen, openRouter, jev
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -259,6 +265,7 @@ enum CredentialProvider: String, CaseIterable, Identifiable {
         case .gemini: "Gemini"
         case .meta: "Meta"
         case .azure: "Azure / Microsoft Foundry"
+        case .jev: "TypeSafe · Jev"
         case .openRouter: "OpenRouter"
         case .nari: "Nari"
         case .qwen: QwenCopy.provider
@@ -271,6 +278,7 @@ enum CredentialProvider: String, CaseIterable, Identifiable {
         case .gemini: "sparkles"
         case .meta: "person.2.wave.2"
         case .azure: "cloud"
+        case .jev: "text.badge.checkmark"
         case .openRouter: "speaker.wave.2"
         case .nari: "waveform.badge.mic"
         case .qwen: "globe"
@@ -283,6 +291,7 @@ enum CredentialProvider: String, CaseIterable, Identifiable {
         case .gemini: "https://aistudio.google.com/apikey"
         case .meta: "https://dev.meta.ai"
         case .azure: "https://ai.azure.com"
+        case .jev: "https://typesafe.ai"
         case .openRouter: "https://openrouter.ai/settings/keys"
         case .nari: "https://app.narilabs.com/keys"
         case .qwen: "https://modelstudio.console.alibabacloud.com"

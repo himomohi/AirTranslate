@@ -26,8 +26,7 @@ extension String {
             return floatingCaptionTail(maxLines: maxLines)
         }
         let count = max(1, maxLines)
-        let text = trimmingCharacters(in: .whitespacesAndNewlines).floatingCaptionSentenceBreaks()
-        let bounded = String(text.boundedSuffix(maxCharacters: count * 72 * FloatingCaptionTextLayout.scanLineMultiplier))
+        let bounded = floatingCaptionScanText(maxLines: count)
         var lines: [String] = []
         for paragraph in bounded.components(separatedBy: .newlines) where !paragraph.isEmpty {
             let string = paragraph as NSString
@@ -52,11 +51,8 @@ extension String {
     ) -> String {
         let maxLines = max(1, maxLines)
         let lineWidthUnits = max(1, lineWidthUnits)
-        let trimmedText = trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedText.isEmpty else { return "" }
-        let scanCharacters = maxLines * 72 * FloatingCaptionTextLayout.scanLineMultiplier
-        let captionText = trimmedText.floatingCaptionSentenceBreaks()
-        let scanText = String(captionText.boundedSuffix(maxCharacters: scanCharacters))
+        let scanText = floatingCaptionScanText(maxLines: maxLines)
+        guard !scanText.isEmpty else { return "" }
 
         let logicalLines = scanText.floatingCaptionWrappedLines(
             maxLineWidth: lineWidthUnits
@@ -66,6 +62,14 @@ extension String {
             .suffix(maxLines)
             .joined(separator: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func floatingCaptionScanText(maxLines: Int) -> String {
+        let scanCharacters = maxLines * 72 * FloatingCaptionTextLayout.scanLineMultiplier
+        // 화면에 남길 끝부분을 먼저 제한해 누적 기록 전체를 매번 정규식으로 가공하지 않는다.
+        let tail = trimmingCharacters(in: .whitespacesAndNewlines)
+            .boundedSuffix(maxCharacters: scanCharacters)
+        return String(tail).floatingCaptionSentenceBreaks()
     }
 
     private func boundedSuffix(maxCharacters: Int) -> Substring {

@@ -5,6 +5,38 @@ import Testing
 @Suite(.serialized)
 @MainActor
 struct TranslationAssetDownloadTests {
+    @Test func explicitQualityReachesDownloadPresentation() async throws {
+        let probe = PresentationProbe()
+        let downloader = TranslationAssetDownloader(present: probe.present)
+        let task = Task { try await downloader.download(source: .english, target: .korean, quality: .highQuality) }
+        try await waitFor { probe.requests.count == 1 }
+        #expect(probe.requests[0].quality == .highQuality)
+        probe.complete(0, .success(()))
+        try await task.value
+        #expect(downloader.request == nil)
+    }
+
+    @Test func qualityChangeCancelsOldDownloadAndRejectsItsLateFailure() async throws {
+        let fixture = try DownloadFixture()
+        defer { fixture.cleanUp() }
+        try await fixture.ready()
+        fixture.session.downloadModelAssets(for: .appleOnDevice)
+        try await waitFor { fixture.probe.calls.count == 1 }
+        fixture.session.appleTranslationQuality = .highQuality
+        #expect(!fixture.session.isDownloadingModelAssets)
+        try await waitFor { fixture.session.modelAvailability(for: .appleOnDevice).state.canDownload }
+        fixture.session.downloadModelAssets(for: .appleOnDevice)
+        try await waitFor { fixture.probe.calls.count == 2 }
+        fixture.probe.complete(0, .failure(DownloadFailure.failed))
+        await drainTasks()
+        #expect(fixture.session.isDownloadingModelAssets)
+        #expect(fixture.session.modelAvailability(for: .appleOnDevice).state == .downloading)
+        fixture.probe.state = .installed
+        fixture.probe.complete(1, .success(()))
+        try await waitFor { !fixture.session.isDownloadingModelAssets }
+        #expect(fixture.session.modelAvailability(for: .appleOnDevice).state == .installed)
+    }
+
     @Test func presenterReceivesExactPairAndReleasesOnSuccess() async throws {
         let probe = PresentationProbe()
         let downloader = TranslationAssetDownloader(present: probe.present)

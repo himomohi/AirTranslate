@@ -4,11 +4,17 @@ import Speech
 
 enum LiveSpeechTranscriberError: LocalizedError, Equatable, Sendable {
     case audioInputBackpressure(bufferLimit: Int)
+    case audioInputConversionFailed
 
     var errorDescription: String? {
         switch self {
         case .audioInputBackpressure:
             "Apple Speech stopped because audio arrived faster than it could be transcribed. Restart transcription to continue."
+        case .audioInputConversionFailed:
+            AppText.localized(
+                english: "Apple Speech stopped because the audio format could not be converted. Restart transcription to continue.",
+                korean: "오디오 형식을 변환할 수 없어 Apple 전사를 중지했습니다. 전사를 다시 시작해 주세요."
+            )
         }
     }
 }
@@ -342,6 +348,7 @@ final class SpeechAssetReservationCoordinator: @unchecked Sendable {
 final class LiveSpeechTranscriber: @unchecked Sendable {
     private struct LifecycleResources {
         let inputQueue: SpeechAnalyzerInputQueue<AnalyzerInput>?
+        let inputAdapter: (any SpeechAnalyzerInputAdapting)?
         let analyzer: SpeechAnalyzer?
         let analyzeTask: Task<Void, Never>?
         let resultTasks: [Task<Void, Never>]
@@ -372,6 +379,7 @@ final class LiveSpeechTranscriber: @unchecked Sendable {
     )!
     private var analyzer: SpeechAnalyzer?
     private var inputQueue: SpeechAnalyzerInputQueue<AnalyzerInput>?
+    private var inputAdapter: (any SpeechAnalyzerInputAdapting)?
     private var analyzeTask: Task<Void, Never>?
     private var resultTasks: [Task<Void, Never>] = []
     private var assetReservations: [SpeechAssetReservation] = []
@@ -427,7 +435,7 @@ final class LiveSpeechTranscriber: @unchecked Sendable {
         return installedLanguages
     }
 
-    func start(languages: [LanguageOption]) async throws {
+    func start(languages: [LanguageOption], includesAlternatives: Bool = false) async throws {
         let lifecycleTransition = takeLifecycleTransition()
         let lifecycleGeneration = lifecycleTransition.generation
         await lifecycleTransition.cleanupTask.value
@@ -470,15 +478,24 @@ final class LiveSpeechTranscriber: @unchecked Sendable {
                     transcriber: SpeechTranscriber(
                         locale: supportedLocale,
                         transcriptionOptions: [],
-                        reportingOptions: [.volatileResults, .fastResults],
+                        // 문맥 창을 줄이는 fastResults 대신 기본 정확도를 유지하고 중간 결과만 받는다.
+                        reportingOptions: includesAlternatives
+                            ? [.volatileResults, .alternativeTranscriptions] : [.volatileResults],
                         attributeOptions: [.transcriptionConfidence]
                     )
                 ))
             }
             let modules: [any SpeechModule] = transcribers.map(\.transcriber)
             let inputQueue: SpeechAnalyzerInputQueue<AnalyzerInput> = makeInputQueue(
-                bufferLimit: Self.analyzerInputBufferLimit
+                bufferLimit: Self.analyzerInputBufferLimit,
+                lifecycleGeneration: lifecycleGeneration
             )
+            let inputAdapter: (any SpeechAnalyzerInputAdapting)?
+            if #available(macOS 27.0, *) {
+                inputAdapter = AppleSpeechInputAdapter(analyzerFormat: audioFormat)
+            } else {
+                inputAdapter = nil
+            }
             let analyzer = SpeechAnalyzer(
                 modules: modules,
                 options: SpeechAnalyzer.Options(
@@ -491,6 +508,7 @@ final class LiveSpeechTranscriber: @unchecked Sendable {
                     return false
                 }
                 self.inputQueue = inputQueue
+                self.inputAdapter = inputAdapter
                 self.analyzer = analyzer
                 return true
             }
@@ -526,6 +544,7 @@ final class LiveSpeechTranscriber: @unchecked Sendable {
                 let resultTasks = transcribers.map { entry in
                     Task { [weak self] in
                         var metadataBuilder = AppleSpeechRecognitionMetadataBuilder()
+                        var previousConfidence = 0.0
                         await producerStartGate.wait()
                         guard !Task.isCancelled else { return }
                         do {
@@ -542,19 +561,39 @@ final class LiveSpeechTranscriber: @unchecked Sendable {
                                     ])
                                 }
                                 guard let self else { return }
+                                let emittedAt = Date()
+                                let emittedAtUptime = ProcessInfo.processInfo.systemUptime
+                                if let previous = metadataBuilder.finalizedPreviousResult(
+                                    before: result.range,
+                                    finalizedThrough: result.resultsFinalizationTime,
+                                    language: entry.language,
+                                    emittedAt: emittedAt,
+                                    emittedAtUptime: emittedAtUptime
+                                ) {
+                                    self.delegate?.liveSpeechTranscriber(
+                                        self,
+                                        didRecognize: previous.text,
+                                        language: entry.language,
+                                        confidence: previousConfidence,
+                                        metadata: previous.metadata
+                                    )
+                                }
                                 let metadata = metadataBuilder.metadata(
                                     sourceText: text,
+                                    alternatives: includesAlternatives
+                                        ? result.alternatives.prefix(3).map { String($0.characters).trimmingCharacters(in: .whitespacesAndNewlines) } : [],
                                     language: entry.language,
                                     isFinal: result.isFinal,
                                     audioRange: result.range,
-                                    emittedAt: Date(),
-                                    emittedAtUptime: ProcessInfo.processInfo.systemUptime
+                                    emittedAt: emittedAt,
+                                    emittedAtUptime: emittedAtUptime
                                 )
+                                previousConfidence = Self.averageConfidence(in: result.text)
                                 self.delegate?.liveSpeechTranscriber(
                                     self,
                                     didRecognize: text,
                                     language: entry.language,
-                                    confidence: Self.averageConfidence(in: result.text),
+                                    confidence: previousConfidence,
                                     metadata: metadata
                                 )
                             }
@@ -644,15 +683,39 @@ final class LiveSpeechTranscriber: @unchecked Sendable {
         stateLock.lock()
         let isPaused = isPaused
         let inputQueue = inputQueue
+        let inputAdapter = inputAdapter
+        let generation = lifecycleGeneration
         stateLock.unlock()
 
         guard !isPaused, let inputQueue else { return }
+
+        if let inputAdapter {
+            do {
+                let inputs = try inputAdapter.convert(sampleBuffer) { [self] sampleBuffer in
+                    conversionLock.withLock { pcmBuffer(from: sampleBuffer) }
+                }
+                guard acceptsAudioInput(inputQueue, generation: generation) else { return }
+                for input in inputs {
+                    if #available(macOS 27.0, *), PipelineDiagnostics.isEnabled {
+                        PipelineDiagnostics.record("speech.audio", values: [
+                            "duration": input.bufferDuration.seconds,
+                            "capture_time": CMSampleBufferGetPresentationTimeStamp(sampleBuffer).seconds
+                        ])
+                    }
+                    guard inputQueue.yield(input) == .enqueued else { break }
+                }
+            } catch {
+                guard acceptsAudioInput(inputQueue, generation: generation) else { return }
+                delegate?.liveSpeechTranscriber(self, didFail: LiveSpeechTranscriberError.audioInputConversionFailed)
+            }
+            return
+        }
 
         conversionLock.lock()
         let pcmBuffer = pcmBuffer(from: sampleBuffer)
         conversionLock.unlock()
 
-        guard let pcmBuffer else {
+        guard let pcmBuffer, acceptsAudioInput(inputQueue, generation: generation) else {
             return
         }
 
@@ -663,6 +726,12 @@ final class LiveSpeechTranscriber: @unchecked Sendable {
             ])
         }
         inputQueue.yield(AnalyzerInput(buffer: pcmBuffer))
+    }
+
+    private func acceptsAudioInput(_ queue: SpeechAnalyzerInputQueue<AnalyzerInput>, generation: UInt64) -> Bool {
+        stateLock.withLock {
+            lifecycleGeneration == generation && inputQueue === queue && !isPaused
+        }
     }
 
     func setPaused(_ isPaused: Bool) {
@@ -712,12 +781,14 @@ final class LiveSpeechTranscriber: @unchecked Sendable {
             isPaused = false
             let resources = LifecycleResources(
                 inputQueue: inputQueue,
+                inputAdapter: inputAdapter,
                 analyzer: analyzer,
                 analyzeTask: analyzeTask,
                 resultTasks: resultTasks,
                 assetReservations: assetReservations
             )
             inputQueue = nil
+            inputAdapter = nil
             analyzer = nil
             analyzeTask = nil
             resultTasks = []
@@ -759,6 +830,11 @@ final class LiveSpeechTranscriber: @unchecked Sendable {
         // The cleanup tail is already published, so a competing start must
         // wait for it. Stop synchronous producers only after releasing
         // stateLock because finish/cancel may invoke callbacks inline.
+        if let tail = try? plan.resources.inputAdapter?.finish() {
+            for input in tail {
+                guard plan.resources.inputQueue?.yield(input) == .enqueued else { break }
+            }
+        }
         plan.resources.inputQueue?.finish()
         plan.resources.analyzeTask?.cancel()
         plan.resources.resultTasks.forEach { $0.cancel() }
@@ -785,10 +861,13 @@ final class LiveSpeechTranscriber: @unchecked Sendable {
     }
 
     private func makeInputQueue<Element: Sendable>(
-        bufferLimit: Int
+        bufferLimit: Int,
+        lifecycleGeneration: UInt64? = nil
     ) -> SpeechAnalyzerInputQueue<Element> {
         SpeechAnalyzerInputQueue(bufferLimit: bufferLimit) { [weak self] bufferLimit in
             guard let self else { return }
+            if let lifecycleGeneration,
+               !stateLock.withLock({ self.lifecycleGeneration == lifecycleGeneration }) { return }
             delegate?.liveSpeechTranscriber(
                 self,
                 didFail: LiveSpeechTranscriberError.audioInputBackpressure(
@@ -803,6 +882,7 @@ final class LiveSpeechTranscriber: @unchecked Sendable {
         stateLock.withLock {
             analyzer != nil
                 || inputQueue != nil
+                || inputAdapter != nil
                 || analyzeTask != nil
                 || !resultTasks.isEmpty
                 || !assetReservations.isEmpty
@@ -884,6 +964,17 @@ final class LiveSpeechTranscriber: @unchecked Sendable {
         bufferLimit: Int = LiveSpeechTranscriber.analyzerInputBufferLimit
     ) -> SpeechAnalyzerInputQueue<Element> {
         makeInputQueue(bufferLimit: bufferLimit)
+    }
+
+    func installInputAdapterForTesting(
+        _ adapter: any SpeechAnalyzerInputAdapting,
+        queue: SpeechAnalyzerInputQueue<AnalyzerInput>
+    ) {
+        stateLock.withLock {
+            precondition(inputQueue == nil && inputAdapter == nil)
+            inputAdapter = adapter
+            inputQueue = queue
+        }
     }
 #endif
 

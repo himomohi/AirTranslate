@@ -5,10 +5,11 @@ import Speech
 enum ModelAvailabilityChecker {
     static func availability(
         source: LanguageOption,
-        target: LanguageOption
+        target: LanguageOption,
+        quality: AppleTranslationQuality = .realtime
     ) async -> [String: ModelAvailability] {
         async let speechStatus = speechAvailability(for: source)
-        async let translationStatus = translationAvailability(source: source, target: target)
+        async let translationStatus = translationAvailability(source: source, target: target, quality: quality)
 
         let speech = await speechStatus
         let translation = await translationStatus
@@ -137,9 +138,15 @@ enum ModelAvailabilityChecker {
 
     private static func translationAvailability(
         source: LanguageOption,
-        target: LanguageOption
+        target: LanguageOption,
+        quality: AppleTranslationQuality
     ) async -> ModelAvailability {
-        let availability = LanguageAvailability()
+        let availability: LanguageAvailability
+        if #available(macOS 26.4, *) {
+            availability = LanguageAvailability(preferredStrategy: quality.strategy)
+        } else {
+            availability = LanguageAvailability()
+        }
         let status = await availability.status(
             from: Locale.Language(identifier: source.id),
             to: Locale.Language(identifier: target.id)

@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 struct FloatingCaptionSettingsView: View {
+    @Environment(\.openWindow) private var openWindow
     @Bindable var session: TranslationSessionStore
     @State private var showsTypography = false
     @State private var confirmsReset = false
@@ -136,7 +137,7 @@ struct FloatingCaptionSettingsView: View {
 
     @ViewBuilder private var windowActions: some View {
         Button(isCaptionVisible ? CaptionStyleCopy.closeWindow : CaptionStyleCopy.openWindow) {
-            FloatingCaptionWindowController.toggle(session: session)
+            CaptionControlActions.toggleVisibility(session: session, using: openWindow)
         }
         Button(AppText.resetFloatingCaptionSize) { FloatingCaptionWindowController.resetSize() }
     }

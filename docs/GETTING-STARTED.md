@@ -46,6 +46,12 @@ When troubleshooting permissions, check which app copy is running. Older or diff
 
 Provider keys are managed in **Settings > API Keys**. A configured key means AirTranslate has local provider settings; it does not prove provider account authorization until a session starts.
 
+## Apple Translation and Jev (1.16.0+)
+
+Settings > General > Apple translation offers Realtime (default), Quality first, and protected terms on macOS 26.4+. Failed quality-first requests return to realtime for that language pair until restart. If a protected term is changed, its segment stays in the original language.
+
+Experimental Jev candidate selection is separate and starts off. Add your own TypeSafe key in API Keys, then enable Jev in General only if you agree to send final recognition candidates and recent transcript context to TypeSafe. API usage and up to 1.2 seconds of response waiting per request are added. Uncertain or failed selections keep the original. See [configuration and data handling](apple-translation-options.md).
+
 ## Download Local Language Assets
 
 Choose the source and target languages first, then open **Settings > Assets**. The speech recognition pack and translation language pack are separate. Use **Download** or **Retry** on the translation pack and approve the language download in the macOS prompt. AirTranslate refreshes the status when the download finishes; a cancelled or failed request can be retried.
@@ -57,6 +63,8 @@ If a system download cannot finish, check your connection and use **System Setti
 Show or hide floating captions from the main window, menu bar, or ⌘⇧C. The overlay displays caption text only and stays invisible when empty; it has no background, toolbar, status text, or hover resize controls.
 
 Use Settings > Floating Captions for five text styles, font and color, width, line spacing, ordering, persistence, and reset. Preview sample captions without recording. Caption Stability remains a separate readability timing control.
+
+Choose **Floating only** to start or resume capture and minimize the main window after startup succeeds. Startup failures leave the main controls available. Use the menu bar or app menus for start/stop and pause/resume. The combined main-and-floating view does not start a new session by itself. The previous-caption block remains for up to eight seconds and two lines.
 
 ## Transcript Files
 

@@ -167,6 +167,7 @@ struct QwenSessionTests {
 
     @Test func emptyFinalRetractsPartialFromCaptionOverlayAndPendingSave() throws {
         try withSession { session, _, directory in
+            session.setFloatingCaptionPresentationActive(true)
             session.useQwenTranslationMode()
             session.isTranscriptPersistenceEnabled = true
             let active = session.activateLiveCallbackPipelineForTesting()

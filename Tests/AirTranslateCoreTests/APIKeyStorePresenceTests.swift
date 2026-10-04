@@ -41,6 +41,11 @@ struct APIKeyStorePresenceTests {
     }
 
     @Test
+    func jevPresenceCheckUsesIsolatedKeychainWithoutReadingSecretData() {
+        verifyPresenceQuery(JevAPIKeyStore.presenceQuery(), service: "AirTranslate.Jev", account: "TYPESAFE_API_KEY")
+    }
+
+    @Test
     func nariKeyValidationRejectsBlankAndEmbeddedControlCharactersWithoutAccessingKeychain() throws {
         #expect(try NariAPIKeyStore.normalizedAPIKey("  test-placeholder  ") == "test-placeholder")
         for value in ["", " \n ", "test\r\nheader", "test\u{00}value", "test value"] {

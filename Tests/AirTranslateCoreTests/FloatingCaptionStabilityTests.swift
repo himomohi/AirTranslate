@@ -232,6 +232,7 @@ struct FloatingCaptionStabilityTests {
         #expect(session.floatingCaptionLineWidthUnits(usesPrimaryFont: false) == 372.0 / 40.0)
 
         session.isRunning = true
+        session.setFloatingCaptionPresentationActive(true)
         session.presentFloatingSourceText("AirTranslate keeps captions visible while you watch a lecture on your Mac.")
         let lines = session.floatingSourceText.split(separator: "\n")
         #expect(lines.count >= 2)
@@ -255,6 +256,7 @@ struct FloatingCaptionStabilityTests {
 
         #expect(session.floatingCaptionEffectiveLineCount < FloatingCaptionLineCount.six.rawValue)
         session.isRunning = true
+        session.setFloatingCaptionPresentationActive(true)
         session.presentFloatingSourceText("""
         One two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty.
         """)

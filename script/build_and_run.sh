@@ -32,8 +32,12 @@ if /usr/bin/pgrep -x "$APP_NAME" >/dev/null 2>&1; then
   exit 1
 fi
 
-swift build -c "$BUILD_CONFIGURATION"
-BUILD_BINARY="$(swift build -c "$BUILD_CONFIGURATION" --show-bin-path)/$APP_NAME"
+SWIFT_BUILD_ARGUMENTS=(-c "$BUILD_CONFIGURATION")
+if [[ -n "${SWIFT_BUILD_PATH:-}" ]]; then
+  SWIFT_BUILD_ARGUMENTS+=(--scratch-path "$SWIFT_BUILD_PATH")
+fi
+swift build "${SWIFT_BUILD_ARGUMENTS[@]}"
+BUILD_BINARY="$(swift build "${SWIFT_BUILD_ARGUMENTS[@]}" --show-bin-path)/$APP_NAME"
 
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_MACOS"

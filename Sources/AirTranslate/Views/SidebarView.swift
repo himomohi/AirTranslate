@@ -93,7 +93,7 @@ struct StageHeaderView: View {
                 openSettings()
             } label: {
                 AirChip(
-                    text: ProcessingEngine.current(for: session).title,
+                    text: session.processingEngineTitle,
                     systemImage: needsAPIKey ? "key.fill" : "cpu",
                     tint: needsAPIKey
                         ? AirTranslateDesign.Palette.warning
@@ -106,8 +106,8 @@ struct StageHeaderView: View {
             .accessibilityLabel(AppText.translationSettings)
             .accessibilityValue(
                 needsAPIKey
-                    ? "\(ProcessingEngine.current(for: session).title), \(missingAPIKeyTitle)"
-                    : ProcessingEngine.current(for: session).title
+                    ? "\(session.processingEngineTitle), \(missingAPIKeyTitle)"
+                    : session.processingEngineTitle
             )
 
             if session.isUsingMetaScribe && session.isMetaSpeakerLabelsEnabled {
@@ -139,7 +139,7 @@ struct StageHeaderView: View {
         case .grok: !session.hasGrokAPIKey
         case .nari: !session.hasNariAPIKey
         case .meta: !session.hasMetaAPIKey
-        case .apple: false
+        case .apple: session.isUsingJevSelection && !session.hasJevAPIKey
         }
     }
 
@@ -152,7 +152,7 @@ struct StageHeaderView: View {
         case .grok: GrokCopy.configurationRequired
         case .nari: NariCopy.configurationRequired
         case .meta: AppText.metaAPIKeyNotConfigured
-        case .apple: AppText.configureTranslationSettings
+        case .apple: session.isUsingJevSelection ? JevCopy.keyRequired : AppText.configureTranslationSettings
         }
     }
 }
@@ -221,17 +221,17 @@ struct ConsoleBarView: View {
             }
         } label: {
             HStack(spacing: AirTranslateDesign.Spacing.xs) {
-                if session.isStarting {
+                if session.captureControlState.phase.showsProgress {
                     ProgressView()
                         .controlSize(.small)
                 } else {
-                    Image(systemName: session.isRunning ? "stop.fill" : "play.fill")
+                    Image(systemName: session.captureControlState.phase.actionSystemImage)
                 }
 
                 Text(captureTitle)
                     .lineLimit(1)
 
-                if session.isRunning && !session.isPaused {
+                if session.captureControlState.phase == .running {
                     AudioLevelWaveform(
                         level: session.latestAudioLevel,
                         date: Date(),
@@ -246,6 +246,7 @@ struct ConsoleBarView: View {
             }
         }
         .buttonStyle(AirPillButtonStyle(kind: captureButtonKind))
+        .disabled(!session.captureControlState.canToggleCapture)
         .airFocusRing(cornerRadius: 22, focus: $isCaptureFocused)
         .defaultFocus($isCaptureFocused, true)
         .help(captureTitle)
@@ -261,7 +262,7 @@ struct ConsoleBarView: View {
         }
         .buttonStyle(AirIconButton())
         .airFocusRing(cornerRadius: 18)
-        .disabled(!session.isRunning || session.isFinishingQwenTranslation || session.isReconnectingQwenTranslation || session.isFinishingNariSTT || session.isFinishingGrokSTT)
+        .disabled(!session.captureControlState.canTogglePause)
         .help(session.isPaused ? AppText.resume : AppText.pause)
         .accessibilityLabel(session.isPaused ? AppText.resume : AppText.pause)
     }
@@ -633,18 +634,15 @@ struct ConsoleBarView: View {
     }
 
     private var captureTitle: String {
-        session.isRunning || session.isStarting ? AppText.stop : AppText.start
+        session.captureControlState.phase.actionTitle
     }
 
     private var captureStateDescription: String {
-        if session.isStarting { return session.statusMessage }
-        if session.isPaused { return AppText.paused }
-        if session.isRunning { return AppText.listening }
-        return session.statusMessage
+        session.captureControlState.statusTitle(statusMessage: session.statusMessage)
     }
 
     private var captureButtonKind: AirPillButtonKind {
-        if session.isPaused { return .paused }
+        if session.captureControlState.phase == .paused { return .paused }
         if session.isRunning || session.isStarting { return .stop }
         return .start
     }
@@ -748,29 +746,35 @@ private struct SessionStatusPill: View {
 
     var body: some View {
         AirChip(text: title, systemImage: symbolName, tint: tint)
+            .help(session.statusMessage)
             .accessibilityLabel(title)
             .accessibilityValue(session.statusMessage)
     }
 
     private var title: String {
-        if session.isPaused { return AppText.paused }
-        if session.isRunning { return AppText.listening }
-        return session.statusMessage
+        session.captureControlState.statusTitle(statusMessage: session.statusMessage)
     }
 
     private var symbolName: String {
-        if session.isPaused { return "pause.circle.fill" }
-        if session.isRunning { return "waveform.circle.fill" }
-        if session.statusMessage == AppText.ready { return "checkmark.circle.fill" }
-        return "circle.dotted"
+        switch session.captureControlState.phase {
+        case .starting, .finishing: "hourglass.circle.fill"
+        case .reconnecting: "arrow.triangle.2.circlepath"
+        case .paused: "pause.circle.fill"
+        case .running: "waveform.circle.fill"
+        case .idle: session.statusMessage == AppText.ready ? "checkmark.circle.fill" : "circle.dotted"
+        }
     }
 
     private var tint: Color {
-        if session.isPaused { return AirTranslateDesign.Palette.paused }
-        if session.isRunning || session.statusMessage == AppText.ready {
-            return AirTranslateDesign.Palette.live
+        switch session.captureControlState.phase {
+        case .starting, .finishing, .reconnecting, .paused:
+            AirTranslateDesign.Palette.paused
+        case .running:
+            AirTranslateDesign.Palette.live
+        case .idle:
+            session.statusMessage == AppText.ready
+                ? AirTranslateDesign.Palette.live : AirTranslateDesign.Palette.textSecondary
         }
-        return AirTranslateDesign.Palette.textSecondary
     }
 }
 

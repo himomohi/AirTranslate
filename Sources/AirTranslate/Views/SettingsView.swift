@@ -78,6 +78,7 @@ struct SettingsView: View {
         switch selectedCategory.wrappedValue {
         case .general:
             generalSettings
+            AppleTranslationSettingsView(session: session)
         case .apiKeys:
             apiKeySettings
         case .audio:
@@ -127,6 +128,29 @@ struct SettingsView: View {
                         ? SettingsCopy.captureRunningDisabledReason
                         : SettingsCopy.processingEngineDetail
                 )
+            }
+
+            SettingsToggleRow(
+                title: JevCopy.title,
+                detail: session.isJevSelectionAvailable ? JevCopy.detail : JevCopy.appleOnly,
+                systemImage: "text.badge.checkmark",
+                detailLineLimit: nil,
+                isOn: lockedSessionConfigurationBinding($session.isJevSelectionEnabled)
+            )
+            .disabled(isSessionConfigurationLocked || !session.isJevSelectionAvailable)
+            .accessibilityIdentifier("jevSelectionToggle")
+
+            if session.isUsingJevSelection {
+                SettingsNoticeRow(
+                    text: session.hasJevAPIKey ? session.jevSelectionStatus : JevCopy.keyRequired,
+                    systemImage: session.hasJevAPIKey ? "info.circle" : "key"
+                )
+            }
+
+            if session.isUsingJevSelection && !session.hasJevAPIKey {
+                Button(JevCopy.keySettings) { session.requestAPIKeySettings(provider: .jev) }
+                    .disabled(isSessionConfigurationLocked)
+                    .accessibilityIdentifier("jevAPIKeySettings")
             }
 
             if processingModeSelection.wrappedValue == .gemini {
@@ -1140,7 +1164,7 @@ enum SettingsSegmentedControlAccess {
     }
 }
 
-private enum SettingsCopy {
+enum SettingsCopy {
     static let general = AppText.localized(english: "General", korean: "일반")
     static let apiKeys = AppText.localized(english: "API Keys", korean: "API 키")
     static let audio = AppText.localized(english: "Audio", korean: "오디오")
@@ -1788,7 +1812,7 @@ private struct SettingsPermissionRow: View {
     }
 }
 
-private struct SettingsNoticeRow: View {
+struct SettingsNoticeRow: View {
     let text: String
     let systemImage: String
 
@@ -1870,7 +1894,7 @@ private struct SettingsNoticeActionRow: View {
     }
 }
 
-private struct SettingsGroup<Content: View>: View {
+struct SettingsGroup<Content: View>: View {
     let title: String
     @ViewBuilder let content: Content
 
@@ -1892,16 +1916,17 @@ private struct SettingsGroup<Content: View>: View {
     }
 }
 
-private struct SettingsControlRow<Trailing: View>: View {
+struct SettingsControlRow<Trailing: View>: View {
     let title: String
     let detail: String
     let systemImage: String
+    var detailLineLimit: Int? = 3
     @ViewBuilder let trailing: Trailing
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
             HStack(alignment: .center, spacing: 10) {
-                SettingsRowLabel(title: title, detail: detail, systemImage: systemImage)
+                SettingsRowLabel(title: title, detail: detail, systemImage: systemImage, detailLineLimit: detailLineLimit)
 
                 Spacer(minLength: 16)
 
@@ -1912,7 +1937,7 @@ private struct SettingsControlRow<Trailing: View>: View {
             .frame(minWidth: AirTranslateDesign.settingsRowBreakpoint)
 
             VStack(alignment: .leading, spacing: 10) {
-                SettingsRowLabel(title: title, detail: detail, systemImage: systemImage)
+                SettingsRowLabel(title: title, detail: detail, systemImage: systemImage, detailLineLimit: detailLineLimit)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 trailing
@@ -1930,10 +1955,11 @@ private struct SettingsToggleRow: View {
     let title: String
     let detail: String
     let systemImage: String
+    var detailLineLimit: Int? = 3
     @Binding var isOn: Bool
 
     var body: some View {
-        SettingsControlRow(title: title, detail: detail, systemImage: systemImage) {
+        SettingsControlRow(title: title, detail: detail, systemImage: systemImage, detailLineLimit: detailLineLimit) {
             Toggle(title, isOn: $isOn)
                 .labelsHidden()
                 .toggleStyle(.switch)
@@ -1986,6 +2012,8 @@ private struct SettingsRowLabel: View {
     let detail: String
     let systemImage: String
 
+    var detailLineLimit: Int? = 3
+
     var body: some View {
         HStack(alignment: .top, spacing: 9) {
             Image(systemName: systemImage)
@@ -2001,7 +2029,7 @@ private struct SettingsRowLabel: View {
                 Text(detail)
                     .font(AirTranslateDesign.Typography.meta)
                     .foregroundStyle(AirTranslateDesign.Palette.textSecondary)
-                    .lineLimit(3)
+                    .lineLimit(detailLineLimit)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
