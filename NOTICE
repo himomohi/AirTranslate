@@ -3,6 +3,17 @@ Copyright 2026 himomohi
 
 This product includes software developed by himomohi.
 
+The optional on-device Hy-MT2 translation engine uses llama.cpp b12317,
+Copyright (c) 2023-2026 The ggml authors, under the MIT License.
+The corresponding license is included in Resources/ThirdParty.
+https://github.com/ggml-org/llama.cpp
+
+Hy-MT2-1.8B-Q4_K_M model weights are downloaded separately from Tencent's
+tencent/Hy-MT2-1.8B-GGUF repository, revision
+a0c709d9fac510f2c807aa3af52872340dc37a4a, under the Apache License, Version 2.0.
+The complete original license is included in Resources/ThirdParty/Hy-MT2-LICENSE.txt.
+https://huggingface.co/tencent/Hy-MT2-1.8B-GGUF
+
 The experimental EmbeddingGemma 2 file transcription option includes adapted
 audio preprocessing and inference code from john-rocky/eg2-transcribe,
 revision e9c1c2653ff2ebe81447394b3cf22e407433dbed, licensed under the

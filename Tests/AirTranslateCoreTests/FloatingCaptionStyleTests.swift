@@ -35,7 +35,19 @@ struct FloatingCaptionStyleTests {
         #expect(style.lineSpacing == .relaxed)
         #expect(style.textEffect == .shadow)
         #expect(style.backgroundShape == .soft)
+        #expect(style.backdrop == .frostedDark)
         #expect(style.translationFirst)
+    }
+
+    @Test func presetPreservesBackdropSelection() {
+        withSession { session, _ in
+            session.floatingCaptionStyle.backdrop = .cinemaDark
+            session.applyFloatingCaptionPreset(.cinema)
+            #expect(session.floatingCaptionStyle.backdrop == .cinemaDark)
+            session.floatingCaptionStyle.backdrop = .none
+            session.applyFloatingCaptionPreset(.lecture)
+            #expect(session.floatingCaptionStyle.backdrop == .none)
+        }
     }
 
     @Test func presetDoesNotChangeSessionOrReadingPolicy() {

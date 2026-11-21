@@ -30,6 +30,7 @@ enum CaptionStyleCopy {
     static var spacing: String { text("Line spacing", "줄 간격", "行間", "行距") }
     static var effect: String { text("Text effect", "글자 효과", "文字効果", "文字效果") }
     static var corners: String { text("Background shape", "배경 모서리", "背景の形", "背景形状") }
+    static var backdrop: String { text("Caption backdrop", "자막 배경 스타일", "字幕の背景", "字幕背景样式") }
     static var translationFirst: String { text("Translation above original", "번역을 원문 위에 표시", "翻訳を原文の上に表示", "译文显示在原文上方") }
     static var keepOnTop: String { text("Keep above other windows", "다른 창 위에 표시", "ほかのウインドウの上に表示", "置于其他窗口上方") }
     static var resetStyle: String { text("Reset style", "스타일 초기화", "スタイルをリセット", "重置样式") }

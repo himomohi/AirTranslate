@@ -23,9 +23,20 @@
 
 AirTranslate 会捕获 Mac 正在播放的音频，实时转写；当你选择翻译流程时，它会进行翻译，并可将字幕悬浮在其他应用上方。Apple Mode 仍然是默认的本地优先流程。云端引擎为可选项，配置对应提供方密钥后即可使用。
 
-AirTranslate **1.17.0/build1170** 新增使用 EmbeddingGemma 2 在本机转写英语音频文件的可选功能。Apple 模式仍为默认方式，现有字幕和翻译改进继续提供。
+AirTranslate **1.18.0/build1180** 新增可选本地 **Hy-MT2 1.8B 翻译**、低延迟 **Focus Stage 单流式主界面**、**带自适应深色玻璃背景与悬停迷你 HUD 的悬浮字幕**、**分类式引擎与语音中心**、**控制中心风格 2×2 菜单栏面板**、**支持搜索/筛选/Markdown 与纯文本导出的记录库**以及**交互式术语标签编辑器**。Apple 模式仍为默认的本地优先方案。
 
-## 1.17.0 新增功能：英语文件本地转写
+## 1.18.0 新增内容：本地 Hy-MT2 翻译 · Focus Stage 界面 · 悬浮字幕 HUD
+
+- **可选本地 Hy-MT2 1.8B 翻译：** 在引擎中心选择 **Hy-MT2**，并在**设置 > 通用**下载经过校验的 Q4_K_M 权重（1.13 GB），即可通过内置 llama.cpp 在 Mac 上本地翻译 Apple 语音识别字幕，无需 API 密钥或外部翻译服务器。支持下载进度、取消、删除模型、本地预览测试、可选术语标签、近期字幕上下文，以及停止时最长 25 秒等待完成而不保存残缺片段。[设置与限制](docs/hymt-local-translation.md)。
+- **Focus Stage 主界面与更低实时延迟：** 将语言对选择与互换移至顶部状态栏，900pt 默认窗口（840pt 起）保持底部玻璃控制栏单行展开不被折叠；用带时间戳和实时高亮条的轮次卡片替代重复标签，并隔离音频电平波形视图（`SessionAudioWaveform`），避免音频电平更新触发整个控制栏重绘。
+- **分类式引擎与语音中心：** 通过 `全部 / 本地 / 云端` 筛选标签清晰区分本地模型、云端实时翻译和云端转写+本地翻译引擎，并直达模型、译文语音和 API 密钥管理。
+- **自适应悬浮字幕与悬停迷你 HUD：** 提供`磨砂深色`（默认）、`影院深色`和`透明`背景样式，确保在白色幻灯片和视频上方依然清晰；悬停即可暂停/继续、复制最新字幕、切换显示模式、调节字号（`A-`/`A+`）、切换背景并关闭。
+- **菜单栏控制中心 · 记录库搜索导出 · 术语标签：** 菜单栏弹窗改版为带 `电脑音频 / 麦克风` 快速切换的 2×2 磁贴网格；记录库新增搜索、类型筛选与 Markdown（`.md`）/纯文本（`.txt`）导出；设置页新增术语标签编辑器与 API 密钥数量徽章。
+- **稳定性修复：** Azure MAI 菜单栏停止等待最终结果并过滤未定稿原文；EmbeddingGemma 修复实时采集结束后重新检测本地模型及音频读取错误提示。
+
+[发布说明](Release/GITHUB-RELEASE-1.18.0.md) · [AirTranslate 1.18.0 发布](https://github.com/himomohi/AirTranslate/releases/tag/v1.18.0)。
+
+## 英语音频本地转写（自 1.17.0 起）
 
 - **可选文件转写：** 在设置 > 通用 > EmbeddingGemma 2 文件转写（实验）中使用。需要 Apple Silicon 和 macOS 27 及以上；应用整体最低要求仍为 macOS 26。仅限英语音频，最长60分钟／2 GB。与实时字幕独立运行，不恢复标点或大小写，不翻译音频，也不识别说话人。
 - **工作原理：** 固定的音频编码器生成随时间变化的表征，训练后的 reader 将其映射到英语单词嵌入，每个时刻选择单词或 blank。CTC 解码合并连续重复标签并移除 blank，生成文本。原实验的代码和 reader 权重未公开，因此使用独立公开复现的 reader v2。
@@ -60,9 +71,9 @@ AirTranslate **1.17.0/build1170** 新增使用 EmbeddingGemma 2 在本机转写�
 
 设置 > 通用中的 `qwen-audio-3.1-asr-flash-filetrans` 用于异步转写音频文件。**仅接受公开的 HTTPS 音频 URL**；QwenCloud 会从 URL 获取音频，此流程不会上传本地音频文件。请只分享你有权发送给提供方的音频。参见 [Qwen 设置与价格](docs/qwen-livetranslate.md)。真实账户认证、计费、翻译和转写质量及延迟尚未验证。
 
-**反映 API 密钥状态的模式选择器**将没有密钥的提供方显示为灰色，并在每行提供设置入口。信息图标说明模型及其计费依据。**OpenAI 语音统一翻译与原文转写**，并保留语言和输出偏好。主界面选择器可选择 Apple、OpenAI、Gemini、Qwen 和 Nari 模型，并按实际功能显示说明；译文语音模型使用单独的选择器。
+**分类式引擎与语音中心**支持按 `全部 / 本地 / 云端` 筛选，灰色区分缺少密钥的云端提供方并直达设置与 API 密钥页面，信息图标说明模型及其计费依据。**OpenAI 语音统一翻译与原文转写**，并保留语言和输出偏好；译文语音模型使用单独的选择器。
 
-**悬浮字幕只显示文字**，不显示窗口背景、边框、工具栏、状态文字或悬停缩放控件。可在设置中调整五种文字样式、字体、颜色、宽度、行距、顺序及示例预览，通过主界面、菜单栏或 ⌘⇧C 切换显示。
+**自适应悬浮字幕**提供`磨砂深色`（默认）、`影院深色`和`透明`背景，以及悬停迷你 HUD（暂停/继续、复制、切换显示模式、`A-`/`A+` 字号、切换背景与关闭）。可在设置中调整五种文字样式、字体、颜色、宽度、行距、顺序及示例预览，通过主界面、菜单栏或 ⌘⇧C 切换显示。
 
 **Qwen 停止前会等待最终字幕**。空的最终响应会撤回临时字幕，Qwen 记录仅保存已确认的结果，包括定期保存。Apple Mode 仍为默认模式，记录文件保存仍需主动启用。
 
@@ -70,12 +81,12 @@ AirTranslate **1.17.0/build1170** 新增使用 EmbeddingGemma 2 在本机转写�
 
 ## 下载
 
-当前公开最新版：**v1.17.0**。
+当前公开最新版：**v1.18.0**。
 
 - [下载 AirTranslate.dmg](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [下载 AirTranslate-1.17.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.17.0/AirTranslate-1.17.0.zip)
+- [下载 AirTranslate-1.18.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.18.0/AirTranslate-1.18.0.zip)
 - [下载 AirTranslate.dmg.sha256](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
-- [AirTranslate 1.17.0 发布说明](https://github.com/himomohi/AirTranslate/releases/tag/v1.17.0)
+- [AirTranslate 1.18.0 发布说明](https://github.com/himomohi/AirTranslate/releases/tag/v1.18.0)
 - [查看版本历史](Release/VERSION-HISTORY.md)
 
 开源 DMG 和 ZIP 使用 ad-hoc 签名，尚未经过 Apple 公证。若首次启动被阻止，请参阅[安装指南](docs/GETTING-STARTED.md)。可用以下命令检查 DMG 哈希：

@@ -44,7 +44,7 @@ struct ContentView: View {
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if isMainCaptionVisible {
-                    ConsoleBarView(session: session, isCompact: geometry.size.width < 1040)
+                    ConsoleBarView(session: session, isCompact: geometry.size.width < 840)
                         .padding(.horizontal, AirTranslateDesign.Spacing.lg)
                         .padding(.top, AirTranslateDesign.Spacing.sm)
                         .padding(.bottom, AirTranslateDesign.Spacing.md)
@@ -70,6 +70,11 @@ struct ContentView: View {
                     toggleFloatingCaptions()
                 } label: {
                     Image(systemName: isFloatingCaptionVisible ? "captions.bubble.fill" : "captions.bubble")
+                        .foregroundStyle(
+                            isFloatingCaptionVisible
+                                ? AirTranslateDesign.Palette.accent
+                                : AirTranslateDesign.Palette.textPrimary
+                        )
                 }
                 .help(AppText.floatingCaptions)
                 .accessibilityLabel(AppText.floatingCaptions)

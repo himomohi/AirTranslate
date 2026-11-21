@@ -3,7 +3,7 @@ import Foundation
 extension ProcessingEngine {
     var credentialProvider: CredentialProvider? {
         switch self {
-        case .apple: nil
+        case .apple, .hyMT: nil
         case .openAI: .openAI
         case .gemini: .gemini
         case .meta: .meta
@@ -17,7 +17,7 @@ extension ProcessingEngine {
     @MainActor
     func hasRequiredKey(in session: TranslationSessionStore) -> Bool {
         switch self {
-        case .apple: true
+        case .apple, .hyMT: true
         case .openAI: session.hasOpenAIAPIKey
         case .gemini: session.hasGeminiAPIKey
         case .meta: session.hasMetaAPIKey
@@ -41,6 +41,7 @@ extension ProcessingEngine {
         // 같은 모드를 다시 누르면 전사/번역 등 기존 세부 설정을 그대로 유지한다.
         guard self != Self.current(for: session) else { return true }
         switch self {
+        case .hyMT: session.useHyMTMode()
         case .apple: session.useAppleDefaultMode()
         case .openAI: session.useOpenAIMode()
         case .gemini: session.usePreferredGeminiMode()

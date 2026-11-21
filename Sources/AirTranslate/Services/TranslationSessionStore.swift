@@ -63,7 +63,7 @@ enum CaptureStartRecoveryAction: Equatable {
         switch readiness.issue {
         case .openAIAPIKeyMissing, .geminiAPIKeyMissing, .metaAPIKeyMissing, .azureConfigurationMissing, .nariAPIKeyMissing, .grokAPIKeyMissing, .qwenConfigurationMissing:
             .apiKeys
-        case .nariLegacyFreeModelSelected:
+        case .nariLegacyFreeModelSelected, .hyMTModelMissing:
             .generalSettings
         case .localAssetsChecking, .localAssetsUnavailable, .nariLanguageUnsupported, .grokLanguageUnsupported:
             .retry
@@ -190,6 +190,8 @@ struct StartConfiguration: Equatable {
     let usesAppleSourceAutoDetection: Bool
     let usesJevSelection: Bool
     let appleTranslationOptions: AppleTranslationOptions
+    let hyMTEnabled: Bool
+    let hyMTTerminologyText: String
 
     init(
         audioInputSource: AudioInputSource,
@@ -216,7 +218,9 @@ struct StartConfiguration: Equatable {
         usesMetaSpeakerLabels: Bool = true,
         usesAppleSourceAutoDetection: Bool,
         usesJevSelection: Bool = false,
-        appleTranslationOptions: AppleTranslationOptions = .init()
+        appleTranslationOptions: AppleTranslationOptions = .init(),
+        hyMTEnabled: Bool = false,
+        hyMTTerminologyText: String = ""
     ) {
         self.audioInputSource = audioInputSource
         self.microphoneDeviceUniqueID = microphoneDeviceUniqueID
@@ -243,6 +247,8 @@ struct StartConfiguration: Equatable {
         self.usesAppleSourceAutoDetection = usesAppleSourceAutoDetection
         self.usesJevSelection = usesJevSelection
         self.appleTranslationOptions = appleTranslationOptions
+        self.hyMTEnabled = hyMTEnabled
+        self.hyMTTerminologyText = hyMTTerminologyText
     }
 
     var isUsingGPTTranscriptionMode: Bool {
@@ -593,6 +599,136 @@ final class TranslationSessionStore {
             refreshModelAvailability()
         }
     }
+    private var hyMTEnabled = false
+    var isUsingHyMT: Bool {
+        get { hyMTEnabled }
+        set {
+            guard !isRunning, !isStarting, newValue != hyMTEnabled else { return }
+            hyMTEnabled = newValue
+            if newValue {
+                qwenTranslationModel = .off
+                grokTranscriptionModel = .off
+                nariTranscriptionModel = .off
+                isUsingAzureMAI = false
+                openAITranscriptionModel = .off
+                openAITranslationModel = .off
+                geminiTranslationModel = .off
+                metaTranscriptionModel = .off
+                selectedModel = .appleSystem
+                isTranscriptLintEnabled = false
+                restoreFloatingCaptionDisplayModeAfterTranscribeOnly()
+            } else {
+                Task { await hyMTTranslator.unload() }
+            }
+            persistSelectedSettings()
+            resetTranslationCache()
+            resetDubbingProgress()
+            refreshModelAvailability()
+        }
+    }
+    private(set) var isHyMTModelInstalled = false
+    private(set) var isHyMTModelChecking = false
+    private(set) var isHyMTModelDownloading = false
+    private(set) var hyMTDownloadProgress = 0.0
+    private(set) var hyMTModelMessage: String?
+    @ObservationIgnored private var hyMTModelTask: Task<Void, Never>?
+    private let hyMTTranslator = HyMTTranslationService()
+    private(set) var isFinishingHyMT = false
+    @ObservationIgnored private var hyMTFinishTask: Task<Void, Never>?
+    private var storedHyMTTerminologyText = ""
+    var hyMTTerminologyText: String {
+        get { storedHyMTTerminologyText }
+        set {
+            guard !isRunning, !isStarting, !isFinishingHyMT else { return }
+            let bounded = String(newValue.prefix(4_000))
+            guard bounded != storedHyMTTerminologyText else { return }
+            storedHyMTTerminologyText = bounded
+            persistSelectedSettings()
+            resetTranslationCache()
+        }
+    }
+    private struct CompletedHyMTTranslation {
+        let sourceText: String
+        let translatedText: String
+        let sourceLanguageID: String
+        let targetLanguageID: String
+    }
+    private var completedHyMTTranslations: [UUID: CompletedHyMTTranslation] = [:]
+    private var hyMTTranslationFailureMessage: String?
+#if DEBUG
+    var hyMTTranslationForTesting: (@MainActor (String) async throws -> String)?
+    var hyMTStopTimeoutForTesting: Duration?
+    var hyMTCaptureStopForTesting: (@MainActor @Sendable () async -> Void)?
+#endif
+
+    func useHyMTMode() {
+        guard !isRunning, !isStarting else { return }
+        clearTranscribeOnlyNotice(resetActivation: true)
+        isUsingHyMT = true
+        applyAppleVoiceOutputDefault()
+        if sourceLanguage == targetLanguage {
+            targetLanguage = fallbackTargetLanguage(excluding: sourceLanguage, preferred: .korean)
+        }
+        refreshHyMTModel()
+    }
+
+    func refreshHyMTModel() {
+        guard !isHyMTModelDownloading, !isHyMTModelChecking else { return }
+        isHyMTModelChecking = true
+        hyMTModelTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { isHyMTModelChecking = false; hyMTModelTask = nil }
+            do {
+                let installed = try await HyMTModelStore.shared.installedModel()
+                guard !Task.isCancelled else { return }
+                isHyMTModelInstalled = installed != nil
+            } catch {
+                if !Task.isCancelled { hyMTModelMessage = error.localizedDescription }
+            }
+        }
+    }
+
+    func downloadHyMTModel() {
+        guard !isRunning, !isStarting, !isHyMTModelDownloading, !isHyMTModelChecking else { return }
+        isHyMTModelDownloading = true
+        hyMTDownloadProgress = 0
+        hyMTModelMessage = nil
+        hyMTModelTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { isHyMTModelDownloading = false; hyMTModelTask = nil }
+            do {
+                _ = try await HyMTModelStore.shared.install { [weak self] value in
+                    Task { @MainActor in
+                        guard let self, self.isHyMTModelDownloading else { return }
+                        self.hyMTDownloadProgress = value
+                    }
+                }
+                isHyMTModelInstalled = true
+                hyMTDownloadProgress = 1
+            } catch {
+                if !Task.isCancelled { hyMTModelMessage = error.localizedDescription }
+            }
+        }
+    }
+
+    func cancelHyMTModelDownload() { hyMTModelTask?.cancel() }
+
+    func removeHyMTModel() {
+        guard !isRunning, !isStarting, !isHyMTModelDownloading, !isHyMTModelChecking else { return }
+        isHyMTModelChecking = true
+        hyMTModelTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { isHyMTModelChecking = false; hyMTModelTask = nil }
+            do {
+                await hyMTTranslator.unload()
+                try await HyMTModelStore.shared.remove()
+                isHyMTModelInstalled = false
+                hyMTModelMessage = nil
+                resetTranslationCache()
+            } catch { hyMTModelMessage = error.localizedDescription }
+        }
+    }
+
     var hasOpenAIAPIKey = OpenAIAPIKeyStore.hasAPIKey()
     var hasGeminiAPIKey = GeminiAPIKeyStore.hasAPIKey()
     var hasAzureSpeechAPIKey = AzureSpeechAPIKeyStore.hasAPIKey()
@@ -606,6 +742,7 @@ final class TranslationSessionStore {
     var nariTranscriptionModel = NariTranscriptionModel.off {
         didSet {
             if nariTranscriptionModel.isEnabled {
+                isUsingHyMT = false
                 qwenTranslationModel = .off
                 grokTranscriptionModel = .off
                 isUsingAzureMAI = false
@@ -648,6 +785,7 @@ final class TranslationSessionStore {
     var qwenTranslationModel = QwenTranslationModel.off {
         didSet {
             if qwenTranslationModel.isEnabled {
+                isUsingHyMT = false
                 preferredQwenModel = qwenTranslationModel
                 grokTranscriptionModel = .off
                 nariTranscriptionModel = .off
@@ -697,6 +835,7 @@ final class TranslationSessionStore {
     var grokTranscriptionModel = GrokTranscriptionModel.off {
         didSet {
             if grokTranscriptionModel.isEnabled {
+                isUsingHyMT = false
                 qwenTranslationModel = .off
                 nariTranscriptionModel = .off
                 isUsingAzureMAI = false
@@ -779,6 +918,7 @@ final class TranslationSessionStore {
     var isUsingAzureMAI = false {
         didSet {
             if isUsingAzureMAI {
+                isUsingHyMT = false
                 qwenTranslationModel = .off
                 grokTranscriptionModel = .off
                 nariTranscriptionModel = .off
@@ -815,6 +955,7 @@ final class TranslationSessionStore {
     var openAITranscriptionModel = OpenAIRealtimeTranscriptionModel.off {
         didSet {
             if openAITranscriptionModel.isEnabled {
+                isUsingHyMT = false
                 qwenTranslationModel = .off
                 grokTranscriptionModel = .off
                 nariTranscriptionModel = .off
@@ -831,6 +972,7 @@ final class TranslationSessionStore {
     var openAITranslationModel = OpenAIRealtimeTranslationModel.off {
         didSet {
             if openAITranslationModel.isEnabled {
+                isUsingHyMT = false
                 qwenTranslationModel = .off
                 grokTranscriptionModel = .off
                 nariTranscriptionModel = .off
@@ -852,6 +994,7 @@ final class TranslationSessionStore {
     var geminiTranslationModel = GeminiTranslationModel.off {
         didSet {
             if geminiTranslationModel.isEnabled {
+                isUsingHyMT = false
                 qwenTranslationModel = .off
                 grokTranscriptionModel = .off
                 nariTranscriptionModel = .off
@@ -878,6 +1021,7 @@ final class TranslationSessionStore {
     var metaTranscriptionModel = MetaTranscriptionModel.off {
         didSet {
             if metaTranscriptionModel.isEnabled {
+                isUsingHyMT = false
                 qwenTranslationModel = .off
                 grokTranscriptionModel = .off
                 nariTranscriptionModel = .off
@@ -937,7 +1081,7 @@ final class TranslationSessionStore {
         return false
     }
     var isUsingAppleTextTranslation: Bool {
-        !isTranscribeOnlyMode && !openAITranslationModel.isEnabled
+        !isUsingHyMT && !isTranscribeOnlyMode && !openAITranslationModel.isEnabled
             && !geminiTranslationModel.isEnabled && !isUsingQwenTranslation
     }
     var isJevSelectionEnabled = false {
@@ -1388,6 +1532,7 @@ final class TranslationSessionStore {
         loadSavedTranscripts()
         loadProductHuntScreenshotDemoIfRequested()
         refreshModelAvailability()
+        if isUsingHyMT { refreshHyMTModel() }
     }
 
     private func loadProductHuntScreenshotDemoIfRequested() {
@@ -1561,6 +1706,10 @@ final class TranslationSessionStore {
 
     func stop() {
         guard isRunning || isStarting else { return }
+        if isUsingHyMT, isRunning {
+            finishHyMTCapture()
+            return
+        }
         if isUsingQwenTranslation, isRunning {
             finishQwenCapture()
             return
@@ -1599,6 +1748,111 @@ final class TranslationSessionStore {
         finishPipeline(statusOverride: nil)
     }
 
+    private func finishHyMTCapture() {
+        guard isRunning, !isFinishingHyMT else { return }
+        let generation = pipelineLifecycle.generation
+        isFinishingHyMT = true
+        statusMessage = AppText.localized(
+            english: "Finishing the last local translation…", korean: "마지막 로컬 번역을 마무리하는 중…",
+            japanese: "最後のローカル翻訳を完了しています…", chineseSimplified: "正在完成最后的本地翻译…"
+        )
+        // 입력은 즉시 닫고 번역 세대는 마지막 결과를 받을 때까지 유지한다.
+        freezeHyMTRecognition()
+        scheduleCaptureStop()
+        flushPendingRecognizedCaption()
+        flushPendingCaptionPresentation()
+        transcriptCleanupTask?.cancel()
+        transcriptCleanupTask = nil
+        appleSmallPartialFlushTask?.cancel()
+        appleSmallPartialFlushTask = nil
+        commitCurrentPartial()
+        finalizeHyMTCaptionsForStop()
+        stopSpeaking()
+        if translationTask == nil, latestTranslationRequest == nil, orderedTranslationRequests.isEmpty {
+            completeHyMTStop(generation: generation, timedOut: false)
+            return
+        }
+        var timeout: Duration = .seconds(25)
+#if DEBUG
+        timeout = hyMTStopTimeoutForTesting ?? timeout
+#endif
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+        hyMTFinishTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                while translationTask != nil || latestTranslationRequest != nil || !orderedTranslationRequests.isEmpty {
+                    try Task.checkCancellation()
+                    guard isFinishingHyMT, pipelineLifecycle.acceptsSample(generation: generation) else { return }
+                    if ContinuousClock.now >= deadline {
+                        completeHyMTStop(generation: generation, timedOut: true)
+                        return
+                    }
+                    try await Task.sleep(for: .milliseconds(20))
+                }
+                try Task.checkCancellation()
+                completeHyMTStop(generation: generation, timedOut: false)
+            } catch is CancellationError {
+                // 종료·실패·세대 변경은 해당 진입점이 저장과 정리를 책임진다.
+            } catch {
+                guard isFinishingHyMT, pipelineLifecycle.acceptsSample(generation: generation) else { return }
+                hyMTTranslationFailureMessage = error.localizedDescription
+                completeHyMTStop(generation: generation, timedOut: false)
+            }
+        }
+    }
+
+    private func freezeHyMTRecognition() {
+        audioSamplePipelineRegistry.clear()
+        activeCaptionerGeneration = nil
+        transcriber.delegate = nil
+        transcriber.stop()
+    }
+
+    private func finalizeHyMTCaptionsForStop() {
+        for index in lines.indices where !lines[index].isFinal {
+            let line = lines[index]
+            let finalLine = CaptionLine(id: line.id, sourceText: line.sourceText,
+                translatedText: line.translatedText, translatedSourceText: line.translatedSourceText,
+                createdAt: line.createdAt, isFinal: true, revision: line.revision + 1,
+                speakerLabel: line.speakerLabel, usesLongSessionDisplay: usesLongSessionMode)
+            lines[index] = finalLine
+            guard completedHyMTTranslations[line.id]?.sourceText != line.sourceText else { continue }
+            let identity = AppleTranslationRequestIdentity(lineID: line.id, sourceText: line.sourceText,
+                segmentID: appleSpeechSegmentIDByLineID[line.id],
+                revision: appleSpeechRevisionByLineID[line.id] ?? 0, isFinal: true)
+            requestTranslation(for: finalLine, source: sourceLanguageByLineID[line.id] ?? sourceLanguage,
+                target: targetLanguage, preservesOrdering: true, bypassesDebounce: true,
+                force: true, appleIdentity: identity)
+        }
+    }
+
+    private func completeHyMTStop(generation: UInt64, timedOut: Bool) {
+        guard isFinishingHyMT, isRunning, pipelineLifecycle.acceptsSample(generation: generation) else { return }
+        let failure = timedOut ? AppText.localized(
+            english: "The last local translation timed out. Incomplete translations were not saved.",
+            korean: "마지막 로컬 번역 대기 시간이 초과되었습니다. 불완전한 번역은 저장하지 않았습니다.",
+            japanese: "最後のローカル翻訳がタイムアウトしました。不完全な翻訳は保存されませんでした。",
+            chineseSimplified: "最后的本地翻译等待超时，未保存不完整的翻译。"
+        ) : hyMTTranslationFailureMessage
+        pipelineLifecycle.stop()
+        finishPipeline(statusOverride: failure)
+    }
+
+    private func settleHyMTTranslationsForStop() {
+        for index in lines.indices {
+            let line = lines[index]
+            let completed = completedHyMTTranslations[line.id].flatMap {
+                $0.sourceText == line.sourceText ? $0 : nil
+            }
+            let text = completed?.translatedText ?? AppText.translationCancelled
+            guard line.translatedText != text || line.translatedSourceText != (completed?.sourceText ?? "") else { continue }
+            lines[index] = CaptionLine(id: line.id, sourceText: line.sourceText,
+                translatedText: text, translatedSourceText: completed?.sourceText ?? "",
+                createdAt: line.createdAt, isFinal: line.isFinal, revision: line.revision + 1,
+                speakerLabel: line.speakerLabel, usesLongSessionDisplay: usesLongSessionMode)
+        }
+    }
+
     private func drainAzureTranslations() async throws -> Bool {
         guard !isTranscribeOnlyMode else { return true }
         let deadline = ContinuousClock.now.advanced(by: .seconds(15))
@@ -1610,6 +1864,10 @@ final class TranslationSessionStore {
     }
 
     private func finishPipeline(statusOverride: String?) {
+        let captureAlreadyStoppingForHyMT = isFinishingHyMT
+        hyMTFinishTask?.cancel()
+        hyMTFinishTask = nil
+        isFinishingHyMT = false
         isFinishingQwenTranslation = false
         isReconnectingQwenTranslation = false
         isFinishingGrokSTT = false
@@ -1628,6 +1886,7 @@ final class TranslationSessionStore {
         flushOpenAITerminalTranscriptMailbox()
         flushPendingRecognizedCaption()
         flushPendingCaptionPresentation()
+        if isUsingHyMT { settleHyMTTranslationsForStop() }
         let hadTranscriptToSave = isTranscriptPersistenceEnabled
             && (!visibleTranscript().trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !activeAutosaveSourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -1650,11 +1909,13 @@ final class TranslationSessionStore {
             showToast(AppText.transcriptSavedToast)
         }
 
+        if !captureAlreadyStoppingForHyMT { scheduleCaptureStop() }
+    }
+
+    private func scheduleCaptureStop() {
         let previousStopTask = captureStopTask
         captureStopTask = Task { @MainActor in
-            if let previousStopTask {
-                await previousStopTask.value
-            }
+            if let previousStopTask { await previousStopTask.value }
             await stopCapture()
         }
     }
@@ -1746,7 +2007,9 @@ final class TranslationSessionStore {
             usesMetaSpeakerLabels: isMetaSpeakerLabelsEnabled,
             usesAppleSourceAutoDetection: isUsingAppleSourceAutoDetection,
             usesJevSelection: isJevSelectionEnabled,
-            appleTranslationOptions: appleTranslationOptions
+            appleTranslationOptions: appleTranslationOptions,
+            hyMTEnabled: isUsingHyMT,
+            hyMTTerminologyText: hyMTTerminologyText
         )
     }
 
@@ -1789,6 +2052,10 @@ final class TranslationSessionStore {
     }
 
     private func handleSystemAudioCaptureStoppedByUser(generation: UInt64) {
+        if isUsingHyMT, isRunning, pipelineLifecycle.acceptsSample(generation: generation) {
+            finishHyMTCapture()
+            return
+        }
         if isUsingQwenTranslation, isRunning, pipelineLifecycle.acceptsSample(generation: generation) {
             finishQwenCapture()
             return
@@ -1799,6 +2066,10 @@ final class TranslationSessionStore {
         }
         if isUsingNariSTT, isRunning, pipelineLifecycle.acceptsSample(generation: generation) {
             finishNariCapture()
+            return
+        }
+        if isUsingAzureMAI, isRunning, pipelineLifecycle.acceptsSample(generation: generation) {
+            stop()
             return
         }
         guard pipelineLifecycle.fail(generation: generation),
@@ -1836,6 +2107,9 @@ final class TranslationSessionStore {
     }
 
     func startReadinessAssessment() -> StartReadinessAssessment {
+        if isUsingHyMT, !isHyMTModelInstalled || isHyMTModelChecking || isHyMTModelDownloading {
+            return .init(issue: .hyMTModelMissing)
+        }
         if isUsingQwenTranslation, !hasQwenConfiguration {
             return .init(issue: .qwenConfigurationMissing)
         }
@@ -1872,6 +2146,7 @@ final class TranslationSessionStore {
     }
 
     private var requiredLocalModelForStart: IntelligenceModel? {
+        if isUsingHyMT { return .appleSpeechOnly }
         if isUsingQwenTranslation { return nil }
         if isUsingNariSTT || isUsingGrokSTT {
             return isTranscribeOnlyMode ? nil : .appleOnDevice
@@ -1913,6 +2188,8 @@ final class TranslationSessionStore {
             return NariCopy.configurationRequired
         case .nariLanguageUnsupported:
             return NariCopy.languageUnsupported
+        case .hyMTModelMissing:
+            return HyMTCopy.required
         case .nariLegacyFreeModelSelected:
             return NariCopy.legacyFreeModelEnded
         case .localAssetsChecking:
@@ -1943,7 +2220,7 @@ final class TranslationSessionStore {
     }
 
     func pause() {
-        guard isRunning, !isPaused, !isFinishingAzureMAI, !isFinishingNariSTT, !isFinishingGrokSTT, !isFinishingQwenTranslation, !isReconnectingQwenTranslation else { return }
+        guard isRunning, !isPaused, !isFinishingHyMT, !isFinishingAzureMAI, !isFinishingNariSTT, !isFinishingGrokSTT, !isFinishingQwenTranslation, !isReconnectingQwenTranslation else { return }
 
         if isUsingQwenTranslation {
             pauseQwenCapture()
@@ -1972,7 +2249,7 @@ final class TranslationSessionStore {
     }
 
     func resume() {
-        guard isRunning, isPaused, !isFinishingAzureMAI, !isFinishingNariSTT, !isReconnectingNariSTT, !isFinishingGrokSTT, !isReconnectingGrokSTT, !isFinishingQwenTranslation, !isReconnectingQwenTranslation else { return }
+        guard isRunning, isPaused, !isFinishingHyMT, !isFinishingAzureMAI, !isFinishingNariSTT, !isReconnectingNariSTT, !isFinishingGrokSTT, !isReconnectingGrokSTT, !isFinishingQwenTranslation, !isReconnectingQwenTranslation else { return }
         if isUsingQwenTranslation {
             resumeQwenCapture()
             return
@@ -2039,6 +2316,15 @@ final class TranslationSessionStore {
     }
 
     func prepareForTermination() {
+        if isUsingHyMT, isRunning {
+            freezeHyMTRecognition()
+            flushPendingRecognizedCaption()
+            flushPendingCaptionPresentation()
+            pipelineLifecycle.stop()
+            finishPipeline(statusOverride: AppText.translationCancelled)
+        }
+        hyMTModelTask?.cancel()
+        Task { await hyMTTranslator.unload() }
         cancelModelAssetDownload()
         cancelTranslationSessionWarmup()
         transcriptCheckpointTask?.cancel()
@@ -2213,6 +2499,7 @@ final class TranslationSessionStore {
     }
 
     func useAppleDefaultMode() {
+        isUsingHyMT = false
         qwenTranslationModel = .off
         grokTranscriptionModel = .off
         nariTranscriptionModel = .off
@@ -2475,6 +2762,7 @@ final class TranslationSessionStore {
     }
 
     func useTranscribeOnlyMode() {
+        isUsingHyMT = false
         qwenTranslationModel = .off
         isUsingAzureMAI = false
         if floatingCaptionDisplayModeBeforeTranscribeOnly == nil {
@@ -2953,8 +3241,10 @@ final class TranslationSessionStore {
             persistSelectedSettings()
         }
         let retainedBackgroundShape = floatingCaptionStyle.backgroundShape
+        let retainedBackdrop = floatingCaptionStyle.backdrop
         floatingCaptionStyle = preset.style
         floatingCaptionStyle.backgroundShape = retainedBackgroundShape
+        floatingCaptionStyle.backdrop = retainedBackdrop
         selectFloatingCaptionTextSizePreset(preset.textSize)
         floatingCaptionLineCount = preset.lineCount
         floatingCaptionTextAlignment = preset.alignment
@@ -4040,6 +4330,8 @@ final class TranslationSessionStore {
     }
 
     private func resetLiveSessionState(clearsVisibleLines: Bool) {
+        completedHyMTTranslations.removeAll()
+        hyMTTranslationFailureMessage = nil
         resetFloatingCaptionHistory(seedsCurrent: false)
         floatingRecognitionIdentity = nil
         floatingPresentedSourceIdentity = nil
@@ -4165,7 +4457,7 @@ final class TranslationSessionStore {
 
     private func warmTranslationSession() {
         cancelTranslationSessionWarmup()
-        guard !isUsingQwenTranslation, !openAITranslationModel.isEnabled, !geminiTranslationModel.isEnabled else { return }
+        guard !isUsingHyMT, !isUsingQwenTranslation, !openAITranslationModel.isEnabled, !geminiTranslationModel.isEnabled else { return }
 
         let warmSourceLanguage = sourceLanguage
         let warmTargetLanguage = targetLanguage
@@ -4260,6 +4552,7 @@ final class TranslationSessionStore {
         defer { isRestoringSelectedSettings = false }
 
         let defaults = settingsDefaults
+        storedHyMTTerminologyText = String((defaults.string(forKey: "hyMTTerminologyText") ?? "").prefix(4_000))
         if let sourceLanguageID = defaults.string(forKey: SettingsKey.sourceLanguageID),
            let language = LanguageOption.supported.first(where: { $0.id == sourceLanguageID }) {
             sourceLanguage = language
@@ -4409,6 +4702,7 @@ final class TranslationSessionStore {
         maiStreamingEndpoint = defaults.string(forKey: "maiStreamingEndpoint") ?? ""
         maiStreamingDeployment = defaults.string(forKey: "maiStreamingDeployment") ?? ""
         maiVoiceName = defaults.string(forKey: "maiVoiceName") ?? ""
+        let restoredHyMTMode = defaults.bool(forKey: "hyMTEnabled")
         let restoredAzureMode = defaults.bool(forKey: "azureMAIEnabled")
         let restoredGPTTranscriptionMode =
             defaults.string(forKey: SettingsKey.openAITranscriptionModelID)
@@ -4432,7 +4726,9 @@ final class TranslationSessionStore {
         } else if restoredQwenModel.isEnabled {
             preferredQwenModel = restoredQwenModel
         }
-        if restoredQwenModel.isEnabled {
+        if restoredHyMTMode {
+            isUsingHyMT = true
+        } else if restoredQwenModel.isEnabled {
             qwenTranslationModel = restoredQwenModel
         } else if restoredGrokModel.isEnabled {
             grokTranscriptionModel = restoredGrokModel
@@ -4507,6 +4803,8 @@ final class TranslationSessionStore {
         defaults.set(geminiTranslationModel.id, forKey: SettingsKey.geminiTranslationModelID)
         defaults.set(preferredOpenAIOutputMode.rawValue, forKey: SettingsKey.preferredOpenAIOutputMode)
         defaults.set(preferredGeminiModel.id, forKey: SettingsKey.preferredGeminiModelID)
+        defaults.set(isUsingHyMT, forKey: "hyMTEnabled")
+        defaults.set(hyMTTerminologyText, forKey: "hyMTTerminologyText")
         defaults.set(isUsingAzureMAI, forKey: "azureMAIEnabled")
         defaults.set(azureSpeechEndpoint, forKey: "azureSpeechEndpoint")
         defaults.set(azureTranscriptionModel.rawValue, forKey: "azureTranscriptionModel")
@@ -4559,6 +4857,12 @@ final class TranslationSessionStore {
     }
 
     private func stopCapture() async {
+#if DEBUG
+        if isUsingHyMT, let hyMTCaptureStopForTesting {
+            await hyMTCaptureStopForTesting()
+            return
+        }
+#endif
         await systemAudioCapture.stop()
         await microphoneAudioCapture.stop()
     }
@@ -4769,13 +5073,24 @@ final class TranslationSessionStore {
                 activeAutosaveTranslatedText = translatedText
             }
         }
-        if isUsingGrokSTT || isUsingNariSTT {
-            activeAutosaveSourceText = isUsingGrokSTT ? grokSavedTranscriptText : nariSavedTranscriptText
+        if isUsingGrokSTT || isUsingNariSTT || isUsingAzureMAI {
+            activeAutosaveSourceText = isUsingGrokSTT ? grokSavedTranscriptText
+                : (isUsingNariSTT ? nariSavedTranscriptText : azureSavedTranscriptText)
             activeAutosaveTranslatedText = lines.filter {
                 $0.isFinal && $0.translatedSourceText == $0.sourceText
                     && !$0.translatedText.isEmpty && $0.translatedText != AppText.translating
                     && $0.translatedText != AppText.translationCancelled
             }.map(\.translatedText).joined(separator: "\n")
+        }
+
+        if isUsingHyMT {
+            activeAutosaveSourceText = lines.map(\.sourceText).filter { !$0.isEmpty }.joined(separator: "\n\n")
+            // progress가 translatedSourceText를 채워도 완료된 번역만 파일에 확정한다.
+            activeAutosaveTranslatedText = lines.compactMap { line in
+                guard line.isFinal, let completed = completedHyMTTranslations[line.id],
+                      completed.sourceText == line.sourceText else { return nil }
+                return completed.translatedText
+            }.joined(separator: "\n\n")
         }
 
         if isUsingQwenTranslation {
@@ -5041,6 +5356,10 @@ final class TranslationSessionStore {
         }
         guard !updatedSourceText.isEmpty else { return }
 
+        if isUsingHyMT, !isFinishingHyMT {
+            statusMessage = AppText.listeningForSpeech(from: audioInputSource)
+        }
+
         lastRecognizedText = sourceText
         lastRecognizedWasFinal = isFinal
         lastRecognitionAt = now
@@ -5126,6 +5445,7 @@ final class TranslationSessionStore {
         confidence: Double,
         metadata: AppleSpeechRecognitionMetadata? = nil
     ) {
+        guard !isFinishingHyMT else { return }
         let isFinal = metadata?.isFinal ?? false
         if isFinal {
             flushPendingRecognizedCaption()
@@ -6150,7 +6470,7 @@ final class TranslationSessionStore {
     }
 
     private func scheduleTranscriptCleanup() {
-        guard isRunning, currentLineID != nil else { return }
+        guard isRunning, !isFinishingHyMT, currentLineID != nil else { return }
         guard !isUsingOpenAIRealtime else { return }
         guard Date().timeIntervalSince(lastRecognitionAt) > 1.5 else { return }
 
@@ -6432,6 +6752,7 @@ final class TranslationSessionStore {
         }
 #endif
         let translationOptions = appleTranslationOptions
+        let hyMTOptions = hyMTTranslationOptions(source: source, target: target, currentText: text)
         let segmentationOptions = isUsingAppleTextTranslation ? translationOptions : AppleTranslationOptions()
         let paragraphSegments = try await Task.detached(priority: .userInitiated) {
             try Task.checkCancellation()
@@ -6450,7 +6771,7 @@ final class TranslationSessionStore {
                 let cacheKey = translationCacheKey(
                     segment: segment, source: source, target: target, options: translationOptions
                 )
-                if let cachedSegment = translationSegmentCache.value(forKey: cacheKey) {
+                if !isUsingHyMT, let cachedSegment = translationSegmentCache.value(forKey: cacheKey) {
                     consecutiveCacheHitCount += 1
                     if consecutiveCacheHitCount.isMultiple(of: Self.translationCacheHitYieldInterval) {
                         await Task.yield()
@@ -6462,7 +6783,24 @@ final class TranslationSessionStore {
                 consecutiveCacheHitCount = 0
 
                 let translatedSegment: String
-                if openAITranslationModel.isEnabled && !openAITranslationModel.usesRealtimeAudioTranslation {
+                if isUsingHyMT {
+                    let completedParagraphs = translatedParagraphs
+                    let completedSegments = translatedSegments
+                    let publishPartial: @MainActor @Sendable (String) -> Void = { partial in
+                        let text = (completedParagraphs + [(completedSegments + [partial]).joined(separator: "\n")])
+                            .joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !text.isEmpty { progress(text) }
+                    }
+#if DEBUG
+                    if let hyMTTranslationForTesting {
+                        translatedSegment = try await hyMTTranslationForTesting(segment)
+                    } else {
+                        translatedSegment = try await hyMTTranslator.translate(segment, source: source, target: target, options: hyMTOptions, progress: publishPartial)
+                    }
+#else
+                    translatedSegment = try await hyMTTranslator.translate(segment, source: source, target: target, options: hyMTOptions, progress: publishPartial)
+#endif
+                } else if openAITranslationModel.isEnabled && !openAITranslationModel.usesRealtimeAudioTranslation {
                     let completedParagraphs = translatedParagraphs
                     let completedSegments = translatedSegments
                     translatedSegment = try await openAITranslator.translate(
@@ -6518,6 +6856,19 @@ final class TranslationSessionStore {
         }
 
         return translatedParagraphs.joined(separator: "\n\n")
+    }
+
+    private func hyMTTranslationOptions(source: LanguageOption, target: LanguageOption, currentText: String) -> HyMTTranslationOptions {
+        let currentLineID = activeTranslationRequest?.request.line.id
+        let previous = lines.compactMap { line -> String? in
+            guard line.id != currentLineID, line.isFinal, line.sourceText != currentText,
+                  let completed = completedHyMTTranslations[line.id],
+                  completed.sourceText == line.sourceText,
+                  completed.sourceLanguageID == source.id, completed.targetLanguageID == target.id else { return nil }
+            return completed.sourceText
+        }.suffix(2).joined(separator: "\n")
+        return HyMTTranslationOptions(terminology: HyMTTranslationOptions.parseTerminology(hyMTTerminologyText),
+                                      context: String(previous.suffix(800)))
     }
 
     nonisolated static func translationSegmentGroups(from text: String, options: AppleTranslationOptions = .init()) -> [[String]] {
@@ -6576,12 +6927,13 @@ final class TranslationSessionStore {
         segment: String, source: LanguageOption, target: LanguageOption, options: AppleTranslationOptions
     ) -> String {
         // 구분 문자가 포함된 용어도 서로 다른 설정과 같은 캐시 키가 되지 않게 한다.
-        let policy = openAITranslationModel.isEnabled ? "" : ([options.effectiveQuality.rawValue] + options.normalizedProtectedTerms)
-            .map { "\($0.utf8.count):\($0)" }.joined()
+        let policy = isUsingAppleTextTranslation ? ([options.effectiveQuality.rawValue] + options.normalizedProtectedTerms)
+            .map { "\($0.utf8.count):\($0)" }.joined() : ""
         return "\(source.id)\t\(target.id)\t\(translationEngineCacheID)\t\(policy)\t\(segment)"
     }
 
     private var translationEngineCacheID: String {
+        if isUsingHyMT { return "hymt2:\(HyMTModelStore.revision):\(hyMTTerminologyText.utf8.count):\(hyMTTerminologyText)" }
         if openAITranslationModel.isEnabled {
             return "openai:\(openAITranslationModel.id)"
         }
@@ -6589,6 +6941,7 @@ final class TranslationSessionStore {
     }
 
     private func cacheTranslatedSegment(_ segment: String, forKey key: String) {
+        guard !isUsingHyMT else { return }
         translationSegmentCache.insert(segment, forKey: key)
     }
 
@@ -7448,6 +7801,7 @@ final class TranslationSessionStore {
                 if error is CancellationError || !acceptsTranslationUpdates(for: request) {
                     finishActiveTranslationRequest("translation.cancelled", request: request)
                 } else {
+                    if isUsingHyMT { hyMTTranslationFailureMessage = error.localizedDescription }
                     if pendingTranslationSourceText == request.sourceText {
                         pendingTranslationSourceText = ""
                     }
@@ -7745,6 +8099,13 @@ final class TranslationSessionStore {
             language: targetLanguage,
             options: isUsingAppleTextTranslation ? appleTranslationOptions : .init()
         )
+        if isUsingHyMT, finalizesRequest {
+            completedHyMTTranslations[line.id] = CompletedHyMTTranslation(
+                sourceText: sourceText, translatedText: organizedTranslatedText,
+                sourceLanguageID: (sourceLanguageByLineID[line.id] ?? sourceLanguage).id,
+                targetLanguageID: targetLanguage.id
+            )
+        }
         if finalizesRequest, pendingTranslationSourceText == sourceText {
             pendingTranslationSourceText = ""
         }
@@ -8173,9 +8534,37 @@ final class TranslationSessionStore {
     }
 
 #if DEBUG
+    func stopHyMTFromSystemMenuForTesting(generation: UInt64) {
+        handleSystemAudioCaptureStoppedByUser(generation: generation)
+    }
+
+    @discardableResult
+    func checkpointHyMTTranscriptForTesting() -> Bool {
+        checkpointPendingTranscriptSave()
+    }
+
+    func hyMTOptionsForTesting(source: LanguageOption, target: LanguageOption, currentText: String) -> HyMTTranslationOptions {
+        hyMTTranslationOptions(source: source, target: target, currentText: currentText)
+    }
+
+    func waitForHyMTCaptureStopForTesting() async {
+        await captureStopTask?.value
+    }
+
     func deliverAzureTranscriptForTesting(_ text: String, isFinal: Bool, generation: UInt64) {
         if isFinal { receiveAzureMAI(.success(text), service: azureMAITranscriber, generation: generation) }
         else { receiveAzureMAIPartial(text, service: azureMAITranscriber, generation: generation) }
+    }
+
+    func stopAzureFromSystemMenuForTesting(generation: UInt64) {
+        handleSystemAudioCaptureStoppedByUser(generation: generation)
+    }
+
+    func finishAzurePipelineForTesting() {
+        azureFinishTask?.cancel()
+        azureFinishTask = nil
+        pipelineLifecycle.stop()
+        finishPipeline(statusOverride: nil)
     }
 
     func deliverNariTranscriptForTesting(_ update: NariTranscriptUpdate, generation: UInt64) {
@@ -8371,7 +8760,7 @@ extension TranslationSessionStore: SystemAudioCaptureDelegate {
     ) {
         Task { @MainActor in
             guard capture === systemAudioCapture,
-                  pipelineLifecycle.acceptsSample(generation: generation)
+                  pipelineLifecycle.acceptsSample(generation: generation), !isFinishingHyMT
             else {
                 return
             }
@@ -8450,7 +8839,7 @@ extension TranslationSessionStore: MicrophoneAudioCaptureDelegate {
     ) {
         Task { @MainActor in
             guard capture === microphoneAudioCapture,
-                  pipelineLifecycle.acceptsSample(generation: generation)
+                  pipelineLifecycle.acceptsSample(generation: generation), !isFinishingHyMT
             else {
                 return
             }

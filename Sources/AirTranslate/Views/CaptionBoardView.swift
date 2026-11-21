@@ -70,6 +70,25 @@ private struct CaptionTranscriptFeed: View {
             Group {
                 ScrollView {
                     VStack(alignment: .leading, spacing: AirTranslateDesign.Spacing.xs) {
+                        if session.lines.count > Self.stageVisibleLineLimit {
+                            HStack(spacing: AirTranslateDesign.Spacing.xs) {
+                                Image(systemName: "clock.arrow.circlepath")
+                                    .font(.system(size: 11, weight: .semibold))
+                                Text(
+                                    AppText.localized(
+                                        english: "Showing latest \(Self.stageVisibleLineLimit) turns · Earlier turns are saved in Library",
+                                        korean: "최근 \(Self.stageVisibleLineLimit)개 발화 표시 중 · 이전 기록은 라이브러리에서 확인",
+                                        japanese: "最新 \(Self.stageVisibleLineLimit) 件を表示中 · 過去の記録はライブラリで確認",
+                                        chineseSimplified: "正在显示最近 \(Self.stageVisibleLineLimit) 条 · 更早记录请在记录库中查看"
+                                    )
+                                )
+                                .font(AirTranslateDesign.Typography.meta)
+                            }
+                            .foregroundStyle(AirTranslateDesign.Palette.textTertiary)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.bottom, AirTranslateDesign.Spacing.xxs)
+                        }
+
                         if session.shouldShowTranscript && session.lines.isEmpty {
                             Text(AppText.waitingForTranscript)
                                 .font(AirTranslateDesign.Typography.label)
@@ -358,21 +377,31 @@ private struct StageEmptyStateView: View {
                 .airRaisedSurface()
             }
 
-            Button {
-                if session.isStarting {
+            if session.isStarting {
+                Button {
                     session.stop()
-                } else {
-                    session.start()
+                } label: {
+                    Label(AppText.cancel, systemImage: "xmark")
+                        .frame(minHeight: 44)
                 }
-            } label: {
+                .buttonStyle(AirPillButtonStyle(kind: .stop))
+                .accessibilityHint(session.statusMessage)
+            } else {
                 Label(
-                    session.isStarting ? AppText.cancel : AppText.startListening,
-                    systemImage: session.isStarting ? "xmark" : "play.fill"
+                    AppText.localized(
+                        english: "Press Start below or ⌘↩ to begin",
+                        korean: "하단 시작 버튼 또는 ⌘↩로 바로 시작하세요",
+                        japanese: "下の開始ボタンまたは ⌘↩ で開始します",
+                        chineseSimplified: "点击下方开始按钮或按 ⌘↩ 即可开始"
+                    ),
+                    systemImage: "keyboard"
                 )
-                    .frame(minHeight: 48)
+                .font(AirTranslateDesign.Typography.label)
+                .foregroundStyle(AirTranslateDesign.Palette.accent)
+                .padding(.horizontal, AirTranslateDesign.Spacing.md)
+                .padding(.vertical, AirTranslateDesign.Spacing.xs)
+                .background(AirTranslateDesign.Palette.accentSoft.opacity(0.6), in: Capsule())
             }
-            .buttonStyle(AirPillButtonStyle(kind: session.isStarting ? .stop : .start))
-            .accessibilityHint(session.isStarting ? session.statusMessage : description)
 
             Text(session.isStarting ? session.statusMessage : description)
                 .font(AirTranslateDesign.Typography.meta)
@@ -387,9 +416,19 @@ private struct StageEmptyStateView: View {
 }
 
 private struct CaptionLineView: View, Equatable {
+    private static let timestampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
+
     let line: CaptionLine
     let showsTranslationPane: Bool
     let isLive: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHoveringCard = false
+    @State private var isCopyFeedbackVisible = false
+    @State private var copyFeedbackToken = 0
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.line.id == rhs.line.id
@@ -399,57 +438,128 @@ private struct CaptionLineView: View, Equatable {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: AirTranslateDesign.Spacing.md) {
-            if let speakerLabel = line.speakerLabel {
-                AirChip(
-                    text: AppText.speakerLabel(speakerLabel),
-                    systemImage: "person.fill",
-                    tint: AirTranslateDesign.Palette.accent
-                )
-                .frame(width: 72, alignment: .leading)
-                .accessibilityLabel(AppText.speakerLabel(speakerLabel))
-            }
+        VStack(alignment: .leading, spacing: AirTranslateDesign.Spacing.xs) {
+            HStack(spacing: AirTranslateDesign.Spacing.xs) {
+                Text(Self.timestampFormatter.string(from: line.createdAt))
+                    .font(AirTranslateDesign.Typography.meta.monospacedDigit())
+                    .foregroundStyle(AirTranslateDesign.Palette.textTertiary)
 
-            VStack(alignment: .leading, spacing: AirTranslateDesign.Spacing.xs) {
-                if showsTranslationPane {
-                    TurnTranscriptText(
-                        lineID: line.id,
-                        title: AppText.original,
-                        text: line.sourceText,
-                        displayText: line.sourceDisplayText,
-                        holdsLiveRewrites: isLive,
-                        font: AirTranslateDesign.Typography.captionOriginal,
-                        lineSpacing: 4,
-                        color: AirTranslateDesign.Palette.textSecondary
+                if let speakerLabel = line.speakerLabel {
+                    AirChip(
+                        text: AppText.speakerLabel(speakerLabel),
+                        systemImage: "person.fill",
+                        tint: AirTranslateDesign.Palette.accent
                     )
+                    .accessibilityLabel(AppText.speakerLabel(speakerLabel))
+                }
 
-                    TurnTranscriptText(
-                        lineID: line.id,
-                        title: AppText.translation,
-                        text: line.translatedText,
-                        displayText: line.translatedDisplayText,
-                        holdsLiveRewrites: isLive,
-                        font: AirTranslateDesign.Typography.captionTranslation,
-                        lineSpacing: 6,
-                        color: AirTranslateDesign.Palette.textPrimary
-                    )
-                } else {
-                    TurnTranscriptText(
-                        lineID: line.id,
-                        title: AppText.original,
-                        text: line.sourceText,
-                        displayText: line.sourceDisplayText,
-                        holdsLiveRewrites: isLive,
-                        font: AirTranslateDesign.Typography.captionTranslation,
-                        lineSpacing: 6,
-                        color: AirTranslateDesign.Palette.textPrimary
-                    )
+                if isLive {
+                    Circle()
+                        .fill(AirTranslateDesign.Palette.accent)
+                        .frame(width: 6, height: 6)
+                        .accessibilityHidden(true)
+                }
+
+                Spacer(minLength: 8)
+
+                if canCopyTurn {
+                    Button {
+                        if copyTurnText() {
+                            showCopyFeedback()
+                        }
+                    } label: {
+                        Image(systemName: isCopyFeedbackVisible ? "checkmark" : "doc.on.doc")
+                            .font(AirTranslateDesign.Typography.meta.weight(.medium))
+                            .foregroundStyle(
+                                isCopyFeedbackVisible
+                                    ? AirTranslateDesign.Palette.accent
+                                    : AirTranslateDesign.Palette.textTertiary
+                            )
+                            .frame(width: 24, height: 22)
+                    }
+                    .buttonStyle(AirTranslatePressButtonStyle())
+                    .opacity(isHoveringCard || isCopyFeedbackVisible ? 1 : 0)
+                    .help(isCopyFeedbackVisible ? AppText.copied : AppText.copy)
+                    .accessibilityLabel(AppText.copy)
+                    .accessibilityValue(isCopyFeedbackVisible ? AppText.copied : "")
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if showsTranslationPane {
+                TurnTranscriptText(
+                    lineID: line.id,
+                    title: AppText.original,
+                    text: line.sourceText,
+                    displayText: line.sourceDisplayText,
+                    holdsLiveRewrites: isLive,
+                    font: AirTranslateDesign.Typography.captionOriginal,
+                    lineSpacing: 4,
+                    color: AirTranslateDesign.Palette.textSecondary
+                )
+
+                TurnTranscriptText(
+                    lineID: line.id,
+                    title: AppText.translation,
+                    text: line.translatedText,
+                    displayText: line.translatedDisplayText,
+                    holdsLiveRewrites: isLive,
+                    font: AirTranslateDesign.Typography.captionTranslation,
+                    lineSpacing: 6,
+                    color: AirTranslateDesign.Palette.textPrimary
+                )
+            } else {
+                TurnTranscriptText(
+                    lineID: line.id,
+                    title: AppText.original,
+                    text: line.sourceText,
+                    displayText: line.sourceDisplayText,
+                    holdsLiveRewrites: isLive,
+                    font: AirTranslateDesign.Typography.captionTranslation,
+                    lineSpacing: 6,
+                    color: AirTranslateDesign.Palette.textPrimary
+                )
+            }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .airStageBlock(isLive: isLive)
+        .onHover { isHoveringCard = $0 }
+        .animation(reduceMotion ? nil : AirTranslateDesign.Motion.quick, value: isHoveringCard)
+        .task(id: copyFeedbackToken) {
+            guard isCopyFeedbackVisible else { return }
+            try? await Task.sleep(for: .milliseconds(900))
+            guard !Task.isCancelled else { return }
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.18)) {
+                isCopyFeedbackVisible = false
+            }
+        }
+    }
+
+    private var canCopyTurn: Bool {
+        line.sourceText.rangeOfCharacter(from: .whitespacesAndNewlines.inverted) != nil
+            || (showsTranslationPane && line.translatedText.rangeOfCharacter(from: .whitespacesAndNewlines.inverted) != nil
+                && line.translatedText != AppText.translating)
+    }
+
+    private func copyTurnText() -> Bool {
+        let source = line.sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let translation = line.translatedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let combined: String
+        if showsTranslationPane && !translation.isEmpty && translation != AppText.translating {
+            combined = source.isEmpty ? translation : "\(source)\n\(translation)"
+        } else {
+            combined = source
+        }
+        guard !combined.isEmpty else { return false }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(combined, forType: .string)
+        return true
+    }
+
+    private func showCopyFeedback() {
+        copyFeedbackToken += 1
+        withAnimation(reduceMotion ? nil : AirTranslateDesign.Motion.quick) {
+            isCopyFeedbackVisible = true
+        }
     }
 }
 
@@ -468,50 +578,11 @@ private struct TurnTranscriptText: View {
     @State private var displayHoldTask: Task<Void, Never>?
     @State private var isTextOverflowing = false
     @State private var isReadingBack = false
-    @State private var isCopyFeedbackVisible = false
-    @State private var copyFeedbackToken = 0
-    @State private var isHovering = false
-    @FocusState private var isCopyFocused: Bool
-    @AccessibilityFocusState private var isCopyAccessibilityFocused: Bool
 
     private let displayPolicy = CaptionDisplayUpdatePolicy()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: AirTranslateDesign.Spacing.xxs) {
-            HStack(spacing: AirTranslateDesign.Spacing.xs) {
-                Text(title.uppercased())
-                    .font(.system(size: 12, weight: .medium))
-                    .tracking(0.6)
-                    .foregroundStyle(AirTranslateDesign.Palette.textSecondary)
-                    .accessibilityAddTraits(.isHeader)
-                Spacer(minLength: 8)
-                Button {
-                    if copyText() {
-                        showCopyFeedback()
-                    }
-                } label: {
-                    Image(systemName: isCopyFeedbackVisible ? "checkmark" : "doc.on.doc")
-                        .font(AirTranslateDesign.Typography.meta.weight(.medium))
-                        .foregroundStyle(
-                            isCopyFeedbackVisible
-                                ? AirTranslateDesign.Palette.accent
-                                : AirTranslateDesign.Palette.textTertiary
-                        )
-                        .frame(width: 24, height: 24)
-                }
-                .buttonStyle(AirTranslatePressButtonStyle())
-                .controlSize(.small)
-                .focused($isCopyFocused)
-                .accessibilityFocused($isCopyAccessibilityFocused)
-                .opacity(isCopyControlVisible ? 1 : 0)
-                .disabled(!canCopy)
-                .help(isCopyFeedbackVisible ? AppText.copied : AppText.copyTranscriptPane(title))
-                .accessibilityLabel(AppText.copyTranscriptPane(title))
-                .accessibilityValue(isCopyFeedbackVisible ? AppText.copied : AppText.copy)
-                .accessibilityRespondsToUserInteraction(true)
-                .accessibilityHidden(!canCopy)
-            }
-
+        Group {
             if text.utf8.count > 4_000 && text.count > 4_000 {
                 ScrollableTranscriptText(
                     text: visibleDisplayText,
@@ -541,8 +612,7 @@ private struct TurnTranscriptText: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .onHover { isHovering = $0 }
-        .animation(reduceMotion ? nil : AirTranslateDesign.Motion.quick, value: isHovering)
+        .accessibilityLabel(title)
         .onAppear {
             applyDisplayUpdate(displayText, canHoldRewrite: holdsLiveRewrites)
         }
@@ -556,46 +626,10 @@ private struct TurnTranscriptText: View {
             displayHoldTask?.cancel()
             displayHoldTask = nil
         }
-        .task(id: copyFeedbackToken) {
-            guard isCopyFeedbackVisible else { return }
-
-            try? await Task.sleep(for: .milliseconds(900))
-            guard !Task.isCancelled else { return }
-
-            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.18)) {
-                isCopyFeedbackVisible = false
-            }
-        }
     }
 
     private var visibleDisplayText: String {
         didInitializeDisplayState ? displayState.visibleText : displayText
-    }
-
-    private var isCopyControlVisible: Bool {
-        isHovering || isCopyFeedbackVisible || isCopyFocused || isCopyAccessibilityFocused
-    }
-
-    private var canCopy: Bool {
-        text.rangeOfCharacter(from: .whitespacesAndNewlines.inverted) != nil
-            && text != AppText.translating
-    }
-
-    private func copyText() -> Bool {
-        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedText.isEmpty, trimmedText != AppText.translating else { return false }
-
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(trimmedText, forType: .string)
-        return true
-    }
-
-    private func showCopyFeedback() {
-        copyFeedbackToken += 1
-
-        withAnimation(reduceMotion ? nil : AirTranslateDesign.Motion.quick) {
-            isCopyFeedbackVisible = true
-        }
     }
 
     private func applyDisplayUpdate(_ candidateText: String, canHoldRewrite: Bool) {

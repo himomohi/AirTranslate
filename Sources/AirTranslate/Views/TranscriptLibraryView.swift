@@ -1,9 +1,22 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 private enum DraftEditorField: Hashable {
     case source
     case translation
+}
+
+private enum TranscriptLibraryFilter: String, CaseIterable, Identifiable {
+    case all, bilingual, sourceOnly
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .all: AppText.localized(english: "All", korean: "전체", japanese: "すべて", chineseSimplified: "全部")
+        case .bilingual: AppText.originalAndTranslation
+        case .sourceOnly: AppText.original
+        }
+    }
 }
 
 struct TranscriptLibraryView: View {
@@ -16,6 +29,8 @@ struct TranscriptLibraryView: View {
     @State private var isDeleteAllConfirmationPresented = false
     @State private var isCopyFeedbackVisible = false
     @State private var copyFeedbackToken = 0
+    @State private var searchQuery = ""
+    @State private var filter: TranscriptLibraryFilter = .all
 
     var body: some View {
         VStack(spacing: 0) {
@@ -96,18 +111,49 @@ struct TranscriptLibraryView: View {
                 .keyboardShortcut(.cancelAction)
             }
 
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 9) {
-                    contentModeControl
-                    Spacer(minLength: 12)
-                    libraryActions
+            HStack(spacing: AirTranslateDesign.Spacing.sm) {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(AirTranslateDesign.Palette.textTertiary)
+                        .font(.system(size: 12, weight: .medium))
+                    TextField(
+                        AppText.localized(english: "Search transcripts...", korean: "기록 검색...", japanese: "記録を検索...", chineseSimplified: "搜索记录..."),
+                        text: $searchQuery
+                    )
+                    .textFieldStyle(.plain)
+                    .font(AirTranslateDesign.Typography.label)
+                    if !searchQuery.isEmpty {
+                        Button {
+                            searchQuery = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(AirTranslateDesign.Palette.textTertiary)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-                .frame(minWidth: 700)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .frame(maxWidth: 300)
+                .background(AirTranslateDesign.Palette.raised, in: RoundedRectangle(cornerRadius: AirTranslateDesign.Radius.control, style: .continuous))
+                .overlay { RoundedRectangle(cornerRadius: AirTranslateDesign.Radius.control, style: .continuous).strokeBorder(AirTranslateDesign.Palette.hairline) }
 
-                VStack(alignment: .leading, spacing: 10) {
-                    contentModeControl
-                    libraryActions
+                Picker("", selection: $filter) {
+                    ForEach(TranscriptLibraryFilter.allCases) { item in
+                        Text(item.title).tag(item)
+                    }
                 }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .fixedSize()
+
+                Spacer(minLength: 8)
+            }
+
+            HStack(spacing: AirTranslateDesign.Spacing.sm) {
+                contentModeControl
+                Spacer(minLength: 12)
+                libraryActions
             }
         }
     }
@@ -119,6 +165,7 @@ struct TranscriptLibraryView: View {
                 .tracking(0.6)
                 .textCase(.uppercase)
                 .foregroundStyle(AirTranslateDesign.Palette.textSecondary)
+                .fixedSize()
 
             if session.isTranscribeOnlyMode {
                 Text(session.effectiveSavedTranscriptContentMode.title)
@@ -133,13 +180,29 @@ struct TranscriptLibraryView: View {
                 .labelsHidden()
                 .pickerStyle(.segmented)
                 .tint(AirTranslateDesign.Palette.accent)
-                .frame(minWidth: 210, idealWidth: 230, maxWidth: 280)
+                .fixedSize()
             }
         }
     }
 
     private var libraryActions: some View {
-        HStack(spacing: 9) {
+        HStack(spacing: 8) {
+            Menu {
+                Button(AppText.localized(english: "Export as Markdown (.md)", korean: "Markdown (.md)로 내보내기", japanese: "Markdown (.md) で書き出す", chineseSimplified: "导出为 Markdown (.md)")) {
+                    exportSelectedTranscript(asMarkdown: true)
+                }
+                Button(AppText.localized(english: "Export as Plain Text (.txt)", korean: "텍스트 (.txt)로 내보내기", japanese: "テキスト (.txt) で書き出す", chineseSimplified: "导出为纯文本 (.txt)")) {
+                    exportSelectedTranscript(asMarkdown: false)
+                }
+            } label: {
+                Label(
+                    AppText.localized(english: "Export", korean: "내보내기", japanese: "書き出し", chineseSimplified: "导出"),
+                    systemImage: "square.and.arrow.up"
+                )
+            }
+            .fixedSize()
+            .disabled(session.selectedSavedTranscript == nil || !canCopyDraft)
+
             Button {
                 session.openTranscriptsFolder()
             } label: {
@@ -147,6 +210,7 @@ struct TranscriptLibraryView: View {
             }
             .buttonStyle(.bordered)
             .tint(AirTranslateDesign.Palette.accent)
+            .fixedSize()
 
             Button(role: .destructive) {
                 isDeleteAllConfirmationPresented = true
@@ -155,8 +219,23 @@ struct TranscriptLibraryView: View {
             }
             .buttonStyle(.bordered)
             .tint(AirTranslateDesign.Palette.danger)
+            .fixedSize()
             .disabled(session.savedTranscripts.isEmpty)
             .help(AppText.deleteAllSavedTranscriptsHelp)
+        }
+    }
+
+    private var filteredTranscripts: [SavedTranscript] {
+        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        return session.savedTranscripts.filter { item in
+            let matchesFilter: Bool = switch filter {
+            case .all: true
+            case .bilingual: item.isOriginalAndTranslation
+            case .sourceOnly: !item.isOriginalAndTranslation
+            }
+            guard matchesFilter else { return false }
+            guard !query.isEmpty else { return true }
+            return item.title.localizedCaseInsensitiveContains(query)
         }
     }
 
@@ -205,7 +284,7 @@ struct TranscriptLibraryView: View {
     private var transcriptList: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: AirTranslateDesign.Spacing.xxs) {
-                ForEach(session.savedTranscripts) { transcript in
+                ForEach(filteredTranscripts) { transcript in
                     Button {
                         session.selectSavedTranscript(transcript.id)
                     } label: {
@@ -244,7 +323,7 @@ struct TranscriptLibraryView: View {
                                 .controlSize(.small)
                                 .frame(width: 28, height: 28)
                         } else {
-                            Label(AppText.foundationModelCleanupShort, systemImage: "sparkles")
+                            Label(AppText.foundationModelCleanupShort, systemImage: "wand.and.stars")
                                 .font(AirTranslateDesign.Typography.meta.weight(.semibold))
                         }
                     }
@@ -380,7 +459,7 @@ struct TranscriptLibraryView: View {
         Button {
             showWritingTools(for: field)
         } label: {
-            Image(systemName: "sparkles")
+            Image(systemName: "pencil.and.outline")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(AirTranslateDesign.Palette.textSecondary)
                 .frame(width: 26, height: 26)
@@ -389,6 +468,39 @@ struct TranscriptLibraryView: View {
         .buttonStyle(AirTranslatePressButtonStyle())
         .help(AppText.appleIntelligenceWritingTools)
         .accessibilityLabel(AppText.appleIntelligenceWritingTools)
+    }
+
+    private func exportSelectedTranscript(asMarkdown: Bool) {
+        guard let selected = session.selectedSavedTranscript else { return }
+        let sourceText = session.savedDraftSourceText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let translatedText = session.savedDraftTranslationText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let content: String
+        if asMarkdown {
+            var lines = ["# \(selected.title)", ""]
+            if !sourceText.isEmpty {
+                lines.append("## \(AppText.original)")
+                lines.append(sourceText)
+                lines.append("")
+            }
+            if selected.isOriginalAndTranslation && !translatedText.isEmpty {
+                lines.append("## \(AppText.translation)")
+                lines.append(translatedText)
+                lines.append("")
+            }
+            content = lines.joined(separator: "\n")
+        } else {
+            if selected.isOriginalAndTranslation && !translatedText.isEmpty {
+                content = "\(AppText.original)\n\(sourceText)\n\n\(AppText.translation)\n\(translatedText)\n"
+            } else {
+                content = sourceText + "\n"
+            }
+        }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [asMarkdown ? (UTType(filenameExtension: "md") ?? .plainText) : .plainText]
+        let baseName = selected.title.replacingOccurrences(of: "/", with: "-")
+        panel.nameFieldStringValue = "\(baseName).\(asMarkdown ? "md" : "txt")"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        try? content.write(to: url, atomically: true, encoding: .utf8)
     }
 
     private var canCopyDraft: Bool {

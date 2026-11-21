@@ -12,32 +12,40 @@ struct FloatingCaptionSettingsView: View {
         VStack(alignment: .leading, spacing: 20) {
             presetPicker
             FloatingCaptionStylePreview(session: session)
-            GroupBox(CaptionStyleCopy.content) {
-                VStack(alignment: .leading, spacing: 14) {
-                    Picker(AppText.floatingDisplay, selection: $session.floatingCaptionDisplayMode) {
-                        ForEach(session.availableFloatingCaptionDisplayModes) { Text($0.title).tag($0) }
-                    }
-                    .disabled(session.isTranscribeOnlyMode)
-                    sizeControl
-                    Picker(AppText.floatingLineCount, selection: $session.floatingCaptionLineCount) {
-                        ForEach(FloatingCaptionLineCount.allCases) { Text($0.title).tag($0) }
-                    }
-                    Text(CaptionStyleCopy.lineHint).font(.caption).foregroundStyle(.secondary)
-                    Picker(AppText.captionAlignment, selection: $session.floatingCaptionTextAlignment) {
-                        ForEach(FloatingCaptionTextAlignment.allCases) { Text($0.title).tag($0) }
-                    }
-                    if session.floatingCaptionDisplayMode == .originalAndTranslation {
-                        Toggle(CaptionStyleCopy.translationFirst, isOn: $session.floatingCaptionStyle.translationFirst)
-                    }
-                    Picker(AppText.captionStability, selection: $session.floatingCaptionStability) {
-                        ForEach(FloatingCaptionStability.allCases) { Text($0.title).tag($0) }
-                    }
-                    .help(AppText.captionStabilityDescription)
-                }
-                .padding(8)
-            }
+            VStack(alignment: .leading, spacing: 14) {
+                Text(CaptionStyleCopy.content)
+                    .font(AirTranslateDesign.Typography.sectionLabel)
+                    .textCase(.uppercase)
+                    .foregroundStyle(AirTranslateDesign.Palette.textSecondary)
 
-            GroupBox {
+                Picker(AppText.floatingDisplay, selection: $session.floatingCaptionDisplayMode) {
+                    ForEach(session.availableFloatingCaptionDisplayModes) { Text($0.title).tag($0) }
+                }
+                .disabled(session.isTranscribeOnlyMode)
+                Picker(CaptionStyleCopy.backdrop, selection: $session.floatingCaptionStyle.backdrop) {
+                    ForEach(FloatingCaptionBackdrop.allCases) { Text($0.title).tag($0) }
+                }
+                sizeControl
+                Picker(AppText.floatingLineCount, selection: $session.floatingCaptionLineCount) {
+                    ForEach(FloatingCaptionLineCount.allCases) { Text($0.title).tag($0) }
+                }
+                Text(CaptionStyleCopy.lineHint).font(.caption).foregroundStyle(.secondary)
+                Picker(AppText.captionAlignment, selection: $session.floatingCaptionTextAlignment) {
+                    ForEach(FloatingCaptionTextAlignment.allCases) { Text($0.title).tag($0) }
+                }
+                if session.floatingCaptionDisplayMode == .originalAndTranslation {
+                    Toggle(CaptionStyleCopy.translationFirst, isOn: $session.floatingCaptionStyle.translationFirst)
+                }
+                Picker(AppText.captionStability, selection: $session.floatingCaptionStability) {
+                    ForEach(FloatingCaptionStability.allCases) { Text($0.title).tag($0) }
+                }
+                .help(AppText.captionStabilityDescription)
+            }
+            .padding(AirTranslateDesign.Spacing.md)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .airRaisedSurface()
+
+            VStack(alignment: .leading, spacing: 0) {
                 DisclosureGroup(CaptionStyleCopy.typography, isExpanded: $showsTypography) {
                     VStack(spacing: 14) {
                         Picker(CaptionStyleCopy.font, selection: $session.floatingCaptionStyle.fontFamily) {
@@ -52,36 +60,45 @@ struct FloatingCaptionSettingsView: View {
                         Picker(CaptionStyleCopy.effect, selection: $session.floatingCaptionStyle.textEffect) {
                             ForEach(FloatingCaptionTextEffect.allCases) { Text($0.title).tag($0) }
                         }
+                        Picker(CaptionStyleCopy.corners, selection: $session.floatingCaptionStyle.backgroundShape) {
+                            ForEach(FloatingCaptionBackgroundShape.allCases) { Text($0.title).tag($0) }
+                        }
                         CaptionHexColorRow(title: AppText.floatingTextColor, hex: $session.floatingCaptionTextColorHex)
                     }
                     .padding(.top, 12)
                 }
-                .padding(8)
             }
+            .padding(AirTranslateDesign.Spacing.md)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .airRaisedSurface()
 
-            GroupBox(CaptionStyleCopy.window) {
-                VStack(alignment: .leading, spacing: 14) {
-                    Text(CaptionStyleCopy.captionOnlyHint).font(.caption).foregroundStyle(.secondary)
-                    Toggle(CaptionStyleCopy.keepOnTop, isOn: $session.keepsFloatingCaptionAboveOtherWindows)
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text(CaptionStyleCopy.width)
-                            Spacer()
-                            Text("\(Int(captionWidth.wrappedValue)) pt").monospacedDigit()
-                        }
-                        Slider(value: captionWidth, in: 420...maximumCaptionWidth, step: 10)
-                            .disabled(!isCaptionVisible)
-                            .accessibilityLabel(CaptionStyleCopy.width)
-                            .accessibilityValue("\(Int(captionWidth.wrappedValue)) pt")
+            VStack(alignment: .leading, spacing: 14) {
+                Text(CaptionStyleCopy.window)
+                    .font(AirTranslateDesign.Typography.sectionLabel)
+                    .textCase(.uppercase)
+                    .foregroundStyle(AirTranslateDesign.Palette.textSecondary)
+
+                Text(CaptionStyleCopy.captionOnlyHint).font(.caption).foregroundStyle(.secondary)
+                Toggle(CaptionStyleCopy.keepOnTop, isOn: $session.keepsFloatingCaptionAboveOtherWindows)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text(CaptionStyleCopy.width)
+                        Spacer()
+                        Text("\(Int(captionWidth.wrappedValue)) pt").monospacedDigit()
                     }
-                    ViewThatFits(in: .horizontal) {
-                        HStack { windowActions }
-                        VStack(alignment: .leading) { windowActions }
-                    }
+                    Slider(value: captionWidth, in: 420...maximumCaptionWidth, step: 10)
+                        .disabled(!isCaptionVisible)
+                        .accessibilityLabel(CaptionStyleCopy.width)
+                        .accessibilityValue("\(Int(captionWidth.wrappedValue)) pt")
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(8)
+                ViewThatFits(in: .horizontal) {
+                    HStack { windowActions }
+                    VStack(alignment: .leading) { windowActions }
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(AirTranslateDesign.Spacing.md)
+            .airRaisedSurface()
             Button(CaptionStyleCopy.resetStyle) { confirmsReset = true }
                 .confirmationDialog(CaptionStyleCopy.resetStyleHint, isPresented: $confirmsReset, titleVisibility: .visible) {
                     Button(CaptionStyleCopy.resetStyle) { session.resetFloatingCaptionAppearance() }
@@ -213,6 +230,16 @@ private struct FloatingCaptionStylePreview: View {
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity)
+                .background {
+                    if session.floatingCaptionStyle.backdrop != .none {
+                        RoundedRectangle(cornerRadius: session.floatingCaptionStyle.backgroundShape.radius, style: .continuous)
+                            .fill(Color(red: 0.06, green: 0.075, blue: 0.095).opacity(session.floatingCaptionStyle.backdrop.fillOpacity))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: session.floatingCaptionStyle.backgroundShape.radius, style: .continuous)
+                                    .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
+                            }
+                    }
+                }
                 .padding(18)
                 .onGeometryChange(for: CGFloat.self) { max(1, $0.size.width - 68) } action: { textWidth = $0 }
             }
@@ -244,7 +271,10 @@ private struct FloatingCaptionStylePreview: View {
             .multilineTextAlignment(session.floatingCaptionTextAlignment.textAlignment)
             .frame(maxWidth: .infinity, alignment: session.floatingCaptionTextAlignment.frameAlignment(vertical: .center))
             .fixedSize(horizontal: false, vertical: true)
-            .modifier(CaptionTextEffectModifier(effect: session.floatingCaptionStyle.textEffect))
+            .modifier(CaptionTextEffectModifier(
+                effect: session.floatingCaptionStyle.textEffect,
+                hasBackdrop: session.floatingCaptionStyle.backdrop != .none
+            ))
     }
 
     private func formattedSample(_ text: String, primary: Bool) -> String {
@@ -272,13 +302,19 @@ private struct FloatingCaptionStylePreview: View {
 
 struct CaptionTextEffectModifier: ViewModifier {
     let effect: FloatingCaptionTextEffect
+    var hasBackdrop = false
+
     func body(content: Content) -> some View {
-        content
-            .shadow(color: effect == .none ? .clear : .black.opacity(0.85), radius: effect == .outline ? 1 : 8, x: 0, y: effect == .outline ? 0 : 2)
-            .shadow(color: effect == .outline ? .black : .clear, radius: 0, x: 1, y: 0)
-            .shadow(color: effect == .outline ? .black : .clear, radius: 0, x: -1, y: 0)
-            .shadow(color: effect == .outline ? .black : .clear, radius: 0, x: 0, y: 1)
-            .shadow(color: effect == .outline ? .black : .clear, radius: 0, x: 0, y: -1)
+        if hasBackdrop && effect == .shadow {
+            content.shadow(color: .black.opacity(0.5), radius: 3, x: 0, y: 1)
+        } else {
+            content
+                .shadow(color: effect == .none ? .clear : .black.opacity(0.85), radius: effect == .outline ? 1 : 8, x: 0, y: effect == .outline ? 0 : 2)
+                .shadow(color: effect == .outline ? .black : .clear, radius: 0, x: 1, y: 0)
+                .shadow(color: effect == .outline ? .black : .clear, radius: 0, x: -1, y: 0)
+                .shadow(color: effect == .outline ? .black : .clear, radius: 0, x: 0, y: 1)
+                .shadow(color: effect == .outline ? .black : .clear, radius: 0, x: 0, y: -1)
+        }
     }
 }
 

@@ -238,8 +238,13 @@ private final class EmbeddingGemmaAudioStream: @unchecked Sendable {
 
     init(fileURL: URL) throws {
         guard fileURL.isFileURL else { throw EmbeddingGemmaTranscriptionError.localFileRequired }
-        let values = try fileURL.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
-        guard values.isRegularFile == true, let bytes = values.fileSize, bytes <= EmbeddingGemmaTranscriber.maximumFileBytes else {
+        let values: URLResourceValues
+        do { values = try fileURL.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]) }
+        catch { throw EmbeddingGemmaTranscriptionError.audio("음원 파일 정보를 읽지 못했습니다.") }
+        guard values.isRegularFile == true, let bytes = values.fileSize else {
+            throw EmbeddingGemmaTranscriptionError.audio("음원이 읽을 수 있는 일반 파일이 아닙니다.")
+        }
+        guard bytes <= EmbeddingGemmaTranscriber.maximumFileBytes else {
             throw EmbeddingGemmaTranscriptionError.fileTooLarge
         }
         do { file = try AVAudioFile(forReading: fileURL) }
@@ -283,8 +288,8 @@ private final class EmbeddingGemmaAudioStream: @unchecked Sendable {
                 let status = converter.convert(to: output, error: &error) { [self] requested, state in
                     nextInput(requested: requested, status: state)
                 }
-                if let readError { throw readError }
-                if status == .error { throw error ?? EmbeddingGemmaTranscriptionError.audio("오디오 변환에 실패했습니다.") }
+                if readError != nil { throw EmbeddingGemmaTranscriptionError.audio("오디오 파일을 읽지 못했습니다.") }
+                if status == .error { throw EmbeddingGemmaTranscriptionError.audio("오디오 변환에 실패했습니다.") }
                 try append(output)
                 if status == .endOfStream { ended = true }
                 if status == .inputRanDry, converterEnded, output.frameLength == 0 { ended = true }
@@ -292,7 +297,8 @@ private final class EmbeddingGemmaAudioStream: @unchecked Sendable {
                     throw EmbeddingGemmaTranscriptionError.audio("오디오 디코더가 데이터를 반환하지 않았습니다.")
                 }
             } else {
-                try file.read(into: input, frameCount: chunk)
+                do { try file.read(into: input, frameCount: chunk) }
+                catch { throw EmbeddingGemmaTranscriptionError.audio("오디오 파일을 읽지 못했습니다.") }
                 try append(input)
                 if input.frameLength == 0 || file.framePosition >= file.length { ended = true }
             }

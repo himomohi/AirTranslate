@@ -4,6 +4,47 @@ import Testing
 
 @Suite("EmbeddingGemma 전처리와 CTC 계약")
 struct EmbeddingGemmaTranscriberTests {
+    @Test func missingAudioReportsAudioFailureBeforeModelLoading() async throws {
+        #if canImport(CoreAI) && arch(arm64)
+        if #available(macOS 27.0, *) {
+            let root = FileManager.default.temporaryDirectory
+                .appendingPathComponent("EmbeddingGemmaMissingAudio-\(UUID().uuidString)")
+            do {
+                _ = try await EmbeddingGemmaTranscriber().transcribe(
+                    fileURL: root.appendingPathComponent("missing.wav"),
+                    modelDirectory: root.appendingPathComponent("missing-model"))
+                Issue.record("존재하지 않는 음원은 모델을 읽기 전에 거부해야 합니다.")
+            } catch let error as EmbeddingGemmaTranscriptionError {
+                guard case .audio = error else {
+                    Issue.record("음원 읽기 실패를 모델 오류로 안내했습니다: \(error)")
+                    return
+                }
+            }
+        }
+        #endif
+    }
+
+    @Test func directoryAudioReportsAudioFailureInsteadOfFileSizeLimit() async throws {
+        #if canImport(CoreAI) && arch(arm64)
+        if #available(macOS 27.0, *) {
+            let root = FileManager.default.temporaryDirectory
+                .appendingPathComponent("EmbeddingGemmaDirectoryAudio-\(UUID().uuidString)")
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+            defer { try? FileManager.default.removeItem(at: root) }
+            do {
+                _ = try await EmbeddingGemmaTranscriber().transcribe(
+                    fileURL: root, modelDirectory: root.appendingPathComponent("missing-model"))
+                Issue.record("디렉터리를 음원으로 처리하면 안 됩니다.")
+            } catch let error as EmbeddingGemmaTranscriptionError {
+                guard case .audio = error else {
+                    Issue.record("일반 파일이 아닌 음원을 크기 제한 오류로 안내했습니다: \(error)")
+                    return
+                }
+            }
+        }
+        #endif
+    }
+
     @Test func ctcPreservesBoundaryRepeatsAndBlankSeparation() throws {
         var ctc = EmbeddingGemmaCTC(blankID: 9)
         try ctc.append([2, 2, 9, 3])

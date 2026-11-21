@@ -200,3 +200,14 @@ OpenAI는 `ProcessingEngine.openAI` 단일 제공자로 표시한다. `OpenAIOut
 | 일시정지·종료 | 일시정지/재개/중지 | `pauseQwenCapture`, `resumeQwenCapture`, `finishQwenCapture` | `session.finish` → `session.finished`; 마지막 결과 drain; 세대가 다른 콜백 차단 | 프로토콜 fake socket·세션 회귀 테스트 |
 
 설정과 실제 계정 검증 범위는 [Qwen LiveTranslate 안내](../docs/qwen-livetranslate.md)를 참고한다.
+
+## 로컬 Hy-MT2 번역
+
+| 기능 | 진입점 | 핵심 파일·심볼 | 데이터·외부 의존성 | 검증 |
+| --- | --- | --- | --- | --- |
+| 모드 선택·복원 | 콘솔 모드 목록/설정 → 일반 → Hy-MT2 | `ProcessingEngine.hyMT`, `TranslationSessionStore.useHyMTMode` | 기본 Apple 유지, 전사팩만 필요, 선택은 UserDefaults | `HyMTSessionTests`, `ProcessingModePickerTests` |
+| 모델 다운로드·취소·삭제 | 설정 → 일반 → Hy-MT2 | `HyMTSettingsView`, `HyMTModelStore` | 고정 Tencent HF revision, Q4_K_M 1.13GB, 크기/SHA-256, Application Support | `HyMTModelStoreTests` |
+| 자막·문장 번역 | Apple 음성 인식/설정 → 로컬 번역 확인 | `HyMTTranslationService`, `TranslationSessionStore.translateTranscript` | llama.cpp b12317 XCFramework, 앱 내부 추론·모델 재사용, 키·서버 불필요 | `HyMTSessionTests`, 실제 앱 문장 번역 |
+| 이름·전문 용어·문맥 | 설정 → 일반 → 이름·전문 용어 | `HyMTTranslationOptions`, `hyMTTranslationOptions` | 사용자 용어 최대32개, 최근 완료 원문2개·800자, 번역 입력만 표기 정리 | `HyMTQualityTests`, `HyMTSessionTests` |
+| 중지·저장 | 앱/시스템 캡처 메뉴 → 중지 | `finishHyMTCapture`, `completedHyMTTranslations` | 입력 닫기, 25초 번역 drain, 완료 결과만 저장, 세대 다른 결과 차단 | `HyMTStopTests` |
+| 실행 라이브러리 동봉 | 로컬/배포 빌드 스크립트 | `script/embed_local_translation.sh` | 번들 Frameworks·rpath·원문 라이선스 | release build, codesign, 번들 실행 확인 |

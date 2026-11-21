@@ -12,10 +12,12 @@ struct SettingsView: View {
     @State private var screenRecordingPermission: SettingsPermissionState = .unknown
     @State private var microphonePermission: SettingsPermissionState = .unknown
     @State private var speechRecognitionPermission: SettingsPermissionState = .unknown
+    @State private var showsAudioFileTools = false
+    @State private var showsInactiveAppleSettings = false
 
     var body: some View {
         NavigationSplitView {
-            SettingsSidebar(selection: selectedCategory)
+            SettingsSidebar(selection: selectedCategory, savedAPIKeyBadge: savedAPIKeyBadge)
                 .navigationSplitViewColumnWidth(
                     min: AirTranslateDesign.settingsSidebarMinimum,
                     ideal: AirTranslateDesign.settingsSidebarIdeal,
@@ -78,8 +80,30 @@ struct SettingsView: View {
         switch selectedCategory.wrappedValue {
         case .general:
             generalSettings
-            AppleTranslationSettingsView(session: session)
-            EmbeddingGemmaTranscriptionView(isCaptureActive: session.isRunning || session.isStarting)
+            if session.isUsingAppleTextTranslation {
+                AppleTranslationSettingsView(session: session)
+            } else {
+                DisclosureGroup(AppleTranslationCopy.title, isExpanded: $showsInactiveAppleSettings) {
+                    AppleTranslationSettingsView(session: session)
+                        .padding(.top, AirTranslateDesign.Spacing.xs)
+                }
+                .padding(AirTranslateDesign.Spacing.md)
+                .airRaisedSurface()
+            }
+            DisclosureGroup(
+                AppText.localized(
+                    english: "Audio File Transcription Tools",
+                    korean: "오디오 파일 전사 도구",
+                    japanese: "音声ファイル文字起こしツール",
+                    chineseSimplified: "音频文件转写工具"
+                ),
+                isExpanded: $showsAudioFileTools
+            ) {
+                EmbeddingGemmaTranscriptionView(isCaptureActive: session.isRunning || session.isStarting)
+                    .padding(.top, AirTranslateDesign.Spacing.xs)
+            }
+            .padding(AirTranslateDesign.Spacing.md)
+            .airRaisedSurface()
         case .apiKeys:
             apiKeySettings
         case .audio:
@@ -227,6 +251,9 @@ struct SettingsView: View {
             if processingModeSelection.wrappedValue == .nari {
                 nariGeneralSettings
             }
+            if processingModeSelection.wrappedValue == .hyMT {
+                HyMTSettingsView(session: session)
+            }
             if processingModeSelection.wrappedValue == .qwen {
                 qwenGeneralSettings
             }
@@ -268,7 +295,7 @@ struct SettingsView: View {
                 }
             }
 
-            if !session.isUsingOpenAIRealtime {
+            if !session.isUsingOpenAIRealtime && !session.isUsingHyMT {
                 SettingsControlRow(
                     title: SettingsCopy.sessionWorkflow,
                     detail: SettingsCopy.sessionWorkflowDetail,
@@ -825,6 +852,7 @@ struct SettingsView: View {
     }
 
     private var selectedProcessingMode: SettingsProcessingMode {
+        if session.isUsingHyMT { return .hyMT }
         if session.isUsingQwenTranslation { return .qwen }
         if session.isUsingGrokSTT { return .grok }
         if session.isUsingNariSTT { return .nari }
@@ -904,6 +932,8 @@ struct SettingsView: View {
         } set: { mode in
             guard !isSessionConfigurationLocked else { return }
             switch mode {
+            case .hyMT:
+                session.useHyMTMode()
             case .apple:
                 session.useAppleDefaultMode()
             case .openAI:
@@ -1028,6 +1058,21 @@ struct SettingsView: View {
         }
     }
 
+    private var savedAPIKeyBadge: String {
+        let keys = [
+            session.hasOpenAIAPIKey,
+            session.hasGeminiAPIKey,
+            session.hasMetaAPIKey,
+            session.hasAzureSpeechAPIKey,
+            session.hasNariAPIKey,
+            session.hasGrokAPIKey,
+            session.hasQwenAPIKey,
+            session.hasOpenRouterAPIKey,
+            session.hasJevAPIKey
+        ]
+        return "\(keys.filter { $0 }.count)/\(keys.count)"
+    }
+
     private func applyRequestedSettingsCategory() {
         guard let requestedCategoryID = session.requestedSettingsCategoryID,
               let category = SettingsCategory(rawValue: requestedCategoryID)
@@ -1039,6 +1084,7 @@ struct SettingsView: View {
 }
 
 private enum SettingsProcessingMode: String, CaseIterable, Identifiable {
+    case hyMT
     case apple
     case openAI
     case gemini
@@ -1052,6 +1098,8 @@ private enum SettingsProcessingMode: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .hyMT:
+            HyMTCopy.title
         case .apple:
             "Apple"
         case .openAI:
@@ -1207,10 +1255,10 @@ enum SettingsCopy {
     static let modeSettings = AppText.localized(english: "Mode Settings", korean: "모드 설정")
     static let processingEngine = AppText.localized(english: "Processing Mode", korean: "처리 방식")
     static let processingEngineDetail = AppText.localized(
-        english: "Choose exactly one active engine: local Apple mode, OpenAI Audio, Gemini Live, Meta Scribe, Azure MAI, Nari STT, Grok STT, or Qwen LiveTranslate.",
-        korean: "Apple 기본 모드, OpenAI 음성, Gemini Live, Meta 스크라이브, Azure MAI, Nari STT, Grok STT, Qwen LiveTranslate 중 하나만 활성화합니다.",
-        japanese: "Appleローカルモード、OpenAI音声、Gemini Live、Meta Scribe、Azure MAI、Nari STT、Grok STT、Qwen LiveTranslateから1つだけ有効にします。",
-        chineseSimplified: "仅启用一种处理方式：Apple 本地模式、OpenAI 语音、Gemini Live、Meta Scribe、Azure MAI、Nari STT、Grok STT 或 Qwen LiveTranslate。"
+        english: "Choose exactly one active engine: local Apple mode, Hy-MT2, OpenAI Audio, Gemini Live, Meta Scribe, Azure MAI, Nari STT, Grok STT, or Qwen LiveTranslate.",
+        korean: "Apple 기본 모드, Hy-MT2, OpenAI 음성, Gemini Live, Meta 스크라이브, Azure MAI, Nari STT, Grok STT, Qwen LiveTranslate 중 하나만 활성화합니다.",
+        japanese: "Appleローカルモード、Hy-MT2、OpenAI音声、Gemini Live、Meta Scribe、Azure MAI、Nari STT、Grok STT、Qwen LiveTranslateから1つだけ有効にします。",
+        chineseSimplified: "仅启用一种处理方式：Apple 本地模式、Hy-MT2、OpenAI 语音、Gemini Live、Meta Scribe、Azure MAI、Nari STT、Grok STT 或 Qwen LiveTranslate。"
     )
     static let enterOpenAIAPIKey = AppText.localized(
         english: "Enter OpenAI API key",
@@ -1405,10 +1453,10 @@ enum SettingsCopy {
         chineseSimplified: "译文语音模型"
     )
     static let translatedSpeechModelDetail = AppText.localized(
-        english: "Choose how AirTranslate reads translated text in its Apple TranslationSession workflow, including text transcribed by STT providers: Apple system speech, Gemini 3.8 Flash / Flash-Lite TTS, or MAI Voice 2.1 / Flash through OpenRouter. Realtime speech-translation providers use their own audio output.",
-        korean: "Apple TranslationSession으로 텍스트를 번역하는 흐름(전사 제공자의 결과를 번역하는 경우 포함)에서 번역문을 읽을 음성을 선택합니다(Apple 시스템 음성, Gemini 3.8 Flash·Flash-Lite TTS 또는 OpenRouter의 MAI Voice 2.1·Flash). 실시간 음성 번역 제공자는 자체 오디오 출력을 사용합니다.",
-        japanese: "Apple TranslationSessionでテキストを翻訳するフロー（音声認識プロバイダーの文字起こし結果を翻訳する場合を含む）で読み上げる音声を選択します（Appleシステム音声、Gemini 3.8 Flash / Flash-Lite TTS または OpenRouter の MAI Voice 2.1 / Flash）。リアルタイム音声翻訳プロバイダーは独自の音声出力を使用します。",
-        chineseSimplified: "选择在 Apple TranslationSession 文本翻译流程中朗读译文的语音，也包括翻译语音识别提供方转写出的文本（Apple 系统语音、Gemini 3.8 Flash / Flash-Lite TTS 或 OpenRouter 的 MAI Voice 2.1 / Flash）。实时语音翻译提供方使用自己的音频输出。"
+        english: "Choose how AirTranslate reads translated text in its Apple or local Hy-MT2 text translation workflow, including text transcribed by STT providers: Apple system speech, Gemini 3.8 Flash / Flash-Lite TTS, or MAI Voice 2.1 / Flash through OpenRouter. Realtime speech-translation providers use their own audio output.",
+        korean: "Apple 또는 로컬 Hy-MT2로 텍스트를 번역하는 흐름(전사 제공자의 결과를 번역하는 경우 포함)에서 번역문을 읽을 음성을 선택합니다(Apple 시스템 음성, Gemini 3.8 Flash·Flash-Lite TTS 또는 OpenRouter의 MAI Voice 2.1·Flash). 실시간 음성 번역 제공자는 자체 오디오 출력을 사용합니다.",
+        japanese: "AppleまたはローカルHy-MT2でテキストを翻訳するフロー（音声認識プロバイダーの文字起こし結果を翻訳する場合を含む）で読み上げる音声を選択します（Appleシステム音声、Gemini 3.8 Flash / Flash-Lite TTS または OpenRouter の MAI Voice 2.1 / Flash）。リアルタイム音声翻訳プロバイダーは独自の音声出力を使用します。",
+        chineseSimplified: "选择在 Apple 或本地 Hy-MT2 文本翻译流程中朗读译文的语音，也包括翻译语音识别提供方转写出的文本（Apple 系统语音、Gemini 3.8 Flash / Flash-Lite TTS 或 OpenRouter 的 MAI Voice 2.1 / Flash）。实时语音翻译提供方使用自己的音频输出。"
     )
     static let liveTranslationVolume = AppText.localized(
         english: "Volume",
@@ -1651,12 +1699,14 @@ enum SettingsCopy {
 
 private struct SettingsSidebar: View {
     @Binding var selection: SettingsCategory
+    let savedAPIKeyBadge: String
 
     var body: some View {
         List {
             ForEach(SettingsCategory.allCases) { category in
                 SettingsSidebarRow(
                     category: category,
+                    badge: category == .apiKeys ? savedAPIKeyBadge : nil,
                     isSelected: selection == category
                 ) {
                     selection = category
@@ -1675,6 +1725,7 @@ private struct SettingsSidebar: View {
 
 private struct SettingsSidebarRow: View {
     let category: SettingsCategory
+    let badge: String?
     let isSelected: Bool
     let action: () -> Void
     @FocusState private var isFocused: Bool
@@ -1693,6 +1744,15 @@ private struct SettingsSidebarRow: View {
                     .lineLimit(1)
 
                 Spacer(minLength: 0)
+
+                if let badge {
+                    Text(badge)
+                        .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(isSelected ? AirTranslateDesign.Palette.accent : AirTranslateDesign.Palette.textTertiary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(AirTranslateDesign.Palette.raisedHover, in: Capsule())
+                }
             }
             .padding(.horizontal, AirTranslateDesign.Spacing.sm)
             .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)

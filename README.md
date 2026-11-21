@@ -27,9 +27,20 @@ Live Mac audio captions and translation for meetings, videos, lectures, intervie
 
 AirTranslate captures audio playing on your Mac, transcribes it live, translates it when you choose a translation workflow, and can keep captions floating above other apps. Apple Mode remains the default local-first workflow. Cloud engines are optional and become available after you configure the matching provider key.
 
-AirTranslate **1.17.0/build1170** adds optional local English audio-file transcription with EmbeddingGemma 2. Apple Mode remains the default, and the existing caption and translation improvements remain available.
+AirTranslate **1.18.0/build1180** adds optional local Hy-MT2 1.8B translation, a redesigned Focus Stage single-feed workspace with lower UI latency, adaptive floating-caption glass backdrops with a hover mini-HUD, a categorized Engine & Voice Hub, a Control Center–style Menu Bar panel, searchable Saved Transcripts with Markdown/TXT export, and an interactive Terminology Chip Editor. Apple Mode remains the default local-first workflow.
 
-## New in 1.17.0: local English file transcription
+## New in 1.18.0: local Hy-MT2 translation, Focus Stage UI, and floating-caption HUD
+
+- **Optional local Hy-MT2 1.8B translation:** select **Hy-MT2** in the Engine & Voice Hub, then open **Settings > General** and download the verified Q4_K_M weights (1.13 GB). Apple Speech provides transcription while the bundled llama.cpp runtime translates locally on your Mac with no API key or external translation server. Includes download progress, cancellation, model removal, local preview check, optional terminology hints, recent caption context, and up to 25-second Stop draining without saving incomplete fragments. [Setup and limits](docs/hymt-local-translation.md).
+- **Focus Stage main window & lower live latency:** language pair selection and swap live in the top stage header, the single-row bottom glass console stays uncollapsed down to 840pt (including the 900pt default window), turns use timestamped cards with a live accent bar, and isolated audio-level metering (`SessionAudioWaveform`) avoids re-evaluating the console bar on audio updates.
+- **Categorized Engine & Voice Hub:** filter engines by `All`, `On-Device`, or `Cloud` across separated on-device, cloud realtime translation, and cloud transcribe + local translate sections, with model, translated-speech voice, and API key shortcuts.
+- **Adaptive floating captions & hover mini-HUD:** choose `Frosted Glass` (default), `Cinema Dark`, or `Transparent` backdrops for legibility over bright slides and videos, and hover over the floating window for instant pause/resume, copy latest caption, mode cycling, `A-`/`A+` sizing, backdrop toggle, and close actions.
+- **Control Center Menu Bar, Library search/export & Terminology Chips:** the Menu Bar popover uses a 2×2 tile grid with direct `PC Audio` / `Microphone` switching; Saved Transcripts adds search, type filters, and Markdown (`.md`) / plain-text (`.txt`) export; Settings adds an interactive Terminology Chip Editor (with direct list editing toggle) and an API key count badge.
+- **Reliability fixes:** Azure MAI capture-menu Stop drains finalized translations and excludes provisional drafts; EmbeddingGemma re-checks installed models after live capture ends and clarifies missing/unreadable audio recovery.
+
+[Release notes](Release/GITHUB-RELEASE-1.18.0.md) · [AirTranslate 1.18.0 release](https://github.com/himomohi/AirTranslate/releases/tag/v1.18.0).
+
+## Local English file transcription (from 1.17.0)
 
 - **Optional file transcription:** open Settings > General > EmbeddingGemma 2 file transcription (experimental). Requires Apple Silicon and macOS 27+; the app itself still supports macOS 26+. English audio only, up to 60 minutes / 2 GB. It works separately from live captions and does not restore punctuation or capitalization, translate audio, or identify speakers.
 - **How it works:** a frozen audio encoder produces time-based representations. A trained reader maps them to English word embeddings, selects a word or blank at each step, and CTC decoding combines repeated labels and removes blanks. This uses the independent public reader v2 reproduction; the original experiment's code and reader weights are not public.
@@ -64,9 +75,9 @@ Configure an **Alibaba Cloud Singapore API key** in Settings > API Keys > Qwen. 
 
 Settings > General also includes `qwen-audio-3.1-asr-flash-filetrans` for asynchronous transcription. **Only a public HTTPS audio URL is accepted**; QwenCloud fetches its audio, and AirTranslate does not upload a local file in this workflow. Share only audio you are authorized to send. See [Qwen setup and pricing](docs/qwen-livetranslate.md). Real-account authentication, billing, translation and transcription quality, and latency remain unverified.
 
-The **key-aware mode picker** shows unavailable providers in gray and provides a settings shortcut on each row. Information icons describe the selected model and its pricing basis. **OpenAI Audio unifies translation and source transcription** while preserving the selected language and output preferences. The main picker exposes Apple, OpenAI, Gemini, Qwen, and Nari choices with task-specific model descriptions; translated-speech models use a separate selector.
+The **categorized Engine & Voice Hub** filters providers by `All`, `On-Device`, or `Cloud`, dims unavailable cloud providers without keys, and links directly to API key and model settings. Information icons describe the selected model and its pricing basis. **OpenAI Audio unifies translation and source transcription** while preserving the selected language and output preferences. Translated-speech models use a separate selector.
 
-**Floating captions show text only**: no window background, border, toolbar, status text, or hover resize controls. Five text styles, font and color options, width, line spacing, ordering, and sample previews are available in Settings. Use the main window, menu bar, or ⌘⇧C to show or hide captions.
+**Adaptive floating captions** support `Frosted Glass` (default), `Cinema Dark`, and `Transparent` backdrops plus a hover mini-HUD for pause/resume, copy, display-mode cycling, `A-`/`A+` sizing, backdrop toggle, and closing. Five text styles, font and color options, width, line spacing, ordering, and sample previews are available in Settings. Use the main window, menu bar, or ⌘⇧C to show or hide captions.
 
 **Qwen final captions are drained before stopping**. Empty final results retract provisional captions, and saved Qwen transcripts contain confirmed results only, including periodic checkpoints. Apple Mode remains the default; transcript file saving remains opt-in.
 
@@ -74,10 +85,10 @@ The **key-aware mode picker** shows unavailable providers in gray and provides a
 
 ## Download
 
-Latest public release: **v1.17.0**.
+Latest public release: **v1.18.0**.
 
 - [Download AirTranslate.dmg](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [Download AirTranslate-1.17.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.17.0/AirTranslate-1.17.0.zip)
+- [Download AirTranslate-1.18.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.18.0/AirTranslate-1.18.0.zip)
 - [Download AirTranslate.dmg.sha256](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
 - [AirTranslate 1.17.0 release notes](https://github.com/himomohi/AirTranslate/releases/tag/v1.17.0)
 - [View release history](Release/VERSION-HISTORY.md)

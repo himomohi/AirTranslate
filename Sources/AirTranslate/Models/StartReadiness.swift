@@ -1,6 +1,7 @@
 import Foundation
 
 enum StartReadinessIssue: Equatable {
+    case hyMTModelMissing
     case openAIAPIKeyMissing
     case geminiAPIKeyMissing
     case azureConfigurationMissing

@@ -28,6 +28,8 @@ struct ProcessingModeInfo {
         azureModel: AzureTranscriptionModel = .transcribe2
     ) -> Self {
         switch engine {
+        case .hyMT:
+            return Self(modelID: "Hy-MT2-1.8B-Q4_K_M", summary: HyMTCopy.detail, price: HyMTCopy.price)
         case .qwen:
             return Self(modelID: qwenModel.rawValue, summary: QwenCopy.detail(for: qwenModel), price: QwenCopy.price(for: qwenModel))
         case .apple:

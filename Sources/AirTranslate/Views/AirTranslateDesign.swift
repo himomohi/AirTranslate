@@ -18,6 +18,7 @@ enum AirTranslateDesign {
         static let canvas = dynamicColor(light: 0xF4F5F7, dark: 0x121417)
         static let raised = dynamicColor(light: 0xFFFFFF, dark: 0x1B1E23)
         static let raisedHover = dynamicColor(light: 0xF8FAFB, dark: 0x22262C)
+        static let settledCard = dynamicColor(light: 0xFFFFFF, dark: 0x16191E)
         static let hairline = dynamicColor(light: 0xE5E7EA, dark: 0x2B3037)
         static let hairlineStrong = dynamicColor(light: 0xD4D8DD, dark: 0x3A414A)
         static let textPrimary = Color(nsColor: .labelColor)
@@ -206,7 +207,7 @@ private struct AirStageBlockModifier: ViewModifier {
         content
             .padding(AirTranslateDesign.Spacing.md)
             .background(
-                isLive ? AirTranslateDesign.Palette.raised : Color.clear,
+                isLive ? AirTranslateDesign.Palette.raised : AirTranslateDesign.Palette.settledCard.opacity(0.75),
                 in: RoundedRectangle(cornerRadius: AirTranslateDesign.Radius.surface, style: .continuous)
             )
             .overlay(alignment: .leading) {
@@ -218,10 +219,12 @@ private struct AirStageBlockModifier: ViewModifier {
                 }
             }
             .overlay {
-                if isLive {
-                    RoundedRectangle(cornerRadius: AirTranslateDesign.Radius.surface, style: .continuous)
-                        .strokeBorder(AirTranslateDesign.Palette.hairline)
-                }
+                RoundedRectangle(cornerRadius: AirTranslateDesign.Radius.surface, style: .continuous)
+                    .strokeBorder(
+                        isLive
+                            ? AirTranslateDesign.Palette.accent.opacity(0.32)
+                            : AirTranslateDesign.Palette.hairline.opacity(0.65)
+                    )
             }
     }
 }
@@ -337,7 +340,7 @@ struct AirPillButtonStyle: ButtonStyle {
             .font(AirTranslateDesign.Typography.consolePrimary)
             .foregroundStyle(foreground)
             .padding(.horizontal, AirTranslateDesign.Spacing.md)
-            .frame(minWidth: 132, minHeight: 44)
+            .frame(minWidth: 112, minHeight: 40)
             .background(background, in: Capsule())
             .overlay {
                 Capsule().strokeBorder(border, lineWidth: 1)

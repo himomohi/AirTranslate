@@ -27,7 +27,12 @@ esac
 
 cd "$ROOT_DIR"
 
-if /usr/bin/pgrep -x "$APP_NAME" >/dev/null 2>&1; then
+app_pids() {
+  # macOS pgrep은 이름이 긴 node 명령의 마지막 경로까지 오인할 수 있다.
+  /bin/ps -axo pid=,ucomm= | /usr/bin/awk -v app="$APP_NAME" '$2 == app { print $1 }'
+}
+
+if [[ -n "$(app_pids)" ]]; then
   echo "$APP_NAME is already running; quit it before rebuilding or verifying the app bundle." >&2
   exit 1
 fi
@@ -45,6 +50,7 @@ mkdir -p "$APP_RESOURCES"
 cp "$BUILD_BINARY" "$APP_BINARY"
 chmod +x "$APP_BINARY"
 cp "$ROOT_DIR/Resources/AppIcon.icns" "$APP_RESOURCES/AppIcon.icns"
+bash "$SCRIPT_DIR/embed_local_translation.sh" "$APP_BUNDLE" "$BUILD_BINARY"
 
 "$SCRIPT_DIR/write_info_plist.sh" "$INFO_PLIST" local
 
@@ -77,7 +83,7 @@ open_app() {
 verify_running_app() {
   local pid
   local command
-  pid="$(/usr/bin/pgrep -n -x "$APP_NAME" || true)"
+  pid="$(app_pids | /usr/bin/tail -n 1)"
   [[ -n "$pid" ]] || {
     echo "$APP_NAME did not start" >&2
     return 1

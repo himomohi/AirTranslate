@@ -28,117 +28,142 @@ struct MenuBarStatusView: View {
             Image(systemName: statusSymbolName)
                 .font(.system(size: AirTranslateDesign.iconLarge, weight: .semibold))
                 .foregroundStyle(statusColor)
-                .frame(width: 40, height: 40)
+                .frame(width: 38, height: 38)
                 .background(
                     statusBackgroundColor,
                     in: RoundedRectangle(cornerRadius: AirTranslateDesign.Radius.control, style: .continuous)
                 )
 
-            VStack(alignment: .leading, spacing: AirTranslateDesign.Spacing.xxs) {
-                Text(AppText.floatingCaptions)
-                    .font(AirTranslateDesign.Typography.stageTitle)
-                    .foregroundStyle(AirTranslateDesign.Palette.textPrimary)
-
-                HStack(spacing: AirTranslateDesign.Spacing.xs) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
                     Circle()
                         .fill(statusColor)
                         .frame(width: 7, height: 7)
                         .accessibilityHidden(true)
 
-                    Text(session.statusMessage)
-                        .font(AirTranslateDesign.Typography.meta)
-                        .foregroundStyle(AirTranslateDesign.Palette.textSecondary)
-                        .lineLimit(2)
+                    Text(session.languageSummary)
+                        .font(AirTranslateDesign.Typography.label.weight(.semibold))
+                        .foregroundStyle(AirTranslateDesign.Palette.textPrimary)
+                        .lineLimit(1)
                 }
+
+                Text(session.statusMessage)
+                    .font(AirTranslateDesign.Typography.meta)
+                    .foregroundStyle(AirTranslateDesign.Palette.textSecondary)
+                    .lineLimit(1)
             }
 
-            Spacer(minLength: 0)
+            Spacer(minLength: 4)
+
+            AirChip(
+                text: session.processingEngineTitle,
+                tint: AirTranslateDesign.Palette.accent
+            )
         }
     }
 
     private var actionGrid: some View {
-        VStack(spacing: AirTranslateDesign.Spacing.xxs) {
-            Button {
-                toggleCapture()
-            } label: {
-                IconPanelButtonLabel(
-                    systemImage: capturePhase.actionSystemImage,
-                    title: capturePhase.actionTitle,
-                    subtitle: capturePhase.actionSubtitle(statusMessage: session.statusMessage),
-                    tint: captureActionColor,
-                    isSelected: capturePhase == .idle
-                )
-            }
-            .buttonStyle(AirTranslatePressButtonStyle())
-            .disabled(!session.captureControlState.canToggleCapture)
-            .help(capturePhase.actionTitle)
-            .accessibilityLabel(capturePhase.actionTitle)
-            .accessibilityValue(capturePhase.actionSubtitle(statusMessage: session.statusMessage))
+        VStack(spacing: AirTranslateDesign.Spacing.xs) {
+            LazyVGrid(
+                columns: [
+                    GridItem(.flexible(), spacing: AirTranslateDesign.Spacing.xs),
+                    GridItem(.flexible(), spacing: AirTranslateDesign.Spacing.xs)
+                ],
+                spacing: AirTranslateDesign.Spacing.xs
+            ) {
+                Button {
+                    toggleCapture()
+                } label: {
+                    ControlTileLabel(
+                        systemImage: capturePhase.actionSystemImage,
+                        title: capturePhase.actionTitle,
+                        subtitle: capturePhase.actionSubtitle(statusMessage: session.statusMessage),
+                        tint: captureActionColor,
+                        isSelected: capturePhase == .idle || capturePhase == .running
+                    )
+                }
+                .buttonStyle(AirTranslatePressButtonStyle())
+                .disabled(!session.captureControlState.canToggleCapture)
+                .help(capturePhase.actionTitle)
+                .accessibilityLabel(capturePhase.actionTitle)
+                .accessibilityValue(capturePhase.actionSubtitle(statusMessage: session.statusMessage))
 
-            Button {
-                CaptionControlActions.toggleVisibility(session: session, using: openWindow)
-            } label: {
-                IconPanelButtonLabel(
-                    systemImage: isFloatingCaptionVisible ? "captions.bubble.fill" : "captions.bubble",
-                    title: isFloatingCaptionVisible
-                        ? AppText.hideFloatingCaptions
-                        : AppText.showFloatingCaptions,
-                    subtitle: isFloatingCaptionVisible ? AppText.floatingCaptionPowerOn : AppText.floatingCaptionPowerOff,
-                    tint: isFloatingCaptionVisible ? AirTranslateDesign.Palette.live : AirTranslateDesign.Palette.textSecondary,
-                    isSelected: isFloatingCaptionVisible
-                )
-            }
-            .buttonStyle(AirTranslatePressButtonStyle())
-            .help(isFloatingCaptionVisible ? AppText.hideFloatingCaptions : AppText.showFloatingCaptions)
-            .accessibilityLabel(isFloatingCaptionVisible ? AppText.hideFloatingCaptions : AppText.showFloatingCaptions)
-            .accessibilityValue(isFloatingCaptionVisible ? AppText.floatingCaptionPowerOn : AppText.floatingCaptionPowerOff)
+                Button {
+                    CaptionControlActions.toggleVisibility(session: session, using: openWindow)
+                } label: {
+                    ControlTileLabel(
+                        systemImage: isFloatingCaptionVisible ? "captions.bubble.fill" : "captions.bubble",
+                        title: isFloatingCaptionVisible
+                            ? AppText.hideFloatingCaptions
+                            : AppText.showFloatingCaptions,
+                        subtitle: isFloatingCaptionVisible ? AppText.floatingCaptionPowerOn : AppText.floatingCaptionPowerOff,
+                        tint: isFloatingCaptionVisible ? AirTranslateDesign.Palette.live : AirTranslateDesign.Palette.textSecondary,
+                        isSelected: isFloatingCaptionVisible
+                    )
+                }
+                .buttonStyle(AirTranslatePressButtonStyle())
+                .help(isFloatingCaptionVisible ? AppText.hideFloatingCaptions : AppText.showFloatingCaptions)
+                .accessibilityLabel(isFloatingCaptionVisible ? AppText.hideFloatingCaptions : AppText.showFloatingCaptions)
+                .accessibilityValue(isFloatingCaptionVisible ? AppText.floatingCaptionPowerOn : AppText.floatingCaptionPowerOff)
 
-            Button {
-                CaptionControlActions.showCaptionsOnly(session: session, using: openWindow)
-            } label: {
-                IconPanelButtonLabel(
-                    systemImage: "captions.bubble",
-                    title: AppText.showCaptionsOnly,
-                    subtitle: AppText.showCaptionsOnlyDetail,
-                    tint: AirTranslateDesign.Palette.accent
-                )
-            }
-            .buttonStyle(AirTranslatePressButtonStyle())
-            .accessibilityLabel(AppText.showCaptionsOnly)
-            .accessibilityHint(AppText.showCaptionsOnlyDetail)
-            .disabled(session.captureControlState.phase == .finishing)
+                Button {
+                    CaptionControlActions.showCaptionsOnly(session: session, using: openWindow)
+                } label: {
+                    ControlTileLabel(
+                        systemImage: "pip",
+                        title: AppText.showCaptionsOnly,
+                        subtitle: AppText.showCaptionsOnlyDetail,
+                        tint: AirTranslateDesign.Palette.accent
+                    )
+                }
+                .buttonStyle(AirTranslatePressButtonStyle())
+                .accessibilityLabel(AppText.showCaptionsOnly)
+                .accessibilityHint(AppText.showCaptionsOnlyDetail)
+                .disabled(session.captureControlState.phase == .finishing)
 
-            Button {
-                CaptionControlActions.showMainWindow(using: openWindow)
-            } label: {
-                IconPanelButtonLabel(
-                    systemImage: "macwindow",
-                    title: AppText.openMainWindow,
-                    subtitle: AppText.mainWindow,
-                    tint: AirTranslateDesign.Palette.textSecondary
-                )
+                Button {
+                    guard canSwitchAudioInput else { return }
+                    session.audioInputSource = session.audioInputSource == .systemAudio ? .microphone : .systemAudio
+                } label: {
+                    ControlTileLabel(
+                        systemImage: session.audioInputSource == .microphone ? "mic.fill" : "speaker.wave.2.fill",
+                        title: AppText.audioInputSource,
+                        subtitle: session.audioInputSource.title,
+                        tint: canSwitchAudioInput ? AirTranslateDesign.Palette.accent : AirTranslateDesign.Palette.textTertiary
+                    )
+                }
+                .buttonStyle(AirTranslatePressButtonStyle())
+                .disabled(!canSwitchAudioInput)
+                .help(canSwitchAudioInput ? AppText.audioInputSource : AppText.lockedDuringSession)
+                .accessibilityLabel(AppText.audioInputSource)
+                .accessibilityValue(session.audioInputSource.title)
             }
-            .buttonStyle(AirTranslatePressButtonStyle())
-            .help(AppText.openMainWindow)
 
             if session.isRunning {
                 Button {
                     session.isPaused ? session.resume() : session.pause()
                 } label: {
-                    IconPanelButtonLabel(
-                        systemImage: session.isPaused ? "play.fill" : "pause.fill",
-                        title: session.isPaused ? AppText.resume : AppText.pause,
-                        subtitle: capturePhase.actionSubtitle(statusMessage: session.statusMessage),
-                        tint: session.isPaused ? AirTranslateDesign.Palette.accent : AirTranslateDesign.Palette.paused,
-                        isSelected: session.isPaused
+                    HStack(spacing: 8) {
+                        Image(systemName: session.isPaused ? "play.fill" : "pause.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text(session.isPaused ? AppText.resume : AppText.pause)
+                            .font(AirTranslateDesign.Typography.label.weight(.semibold))
+                    }
+                    .foregroundStyle(session.isPaused ? AirTranslateDesign.Palette.accent : AirTranslateDesign.Palette.paused)
+                    .frame(maxWidth: .infinity, minHeight: 34)
+                    .airTranslateInteractiveSurface(
+                        isSelected: session.isPaused,
+                        tint: session.isPaused ? AirTranslateDesign.Palette.accent : AirTranslateDesign.Palette.paused
                     )
                 }
                 .buttonStyle(AirTranslatePressButtonStyle())
                 .disabled(!session.captureControlState.canTogglePause)
             }
         }
-        .padding(AirTranslateDesign.Spacing.xs)
-        .airRaisedSurface()
+    }
+
+    private var canSwitchAudioInput: Bool {
+        !session.isRunning && !session.isStarting
     }
 
     private var displayModeGrid: some View {
@@ -227,7 +252,19 @@ struct MenuBarStatusView: View {
     }
 
     private var appControls: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
+            Button {
+                CaptionControlActions.showMainWindow(using: openWindow)
+            } label: {
+                AirChip(
+                    text: AppText.mainWindow,
+                    systemImage: "macwindow",
+                    tint: AirTranslateDesign.Palette.textPrimary
+                )
+            }
+            .buttonStyle(.plain)
+            .help(AppText.openMainWindow)
+
             Button {
                 CaptionControlActions.showSettings(using: openSettings)
             } label: {
@@ -406,7 +443,7 @@ private struct ControlSectionHeader: View {
     }
 }
 
-private struct IconPanelButtonLabel: View {
+private struct ControlTileLabel: View {
     let systemImage: String
     let title: String
     let subtitle: String
@@ -414,37 +451,44 @@ private struct IconPanelButtonLabel: View {
     var isSelected = false
 
     var body: some View {
-        HStack(spacing: 9) {
-            Image(systemName: systemImage)
-                .font(.system(size: AirTranslateDesign.iconRegular, weight: .semibold))
-                .foregroundStyle(tint)
-                .frame(width: 22)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Image(systemName: systemImage)
+                    .font(.system(size: AirTranslateDesign.iconRegular, weight: .semibold))
+                    .foregroundStyle(tint)
+                Spacer(minLength: 0)
+                Circle()
+                    .fill(isSelected ? tint : AirTranslateDesign.Palette.hairlineStrong)
+                    .frame(width: 6, height: 6)
+                    .accessibilityHidden(true)
+            }
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
                     .font(AirTranslateDesign.Typography.label.weight(.semibold))
                     .foregroundStyle(AirTranslateDesign.Palette.textPrimary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.82)
+                    .minimumScaleFactor(0.8)
 
                 Text(subtitle)
-                    .font(AirTranslateDesign.Typography.meta.weight(.medium))
-                    .foregroundStyle(tint)
+                    .font(AirTranslateDesign.Typography.meta)
+                    .foregroundStyle(isSelected ? tint : AirTranslateDesign.Palette.textSecondary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.78)
+                    .minimumScaleFactor(0.75)
             }
-
-            Spacer(minLength: 0)
-
-            Image(systemName: "chevron.right")
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(AirTranslateDesign.Palette.textTertiary)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, minHeight: 38)
-        .airTranslateInteractiveSurface(isSelected: isSelected, tint: tint)
-        .contentShape(RoundedRectangle(cornerRadius: AirTranslateDesign.controlRadius, style: .continuous))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .frame(maxWidth: .infinity, minHeight: 68, alignment: .topLeading)
+        .background(
+            isSelected ? tint.opacity(0.14) : AirTranslateDesign.Palette.raised,
+            in: RoundedRectangle(cornerRadius: AirTranslateDesign.Radius.surface, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: AirTranslateDesign.Radius.surface, style: .continuous)
+                .strokeBorder(isSelected ? tint.opacity(0.6) : AirTranslateDesign.Palette.hairline)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: AirTranslateDesign.Radius.surface, style: .continuous))
     }
 }
 

@@ -73,6 +73,11 @@ private struct FloatingCaptionPreviousBlock: View, Equatable {
 
 struct FloatingCaptionWindowView: View {
     @Bindable var session: TranslationSessionStore
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovering = false
+    @State private var isCopyFeedbackVisible = false
+    @State private var copyFeedbackToken = 0
 
     private static let blockSpacing: CGFloat = 8
     private static let horizontalPadding: CGFloat = AirTranslateDesign.Spacing.lg * 2
@@ -84,15 +89,42 @@ struct FloatingCaptionWindowView: View {
             source: { sourceText },
             translation: { translationText }
         )
+        let hasVisibleCaption = textSnapshot.hasVisibleText || hasVisibleHistory
+        let backdrop = session.floatingCaptionStyle.backdrop
+        let backdropShape = RoundedRectangle(cornerRadius: session.floatingCaptionStyle.backgroundShape.radius, style: .continuous)
+
         ZStack {
             AirTranslateDesign.Palette.transparent
 
-            VStack(spacing: Self.blockSpacing) {
-                captionContent(sourceText: textSnapshot.source, translationText: textSnapshot.translation)
+            ZStack {
+                if hasVisibleCaption && backdrop != .none {
+                    backdropShape
+                        .fill(
+                            Color(red: 0.06, green: 0.075, blue: 0.095)
+                                .opacity(reduceTransparency ? 0.96 : backdrop.fillOpacity)
+                        )
+                        .overlay {
+                            backdropShape
+                                .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
+                        }
+                        .allowsHitTesting(false)
+                }
+
+                VStack(spacing: Self.blockSpacing) {
+                    captionContent(sourceText: textSnapshot.source, translationText: textSnapshot.translation)
+                }
+                .padding(.horizontal, AirTranslateDesign.Spacing.lg)
+                .padding(.vertical, AirTranslateDesign.Spacing.md)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background {
+                    if hasVisibleCaption {
+                        FloatingCaptionDragSurface()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
             }
-            .padding(.horizontal, AirTranslateDesign.Spacing.lg)
-            .padding(.vertical, AirTranslateDesign.Spacing.md)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
         }
         .frame(
             minWidth: FloatingCaptionWindowController.minimumWindowSize.width,
@@ -105,8 +137,8 @@ struct FloatingCaptionWindowView: View {
         .onGeometryChange(for: CGSize.self) { proxy in
             proxy.size
         } action: { size in
-            let textWidth = max(0, size.width - Self.horizontalPadding)
-            let contentHeight = max(0, size.height - Self.verticalPadding)
+            let textWidth = max(0, size.width - Self.horizontalPadding - 24)
+            let contentHeight = max(0, size.height - Self.verticalPadding - 12)
             if session.floatingCaptionMeasuredTextWidth != textWidth {
                 session.floatingCaptionMeasuredTextWidth = textWidth
             }
@@ -116,18 +148,52 @@ struct FloatingCaptionWindowView: View {
         }
         .contentShape(Rectangle())
         .allowsWindowActivationEvents(true)
-        .overlay {
-            FloatingCaptionDragSurface()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onHover { isHovering = $0 }
+        .overlay(alignment: .topTrailing) {
+            if isHovering && hasVisibleCaption {
+                FloatingCaptionHoverHUD(
+                    session: session,
+                    isCopyFeedbackVisible: isCopyFeedbackVisible,
+                    copyLatestCaption: {
+                        if copyLatestText(snapshot: textSnapshot) {
+                            copyFeedbackToken += 1
+                            withAnimation(reduceMotion ? nil : AirTranslateDesign.Motion.quick) {
+                                isCopyFeedbackVisible = true
+                            }
+                        }
+                    }
+                )
+                .padding(.top, 12)
+                .padding(.trailing, 20)
+                .transition(.opacity)
+            }
+        }
+        .animation(reduceMotion ? nil : AirTranslateDesign.Motion.quick, value: isHovering)
+        .task(id: copyFeedbackToken) {
+            guard isCopyFeedbackVisible else { return }
+            try? await Task.sleep(for: .milliseconds(900))
+            guard !Task.isCancelled else { return }
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.18)) {
+                isCopyFeedbackVisible = false
+            }
         }
         .background(
             FloatingWindowConfigurator(
                 preferredContentHeight: preferredHeight,
                 minimumWindowSize: session.floatingCaptionMinimumWindowSize,
                 keepsAboveOtherWindows: session.keepsFloatingCaptionAboveOtherWindows,
-                hasCaptionText: textSnapshot.hasVisibleText || hasVisibleHistory
+                hasCaptionText: hasVisibleCaption
             )
         )
+    }
+
+    private func copyLatestText(snapshot: FloatingCaptionTextSnapshot) -> Bool {
+        let primary = !snapshot.translation.isEmpty ? snapshot.translation : snapshot.source
+        let trimmed = primary.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != AppText.translating else { return false }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(trimmed, forType: .string)
+        return true
     }
 
     private var hasVisibleHistory: Bool {
@@ -273,6 +339,138 @@ struct FloatingCaptionWindowView: View {
         .lineSpacing(session.floatingCaptionStyle.lineSpacing.points)
         .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: alignment.frameAlignment(vertical: anchor))
         .clipped()
-        .modifier(CaptionTextEffectModifier(effect: session.floatingCaptionStyle.textEffect))
+        .modifier(
+            CaptionTextEffectModifier(
+                effect: session.floatingCaptionStyle.textEffect,
+                hasBackdrop: session.floatingCaptionStyle.backdrop != .none
+            )
+        )
+    }
+}
+
+private struct FloatingCaptionHoverHUD: View {
+    @Bindable var session: TranslationSessionStore
+    let isCopyFeedbackVisible: Bool
+    let copyLatestCaption: () -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(statusDotColor)
+                .frame(width: 7, height: 7)
+                .accessibilityHidden(true)
+
+            if session.isRunning {
+                Button {
+                    session.isPaused ? session.resume() : session.pause()
+                } label: {
+                    Image(systemName: session.isPaused ? "play.fill" : "pause.fill")
+                        .frame(width: 24, height: 22)
+                }
+                .disabled(!session.captureControlState.canTogglePause)
+                .help(session.isPaused ? AppText.resume : AppText.pause)
+                .accessibilityLabel(session.isPaused ? AppText.resume : AppText.pause)
+            }
+
+            Button(action: copyLatestCaption) {
+                Image(systemName: isCopyFeedbackVisible ? "checkmark" : "doc.on.doc")
+                    .foregroundStyle(isCopyFeedbackVisible ? AirTranslateDesign.Palette.accent : Color.white.opacity(0.9))
+                    .frame(width: 24, height: 22)
+            }
+            .help(isCopyFeedbackVisible ? AppText.copied : AppText.copy)
+            .accessibilityLabel(AppText.copy)
+
+            if !session.isTranscribeOnlyMode {
+                Button {
+                    cycleDisplayMode()
+                } label: {
+                    Text(displayModeBadge)
+                        .font(.system(size: 10, weight: .bold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(AirTranslateDesign.Palette.accent.opacity(0.24), in: Capsule())
+                        .foregroundStyle(AirTranslateDesign.Palette.accentBright)
+                }
+                .help(AppText.captionDisplayMode)
+                .accessibilityLabel(AppText.captionDisplayMode)
+                .accessibilityValue(session.floatingCaptionDisplayMode.title)
+            }
+
+            Button {
+                CaptionControlActions.adjustTextSize(session: session, by: -2)
+            } label: {
+                Text("A-")
+                    .font(.system(size: 11, weight: .semibold))
+                    .frame(width: 22, height: 22)
+            }
+            .disabled(session.floatingCaptionPrimaryPointSize <= FloatingCaptionAppearance.customPointSizeRange.lowerBound)
+            .help(AppText.makeCaptionTextSmaller)
+            .accessibilityLabel(AppText.makeCaptionTextSmaller)
+
+            Button {
+                CaptionControlActions.adjustTextSize(session: session, by: 2)
+            } label: {
+                Text("A+")
+                    .font(.system(size: 11, weight: .semibold))
+                    .frame(width: 22, height: 22)
+            }
+            .disabled(session.floatingCaptionPrimaryPointSize >= FloatingCaptionAppearance.customPointSizeRange.upperBound)
+            .help(AppText.makeCaptionTextLarger)
+            .accessibilityLabel(AppText.makeCaptionTextLarger)
+
+            Button {
+                cycleBackdrop()
+            } label: {
+                Image(systemName: session.floatingCaptionStyle.backdrop == .none ? "rectangle.dashed" : "rectangle.fill")
+                    .frame(width: 24, height: 22)
+            }
+            .help(CaptionStyleCopy.backdrop)
+            .accessibilityLabel(CaptionStyleCopy.backdrop)
+            .accessibilityValue(session.floatingCaptionStyle.backdrop.title)
+
+            Button {
+                FloatingCaptionWindowController.close()
+            } label: {
+                Image(systemName: "xmark")
+                    .frame(width: 22, height: 22)
+            }
+            .help(CaptionStyleCopy.closeWindow)
+            .accessibilityLabel(CaptionStyleCopy.closeWindow)
+        }
+        .buttonStyle(.plain)
+        .font(.system(size: 11, weight: .semibold))
+        .foregroundStyle(Color.white.opacity(0.92))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(Color(red: 0.08, green: 0.10, blue: 0.13).opacity(0.92), in: Capsule())
+        .overlay {
+            Capsule().strokeBorder(Color.white.opacity(0.16), lineWidth: 1)
+        }
+    }
+
+    private var statusDotColor: Color {
+        if session.isPaused { return AirTranslateDesign.Palette.paused }
+        if session.isRunning { return AirTranslateDesign.Palette.live }
+        return AirTranslateDesign.Palette.accent
+    }
+
+    private var displayModeBadge: String {
+        switch session.floatingCaptionDisplayMode {
+        case .originalAndTranslation: "2L"
+        case .translation: "TR"
+        case .original: "SRC"
+        }
+    }
+
+    private func cycleDisplayMode() {
+        let modes = session.availableFloatingCaptionDisplayModes
+        guard let index = modes.firstIndex(of: session.floatingCaptionDisplayMode), !modes.isEmpty else { return }
+        session.floatingCaptionDisplayMode = modes[(index + 1) % modes.count]
+    }
+
+    private func cycleBackdrop() {
+        let cases = FloatingCaptionBackdrop.allCases
+        guard let index = cases.firstIndex(of: session.floatingCaptionStyle.backdrop), !cases.isEmpty else { return }
+        session.floatingCaptionStyle.backdrop = cases[(index + 1) % cases.count]
     }
 }

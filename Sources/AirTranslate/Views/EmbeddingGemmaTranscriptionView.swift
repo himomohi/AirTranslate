@@ -15,6 +15,7 @@ struct EmbeddingGemmaTranscriptionView: View {
     @State private var isCancelling = false
     @State private var operationID = UUID()
     @State private var operationTask: Task<Void, Never>?
+    @State private var modelCheckLifecycle = EmbeddingGemmaModelCheckLifecycle()
 
     private var isSupported: Bool {
         #if canImport(CoreAI) && arch(arm64)
@@ -101,10 +102,21 @@ struct EmbeddingGemmaTranscriptionView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .airRaisedSurface()
         }
-        .onAppear(perform: checkModels)
-        .onDisappear(perform: cancel)
+        .onAppear {
+            modelCheckLifecycle.appear(isCaptureActive: isCaptureActive)
+            checkModels()
+        }
+        .onDisappear {
+            modelCheckLifecycle.disappear()
+            cancel()
+        }
         .onChange(of: isCaptureActive) { _, active in
-            if active { cancel() }
+            modelCheckLifecycle.captureChanged(isActive: active)
+            if active {
+                cancel()
+            } else {
+                checkModels()
+            }
         }
     }
 
@@ -121,7 +133,10 @@ struct EmbeddingGemmaTranscriptionView: View {
     }
 
     private func checkModels() {
+        guard isSupported,
+              modelCheckLifecycle.beginIfPossible(isWorking: isWorking) else { return }
         begin(status: EmbeddingGemmaCopy.checking) { token in
+            defer { modelCheckLifecycle.finish() }
             let directory = try await modelStore.installedDirectory()
             guard !Task.isCancelled, operationID == token else { return }
             modelDirectory = directory
@@ -129,7 +144,7 @@ struct EmbeddingGemmaTranscriptionView: View {
     }
 
     private func begin(status nextStatus: String, work: @escaping @MainActor (UUID) async throws -> Void) {
-        guard isSupported, !isWorking, !isCaptureActive else { return }
+        guard isSupported, !isWorking, !modelCheckLifecycle.isCaptureActive else { return }
         let token = UUID()
         operationID = token
         isWorking = true
@@ -150,6 +165,8 @@ struct EmbeddingGemmaTranscriptionView: View {
             isCancelling = false
             operationTask = nil
             status = modelDirectory == nil ? "" : EmbeddingGemmaCopy.ready
+            // 캡처가 취소 완료보다 먼저 끝나도 예약된 설치 확인을 놓치지 않는다.
+            checkModels()
         }
     }
 

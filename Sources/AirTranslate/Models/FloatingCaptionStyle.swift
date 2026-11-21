@@ -94,6 +94,25 @@ enum FloatingCaptionBackgroundShape: String, Codable, CaseIterable, Identifiable
     }
 }
 
+enum FloatingCaptionBackdrop: String, Codable, CaseIterable, Identifiable {
+    case none, frostedDark, cinemaDark
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .none: CaptionStyleCopy.text("Transparent", "투명", "透明", "透明")
+        case .frostedDark: CaptionStyleCopy.text("Frosted Glass", "다크 글래스", "フロストダーク", "磨砂深色")
+        case .cinemaDark: CaptionStyleCopy.text("Cinema Dark", "시네마 다크", "シネマダーク", "影院深色")
+        }
+    }
+    var fillOpacity: Double {
+        switch self {
+        case .none: 0
+        case .frostedDark: 0.78
+        case .cinemaDark: 0.92
+        }
+    }
+}
+
 /// 기존 저장값을 건드리지 않고 추가 표시 옵션만 별도 키에 보관한다.
 struct FloatingCaptionStyle: Codable, Equatable {
     var fontFamily: FloatingCaptionFontFamily = .system
@@ -101,6 +120,7 @@ struct FloatingCaptionStyle: Codable, Equatable {
     var lineSpacing: FloatingCaptionLineSpacing = .standard
     var textEffect: FloatingCaptionTextEffect = .shadow
     var backgroundShape: FloatingCaptionBackgroundShape = .soft
+    var backdrop: FloatingCaptionBackdrop = .frostedDark
     var translationFirst = false
 
     static let standard = FloatingCaptionStyle()
@@ -137,6 +157,7 @@ struct FloatingCaptionStyle: Codable, Equatable {
         lineSpacing: FloatingCaptionLineSpacing = .standard,
         textEffect: FloatingCaptionTextEffect = .shadow,
         backgroundShape: FloatingCaptionBackgroundShape = .soft,
+        backdrop: FloatingCaptionBackdrop = .frostedDark,
         translationFirst: Bool = false
     ) {
         self.fontFamily = fontFamily
@@ -144,11 +165,12 @@ struct FloatingCaptionStyle: Codable, Equatable {
         self.lineSpacing = lineSpacing
         self.textEffect = textEffect
         self.backgroundShape = backgroundShape
+        self.backdrop = backdrop
         self.translationFirst = translationFirst
     }
 
     private enum CodingKeys: String, CodingKey {
-        case fontFamily, fontWeight, lineSpacing, textEffect, backgroundShape, translationFirst
+        case fontFamily, fontWeight, lineSpacing, textEffect, backgroundShape, backdrop, translationFirst
     }
 
     init(from decoder: Decoder) throws {
@@ -158,6 +180,7 @@ struct FloatingCaptionStyle: Codable, Equatable {
         lineSpacing = (try? values.decode(FloatingCaptionLineSpacing.self, forKey: .lineSpacing)) ?? .standard
         textEffect = (try? values.decode(FloatingCaptionTextEffect.self, forKey: .textEffect)) ?? .shadow
         backgroundShape = (try? values.decode(FloatingCaptionBackgroundShape.self, forKey: .backgroundShape)) ?? .soft
+        backdrop = (try? values.decode(FloatingCaptionBackdrop.self, forKey: .backdrop)) ?? .frostedDark
         translationFirst = (try? values.decode(Bool.self, forKey: .translationFirst)) ?? false
     }
 }

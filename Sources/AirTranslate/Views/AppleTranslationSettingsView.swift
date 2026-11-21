@@ -42,14 +42,14 @@ struct AppleTranslationSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                TextEditor(text: $session.appleProtectedTermsText)
-                    .font(.body)
-                    .frame(height: 110)
-                    .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.secondary.opacity(0.25)))
-                    .disabled(isLocked)
-                    .accessibilityLabel(AppleTranslationCopy.protectedTerms)
-                    .accessibilityHint(AppleTranslationCopy.termsDetail)
-                    .accessibilityIdentifier("appleProtectedTermsEditor")
+                TerminologyChipEditor(
+                    text: $session.appleProtectedTermsText,
+                    isDisabled: isLocked,
+                    accessibilityLabel: AppleTranslationCopy.protectedTerms,
+                    accessibilityHint: AppleTranslationCopy.termsDetail,
+                    accessibilityIdentifier: "appleProtectedTermsEditor",
+                    editorHeight: 100
+                )
                 Text(AppleTranslationCopy.acceptedTerms(session.appleTranslationOptions.normalizedProtectedTerms.count))
                     .font(.caption)
                     .foregroundStyle(.secondary)

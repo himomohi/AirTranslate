@@ -34,7 +34,7 @@ struct ProcessingModePickerTests {
 
     @Test func keyPresenceEnablesOnlyItsProvider() throws {
         try withSession { session in
-            #expect(ProcessingEngine.allCases.filter { $0.canSelect(in: session) } == [.apple])
+            #expect(ProcessingEngine.allCases.filter { $0.canSelect(in: session) } == [.apple, .hyMT])
             let providers: [(CredentialProvider, ReferenceWritableKeyPath<TranslationSessionStore, Bool>)] = [
                 (.openAI, \.hasOpenAIAPIKey), (.gemini, \.hasGeminiAPIKey),
                 (.meta, \.hasMetaAPIKey), (.azure, \.hasAzureSpeechAPIKey),
@@ -44,7 +44,7 @@ struct ProcessingModePickerTests {
                 setKeys(session, enabled: false)
                 session[keyPath: keyPath] = true
                 for engine in ProcessingEngine.allCases {
-                    #expect(engine.canSelect(in: session) == (engine == .apple || engine.credentialProvider == provider))
+                    #expect(engine.canSelect(in: session) == (engine.credentialProvider == nil || engine.credentialProvider == provider))
                 }
             }
         }
@@ -52,7 +52,7 @@ struct ProcessingModePickerTests {
 
     @Test func missingKeysAndCaptureLockRejectSelection() throws {
         try withSession { session in
-            for engine in ProcessingEngine.allCases where engine != .apple {
+            for engine in ProcessingEngine.allCases where engine.credentialProvider != nil {
                 #expect(!engine.select(in: session))
                 #expect(ProcessingEngine.current(for: session) == .apple)
             }
@@ -111,7 +111,7 @@ struct ProcessingModePickerTests {
             let dubbing = session.isDubbingEnabled
             for engine in ProcessingEngine.allCases {
                 engine.requestSettings(in: session)
-                #expect(session.requestedSettingsCategoryID == (engine == .apple ? "general" : "apiKeys"))
+                #expect(session.requestedSettingsCategoryID == (engine.credentialProvider == nil ? "general" : "apiKeys"))
                 #expect(session.requestedAPIKeyProvider == engine.credentialProvider)
                 #expect(ProcessingEngine.current(for: session) == .apple)
                 #expect(session.isTranscribeOnlyMode)

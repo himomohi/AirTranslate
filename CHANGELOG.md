@@ -2,6 +2,30 @@
 
 All notable changes to AirTranslate are documented in this file.
 
+## 1.18.0 - 2026-11-22
+
+### Added
+
+- Optional local Hy-MT2 1.8B translation: download verified Q4_K_M weights (1.13 GB) in Settings > General, then translate Apple Speech captions on this Mac without an API key or a translation server. Includes download progress/cancellation, model removal, and a local text translation check. Existing defaults are preserved.
+- Optional local translation terminology and recent caption context. Acronym terms normalize matching phonetic spellings in translation input while preserving the recognized original; deterministic decoding reduces variation in repeated short translations.
+- Adaptive floating-caption backdrop styles (`Frosted Glass`, `Cinema Dark`, and `Transparent`) for high contrast over bright content, plus a hover mini-HUD on the floating caption window for pause/resume, copying the latest caption, cycling display mode, adjusting font size, switching backdrop, and closing.
+- Categorized Engine & Voice Hub popover with `All`, `On-Device`, and `Cloud` filters, separating on-device, cloud realtime translation, and cloud transcription + local translation engines alongside model, voice, and API key shortcuts.
+- Search, type filtering (`All`, `Original + Translation`, `Original`), and Markdown (`.md`) / plain-text (`.txt`) export in Saved Transcripts, plus an interactive Terminology Chip Editor (with direct list editing toggle) for Apple Translation and Hy-MT2 terms.
+
+### Changed
+
+- Redesigned the main window around a Focus Stage single-feed layout: interactive language pair and swap controls in the stage header, single-row bottom glass console kept uncollapsed down to 840pt width (including the 900pt default window), turn cards with timestamps and a live accent bar without repeated per-turn headers, and isolated `SessionAudioWaveform` rendering so audio-level updates do not re-evaluate the entire console bar.
+- Redesigned the Menu Bar panel into a 2×2 Control Center–style tile grid with quick audio-input source switching (`PC Audio` / `Microphone`) and compact caption format controls.
+- Streamlined Settings with an API key count badge in the sidebar and collapsible sections for inactive Apple Translation options and audio-file transcription tools.
+
+### Fixed
+
+- Hy-MT2 Stop now closes recognition input and drains pending translations for up to 25 seconds. Only completed results are saved; timeouts, failures and termination discard incomplete streamed fragments. Receiving captions also clears a stale silence status.
+- Stopping Azure MAI capture from the macOS capture menu now waits for final transcription and queued translations, matching the app's Stop action.
+- Azure MAI saved transcripts retain every finalized translation and exclude unfinished source drafts.
+- EmbeddingGemma file transcription checks installed models after live capture ends when Settings was opened during capture, including interrupted model checks.
+- Missing or unreadable audio files show audio recovery guidance instead of asking users to download the transcription models again.
+
 ## 1.17.0 - 2026-10-23
 
 ### Added

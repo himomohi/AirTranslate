@@ -1,5 +1,26 @@
 # AirTranslate Version History
 
+## 1.18.0 - 2026-11-22
+
+### Added
+
+- Optional local Hy-MT2 1.8B translation: download verified Q4_K_M weights (1.13 GB) in Settings > General to translate Apple Speech captions locally on your Mac with terminology hints, recent caption context, download progress/cancellation, model removal, and a local preview check.
+- Adaptive floating-caption backdrop styles (`Frosted Glass`, `Cinema Dark`, and `Transparent`) plus a hover mini-HUD on floating captions (pause/resume, copy latest caption, cycle display mode, resize text `A-`/`A+`, switch backdrop, and close).
+- Categorized Engine & Voice Hub popover (`All`, `On-Device`, `Cloud`), interactive Terminology Chip Editor for Apple Translation and Hy-MT2, and Saved Transcripts search, filtering, and Markdown/plain-text export.
+
+### Changed
+
+- Focus Stage single-feed main window with an interactive header language selector/swap, uncollapsed 900pt single-row bottom glass console, timestamped turn cards, isolated `SessionAudioWaveform` updates for lower UI overhead, 2×2 Menu Bar Control Center panel, and streamlined Settings with an API key count badge.
+
+### Fixed
+
+- Hy-MT2 Stop drains pending translations for up to 25 seconds without saving incomplete fragments and clears stale silence status; Azure MAI capture-menu Stop drains final transcripts and excludes provisional drafts; EmbeddingGemma re-checks installed models after live capture and clarifies unreadable audio recovery.
+
+### Availability
+
+- Version 1.18.0 / build 1180 keeps macOS 26 as the minimum OS (`Apple Silicon` and `macOS 27+` remain required only for the experimental EmbeddingGemma file transcription option).
+- DMG and ZIP builds remain ad-hoc signed and are not Apple-notarized.
+
 ## 1.17.0 - 2026-10-23
 
 ### Added

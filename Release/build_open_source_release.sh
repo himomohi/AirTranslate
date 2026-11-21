@@ -71,6 +71,7 @@ BUILD_BINARY="$(swift build -c release --show-bin-path)/$APP_NAME"
 install -m 755 "$BUILD_BINARY" "$APP_BINARY"
 # 배포 실행 파일의 디버그 심볼을 제거한 뒤 서명한다.
 /usr/bin/strip -S "$APP_BINARY"
+bash "$SCRIPT_DIR/embed_local_translation.sh" "$APP_BUNDLE" "$BUILD_BINARY"
 set +e
 /usr/bin/grep -aEq '/(Users|home)/[^[:space:]]+' "$APP_BINARY"
 build_path_status=$?

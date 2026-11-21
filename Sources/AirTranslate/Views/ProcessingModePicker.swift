@@ -1,20 +1,37 @@
 import SwiftUI
 
+private enum EngineHubFilter: String, CaseIterable, Identifiable {
+    case all, onDevice, cloud
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .all: AppText.localized(english: "All", korean: "전체", japanese: "すべて", chineseSimplified: "全部")
+        case .onDevice: AppText.localized(english: "On-Device", korean: "온디바이스", japanese: "オンデバイス", chineseSimplified: "本地")
+        case .cloud: AppText.localized(english: "Cloud", korean: "클라우드", japanese: "クラウド", chineseSimplified: "云端")
+        }
+    }
+}
+
 struct ProcessingModePicker: View {
     @Bindable var session: TranslationSessionStore
     @Environment(\.openSettings) private var openSettings
     @State private var isPresented = false
+    @State private var filter: EngineHubFilter = .all
 
     private var currentEngine: ProcessingEngine { .current(for: session) }
+
+    private static let onDeviceEngines: [ProcessingEngine] = [.apple, .hyMT]
+    private static let cloudRealtimeEngines: [ProcessingEngine] = [.openAI, .gemini, .qwen]
+    private static let cloudTranscribeEngines: [ProcessingEngine] = [.azure, .grok, .nari, .meta]
 
     var body: some View {
         Button {
             isPresented.toggle()
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: "cpu")
+                Image(systemName: currentEngine.credentialProvider == nil ? "desktopcomputer" : "cpu")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(AirTranslateDesign.Palette.textSecondary)
+                    .foregroundStyle(AirTranslateDesign.Palette.accent)
                 Text(currentModelTitle)
                     .font(AirTranslateDesign.Typography.label)
                     .foregroundStyle(AirTranslateDesign.Palette.textPrimary)
@@ -24,18 +41,21 @@ struct ProcessingModePicker: View {
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(AirTranslateDesign.Palette.textSecondary)
             }
+            .padding(.horizontal, AirTranslateDesign.Spacing.xs)
             .frame(minWidth: 100, maxWidth: 210, minHeight: 32)
-            .contentShape(Rectangle())
+            .background(AirTranslateDesign.Palette.raisedHover, in: Capsule())
+            .overlay { Capsule().strokeBorder(AirTranslateDesign.Palette.hairline) }
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .airFocusRing(cornerRadius: 12)
+        .airFocusRing(cornerRadius: 16)
         .help(ModePickerCopy.chooseProviderAndModel)
         .accessibilityLabel(ModePickerCopy.chooseProviderAndModel)
         .accessibilityValue(currentModelTitle)
         .accessibilityIdentifier("processingModePicker")
         .popover(isPresented: $isPresented, arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 4) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
                     Text(ModePickerCopy.chooseProviderAndModel)
                         .font(.headline)
                     Spacer()
@@ -46,84 +66,148 @@ struct ProcessingModePicker: View {
                     InlineHelpIcon(symbol: "dollarsign.circle", help: ProcessingModeInfo.pricingNote)
                         .accessibilityIdentifier("processingModePricingInfo")
                 }
-                .padding(.leading, 10)
-                .padding(.trailing, 5)
-                ScrollView(.vertical) {
-                    VStack(spacing: 4) {
-                        ForEach(ProcessingEngine.allCases) { engine in
-                            ProcessingModeRow(
-                                engine: engine,
-                                information: engine.information(in: session),
-                                isSelected: engine == currentEngine,
-                                hasKey: engine.hasRequiredKey(in: session),
-                                canSelect: engine.canSelect(in: session),
-                                select: {
-                                    guard engine.select(in: session) else { return }
-                                    isPresented = false
-                                },
-                                settings: {
-                                    engine.requestSettings(in: session)
-                                    isPresented = false
-                                    openSettings()
-                                }
-                            )
-                        }
+
+                Picker(ModePickerCopy.filterLabel, selection: $filter) {
+                    ForEach(EngineHubFilter.allCases) { item in
+                        Text(item.title).tag(item)
                     }
                 }
-                .frame(height: 220)
+                .pickerStyle(.segmented)
+                .labelsHidden()
+
+                ScrollView(.vertical) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        if filter != .cloud {
+                            engineSection(title: ModePickerCopy.onDeviceSection) {
+                                LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+                                    ForEach(Self.onDeviceEngines) { engine in
+                                        engineCard(engine, compact: true)
+                                    }
+                                }
+                            }
+                        }
+
+                        if filter != .onDevice {
+                            engineSection(title: ModePickerCopy.cloudRealtimeSection) {
+                                VStack(spacing: 6) {
+                                    ForEach(Self.cloudRealtimeEngines) { engine in
+                                        engineCard(engine, compact: false)
+                                    }
+                                }
+                            }
+
+                            engineSection(title: ModePickerCopy.cloudTranscribeSection) {
+                                LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+                                    ForEach(Self.cloudTranscribeEngines) { engine in
+                                        engineCard(engine, compact: true)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+                .frame(maxHeight: 375)
                 .accessibilityIdentifier("processingProviderList")
 
                 Divider()
-                    .padding(.vertical, 3)
 
-                HStack(spacing: 8) {
-                    Text(ModePickerCopy.model)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(AirTranslateDesign.Palette.textSecondary)
-                    Spacer(minLength: 4)
-                    providerModelPicker
-                }
-                .accessibilityIdentifier("mainProviderModelSelection")
-
-                if !session.isTranscribeOnlyMode {
+                VStack(spacing: 8) {
                     HStack(spacing: 8) {
-                        Text(ModePickerCopy.speechModel)
+                        Text(ModePickerCopy.model)
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(AirTranslateDesign.Palette.textSecondary)
-                        InlineHelpIcon(symbol: "info.circle", help: ModePickerCopy.speechModelAvailabilityDetail)
                         Spacer(minLength: 4)
-                        Picker(ModePickerCopy.speechModel, selection: $session.speechSynthesisModel) {
-                            ForEach(SpeechSynthesisModel.allCases) { model in
-                                Text(model.title).tag(model)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .labelsHidden()
-                        .disabled(session.isRunning || session.isStarting)
-                        .accessibilityLabel(ModePickerCopy.speechModel)
-                        .accessibilityValue(session.speechSynthesisModel.title)
-                        .accessibilityIdentifier("mainSpeechSynthesisModelPicker")
+                        providerModelPicker
                     }
-                    if session.speechSynthesisModel.isMAIVoice && !session.hasOpenRouterAPIKey {
-                        Button(MAIVoiceCopy.configure) {
-                            session.requestedSettingsCategoryID = "apiKeys"
-                            session.requestedAPIKeyProvider = .openRouter
+                    .accessibilityIdentifier("mainProviderModelSelection")
+
+                    if !session.isTranscribeOnlyMode {
+                        HStack(spacing: 8) {
+                            Text(ModePickerCopy.speechModel)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(AirTranslateDesign.Palette.textSecondary)
+                            InlineHelpIcon(symbol: "info.circle", help: ModePickerCopy.speechModelAvailabilityDetail)
+                            Spacer(minLength: 4)
+                            Picker(ModePickerCopy.speechModel, selection: $session.speechSynthesisModel) {
+                                ForEach(SpeechSynthesisModel.allCases) { model in
+                                    Text(model.title).tag(model)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .labelsHidden()
+                            .disabled(session.isRunning || session.isStarting)
+                            .accessibilityLabel(ModePickerCopy.speechModel)
+                            .accessibilityValue(session.speechSynthesisModel.title)
+                            .accessibilityIdentifier("mainSpeechSynthesisModelPicker")
+                        }
+                        if session.speechSynthesisModel.isMAIVoice && !session.hasOpenRouterAPIKey {
+                            Button(MAIVoiceCopy.configure) {
+                                session.requestedSettingsCategoryID = "apiKeys"
+                                session.requestedAPIKeyProvider = .openRouter
+                                isPresented = false
+                                openSettings()
+                            }
+                            .help(MAIVoiceCopy.keyRequired)
+                            .accessibilityIdentifier("mainMAIVoiceConfigure")
+                        }
+                    }
+
+                    HStack {
+                        Spacer()
+                        Button {
+                            session.requestAPIKeySettings()
                             isPresented = false
                             openSettings()
+                        } label: {
+                            Label(ModePickerCopy.manageKeys, systemImage: "arrow.up.right")
+                                .font(AirTranslateDesign.Typography.meta.weight(.semibold))
+                                .foregroundStyle(AirTranslateDesign.Palette.accent)
                         }
-                        .help(MAIVoiceCopy.keyRequired)
-                        .accessibilityIdentifier("mainMAIVoiceConfigure")
+                        .buttonStyle(.plain)
                     }
                 }
             }
-            .padding(10)
-            .frame(width: 330)
+            .padding(14)
+            .frame(width: 450)
             .background(AirTranslateDesign.Palette.raised)
         }
     }
 
+    private func engineSection<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(AirTranslateDesign.Typography.sectionLabel)
+                .tracking(0.6)
+                .textCase(.uppercase)
+                .foregroundStyle(AirTranslateDesign.Palette.textTertiary)
+            content()
+        }
+    }
+
+    private func engineCard(_ engine: ProcessingEngine, compact: Bool) -> some View {
+        ProcessingModeRow(
+            engine: engine,
+            information: engine.information(in: session),
+            isSelected: engine == currentEngine,
+            hasKey: engine.hasRequiredKey(in: session),
+            canSelect: engine.canSelect(in: session),
+            compact: compact,
+            select: {
+                guard engine.select(in: session) else { return }
+                isPresented = false
+            },
+            settings: {
+                engine.requestSettings(in: session)
+                isPresented = false
+                openSettings()
+            }
+        )
+    }
+
     private var currentModelTitle: String {
         switch currentEngine {
+        case .hyMT: HyMTCopy.model
         case .apple:
             session.isTranscribeOnlyMode ? IntelligenceModel.appleSpeechOnly.title : AppText.appleProcessingMode
         case .openAI:
@@ -147,6 +231,9 @@ struct ProcessingModePicker: View {
     private var providerModelPicker: some View {
         Group {
             switch currentEngine {
+            case .hyMT:
+                Text(HyMTCopy.model).font(.caption)
+                    .accessibilityIdentifier("mainProviderModelPicker.hyMT")
             case .apple:
                 Picker(ModePickerCopy.model, selection: appleModelSelection) {
                     Text(AppText.appleProcessingMode).tag(IntelligenceModel.appleSystem)
@@ -359,59 +446,81 @@ private struct ProcessingModeRow: View {
     let isSelected: Bool
     let hasKey: Bool
     let canSelect: Bool
+    let compact: Bool
     let select: () -> Void
     let settings: () -> Void
     @State private var isHovered = false
 
     private var status: String {
         if !hasKey { return ModePickerCopy.keyRequired }
-        return engine == .apple ? ModePickerCopy.noKeyRequired : ModePickerCopy.keySaved
+        return engine.credentialProvider == nil ? ModePickerCopy.noKeyRequired : ModePickerCopy.keySaved
+    }
+
+    private var statusColor: Color {
+        if engine.credentialProvider == nil { return AirTranslateDesign.Palette.live }
+        return hasKey ? AirTranslateDesign.Palette.live : AirTranslateDesign.Palette.warning
     }
 
     var body: some View {
-        HStack(spacing: 4) {
-            // 키 없는 선택 버튼 바깥에 도움말을 두고 설정 아이콘과 영역을 분리한다.
-            HStack(spacing: 0) {
-                Button(action: select) {
-                    HStack(spacing: 10) {
-                        Image(systemName: isSelected ? "checkmark" : (engine.credentialProvider?.symbol ?? "cpu"))
-                            .font(.system(size: 13, weight: .semibold))
-                            .frame(width: 20)
+        HStack(spacing: 6) {
+            Button(action: select) {
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(isSelected ? AirTranslateDesign.Palette.accent : statusColor)
+                        .frame(width: 7, height: 7)
+                        .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: 2) {
                         Text(engine.title)
-                            .font(.system(size: 13, weight: .medium))
+                            .font(.system(size: 13, weight: .semibold))
                             .lineLimit(1)
-                        Spacer(minLength: 0)
+
+                        if compact {
+                            Text(engine.credentialProvider == nil ? ModePickerCopy.localReady : (hasKey ? ModePickerCopy.keySavedShort : ModePickerCopy.keyRequiredShort))
+                                .font(.system(size: 11))
+                                .foregroundStyle(hasKey ? AirTranslateDesign.Palette.textSecondary : AirTranslateDesign.Palette.warning)
+                                .lineLimit(1)
+                        }
                     }
-                    .foregroundStyle(canSelect ? AirTranslateDesign.Palette.textPrimary : AirTranslateDesign.Palette.textSecondary)
-                    .padding(.horizontal, 10)
-                    .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
-                    .contentShape(Rectangle())
+
+                    Spacer(minLength: 0)
+
+                    if !compact {
+                        Text(hasKey ? ModePickerCopy.keySavedShort : ModePickerCopy.keyRequiredShort)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(hasKey ? AirTranslateDesign.Palette.live : AirTranslateDesign.Palette.warning)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2)
+                            .background(
+                                (hasKey ? AirTranslateDesign.Palette.liveSoft : AirTranslateDesign.Palette.pausedSoft),
+                                in: Capsule()
+                            )
+                    } else if isSelected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(AirTranslateDesign.Palette.accent)
+                    }
                 }
-                .buttonStyle(ModeSelectionButtonStyle())
-                .disabled(!canSelect)
-                .airFocusRing(cornerRadius: 8)
-                .accessibilityLabel(engine.title)
-                .accessibilityHint(information.tooltip)
-                .accessibilityValue(isSelected ? "\(ModePickerCopy.selected), \(status)" : status)
-                .accessibilityIdentifier("processingMode.\(engine.rawValue)")
+                .foregroundStyle(canSelect ? AirTranslateDesign.Palette.textPrimary : AirTranslateDesign.Palette.textSecondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .frame(maxWidth: .infinity, minHeight: compact ? 44 : 38, alignment: .leading)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(ModeSelectionButtonStyle())
+            .disabled(!canSelect)
+            .airFocusRing(cornerRadius: 8)
+            .accessibilityLabel(engine.title)
+            .accessibilityHint(information.tooltip)
+            .accessibilityValue(isSelected ? "\(ModePickerCopy.selected), \(status)" : status)
+            .accessibilityIdentifier("processingMode.\(engine.rawValue)")
             .help(information.tooltip)
-
-            InlineHelpIcon(
-                symbol: engine == .apple ? "desktopcomputer" : (hasKey ? "checkmark.circle.fill" : "key"),
-                help: "\(engine.title) · \(status)",
-                tint: hasKey ? AirTranslateDesign.Palette.accent : AirTranslateDesign.Palette.textSecondary
-            )
-            .accessibilityIdentifier("processingModeKeyStatus.\(engine.rawValue)")
-
-            InlineHelpIcon(symbol: "info.circle", help: information.tooltip)
-                .accessibilityIdentifier("processingModeInfo.\(engine.rawValue)")
 
             Button(action: settings) {
                 Image(systemName: "gearshape")
                     .font(.system(size: 12))
                     .foregroundStyle(AirTranslateDesign.Palette.textSecondary)
-                    .frame(width: 30, height: 32)
+                    .frame(width: 26, height: 30)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -419,12 +528,16 @@ private struct ProcessingModeRow: View {
             .help("\(engine.title) · \(AppText.translationSettings)")
             .accessibilityLabel("\(engine.title) · \(AppText.translationSettings)")
             .accessibilityIdentifier("processingModeSettings.\(engine.rawValue)")
-            .padding(.trailing, 5)
+            .padding(.trailing, 4)
         }
         .background {
-            RoundedRectangle(cornerRadius: 8)
-                .fill(isSelected ? AirTranslateDesign.Palette.accent.opacity(0.12)
-                      : (isHovered ? AirTranslateDesign.Palette.textSecondary.opacity(0.08) : Color.clear))
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(isSelected ? AirTranslateDesign.Palette.accentSoft
+                      : (isHovered ? AirTranslateDesign.Palette.raisedHover : AirTranslateDesign.Palette.canvas.opacity(0.45)))
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(isSelected ? AirTranslateDesign.Palette.accent : AirTranslateDesign.Palette.hairline)
         }
         .onHover { isHovered = $0 }
     }
@@ -446,13 +559,21 @@ private enum ModePickerCopy {
     static let qwenDedicatedTranslation = AppText.localized(english: "Dedicated realtime translation", korean: "실시간 번역 전용", japanese: "リアルタイム翻訳専用", chineseSimplified: "专用实时翻译")
     static let qwenPromptedVoiceConversation = AppText.localized(english: "Voice conversation · app translation instructions", korean: "음성 대화 · 앱 번역 지시 적용", japanese: "音声会話 · アプリの翻訳指示を適用", chineseSimplified: "语音对话 · 应用翻译指令")
     static let speechModelAvailabilityDetail = AppText.localized(
-        english: "Choose how AirTranslate reads translated text in its Apple TranslationSession workflow, including text transcribed by STT providers: Apple system speech, Gemini TTS, or MAI Voice through OpenRouter. Realtime speech-translation providers use their own audio output.",
-        korean: "Apple TranslationSession으로 텍스트를 번역하는 흐름(전사 제공자의 결과를 번역하는 경우 포함)에서 번역문을 읽을 음성을 선택합니다(Apple 시스템 음성, Gemini TTS 또는 OpenRouter의 MAI Voice). 실시간 음성 번역 제공자는 자체 오디오 출력을 사용합니다.",
-        japanese: "Apple TranslationSessionでテキストを翻訳するフロー（音声認識プロバイダーの文字起こし結果を翻訳する場合を含む）で読み上げる音声を選択します（Appleシステム音声、Gemini TTS または OpenRouter の MAI Voice）。リアルタイム音声翻訳プロバイダーは独自の音声出力を使用します。",
-        chineseSimplified: "选择在 Apple TranslationSession 文本翻译流程中朗读译文的语音，也包括翻译语音识别提供方转写出的文本（Apple 系统语音、Gemini TTS 或 OpenRouter 的 MAI Voice）。实时语音翻译提供方使用自己的音频输出。"
+        english: "Choose how AirTranslate reads translated text in its Apple or local Hy-MT2 text translation workflow, including text transcribed by STT providers: Apple system speech, Gemini TTS, or MAI Voice through OpenRouter. Realtime speech-translation providers use their own audio output.",
+        korean: "Apple 또는 로컬 Hy-MT2로 텍스트를 번역하는 흐름(전사 제공자의 결과를 번역하는 경우 포함)에서 번역문을 읽을 음성을 선택합니다(Apple 시스템 음성, Gemini TTS 또는 OpenRouter의 MAI Voice). 실시간 음성 번역 제공자는 자체 오디오 출력을 사용합니다.",
+        japanese: "AppleまたはローカルHy-MT2でテキストを翻訳するフロー（音声認識プロバイダーの文字起こし結果を翻訳する場合を含む）で読み上げる音声を選択します（Appleシステム音声、Gemini TTS または OpenRouter の MAI Voice）。リアルタイム音声翻訳プロバイダーは独自の音声出力を使用します。",
+        chineseSimplified: "选择在 Apple 或本地 Hy-MT2 文本翻译流程中朗读译文的语音，也包括翻译语音识别提供方转写出的文本（Apple 系统语音、Gemini TTS 或 OpenRouter 的 MAI Voice）。实时语音翻译提供方使用自己的音频输出。"
     )
     static let keyRequired = AppText.localized(english: "API key required", korean: "API 키 필요", japanese: "APIキーが必要", chineseSimplified: "需要 API 密钥")
     static let keySaved = AppText.localized(english: "API key saved", korean: "API 키 저장됨", japanese: "APIキー保存済み", chineseSimplified: "API 密钥已保存")
+    static let keyRequiredShort = AppText.localized(english: "Key Needed", korean: "키 필요", japanese: "キー必要", chineseSimplified: "需密钥")
+    static let keySavedShort = AppText.localized(english: "Key Saved", korean: "저장됨", japanese: "保存済", chineseSimplified: "已保存")
+    static let localReady = AppText.localized(english: "Local · Free", korean: "로컬 · 무료", japanese: "ローカル · 無料", chineseSimplified: "本地 · 免费")
     static let noKeyRequired = AppText.localized(english: "No API key needed", korean: "API 키 없이 사용", japanese: "APIキー不要", chineseSimplified: "无需 API 密钥")
     static let selected = AppText.localized(english: "Selected", korean: "선택됨", japanese: "選択中", chineseSimplified: "已选择")
+    static let filterLabel = AppText.localized(english: "Filter engines", korean: "엔진 필터", japanese: "エンジン絞り込み", chineseSimplified: "筛选引擎")
+    static let onDeviceSection = AppText.localized(english: "On-Device · Private & Free", korean: "온디바이스 · 무료/프라이빗", japanese: "オンデバイス · 無料", chineseSimplified: "本地 · 隐私免费")
+    static let cloudRealtimeSection = AppText.localized(english: "Cloud Realtime Translation", korean: "클라우드 실시간 번역", japanese: "クラウドリアルタイム翻訳", chineseSimplified: "云端实时翻译")
+    static let cloudTranscribeSection = AppText.localized(english: "Cloud Transcribe + Local Translate", korean: "클라우드 전사 + 로컬 번역", japanese: "クラウド文字起こし + ローカル翻訳", chineseSimplified: "云端转写 + 本地翻译")
+    static let manageKeys = AppText.localized(english: "Manage API Keys", korean: "API 키 관리", japanese: "APIキー管理", chineseSimplified: "管理 API 密钥")
 }

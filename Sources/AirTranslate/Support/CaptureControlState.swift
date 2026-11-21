@@ -48,7 +48,7 @@ extension TranslationSessionStore {
             isStarting: isStarting,
             isPaused: isPaused,
             isFinishing: isFinishingAzureMAI || isFinishingNariSTT
-                || isFinishingGrokSTT || isFinishingQwenTranslation,
+                || isFinishingGrokSTT || isFinishingQwenTranslation || isFinishingHyMT,
             isReconnectingQwen: isReconnectingQwenTranslation,
             isReconnectingNari: isReconnectingNariSTT,
             isReconnectingGrok: isReconnectingGrokSTT

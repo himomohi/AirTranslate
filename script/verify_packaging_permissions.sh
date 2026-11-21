@@ -107,7 +107,8 @@ fi
 require_pattern 'tccutil reset Microphone "$BUNDLE_ID"' "$LOCAL_BUILD_SCRIPT"
 require_pattern 'defaults delete "$BUNDLE_ID" "AirTranslate.screenRecordingAccessRequestAttempted"' "$LOCAL_BUILD_SCRIPT"
 require_pattern 'Microphone (when selected)' "$LOCAL_BUILD_SCRIPT"
-require_pattern 'pgrep -x "$APP_NAME"' "$LOCAL_BUILD_SCRIPT"
+require_pattern 'app_pids()' "$LOCAL_BUILD_SCRIPT"
+require_pattern '/bin/ps -axo pid=,ucomm=' "$LOCAL_BUILD_SCRIPT"
 require_pattern '/usr/bin/open --stdout' "$LOCAL_BUILD_SCRIPT"
 if /usr/bin/grep -Fq 'pkill -x "$APP_NAME"' "$LOCAL_BUILD_SCRIPT"; then
   echo "the local launcher must not terminate an existing AirTranslate instance" >&2
