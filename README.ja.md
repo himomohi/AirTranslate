@@ -23,6 +23,12 @@
 
 AirTranslateはMacで再生中の音声を取り込み、ライブで文字起こしし、翻訳ワークフローを選んだ場合は翻訳し、必要に応じて他のアプリの上にフローティング字幕を表示します。Apple Modeは引き続きローカル優先の標準ワークフローです。クラウドエンジンは任意で、対応するプロバイダーキーを設定すると利用できます。
 
+## 1.18.1 パッケージングの修正
+
+AirTranslate **1.18.1 / ビルド 1181** では、DMG と ZIP に同梱した llama.cpp フレームワークからビルド環境のソースコードの絶対パスを除去しました。アプリの機能と macOS の動作要件は 1.18.0 と同じです。
+
+[リリースノート](Release/GITHUB-RELEASE-1.18.1.md) · [AirTranslate 1.18.1 リリース](https://github.com/himomohi/AirTranslate/releases/tag/v1.18.1)。
+
 AirTranslate **1.18.0/build1180** は、オプションのローカル **Hy-MT2 1.8B 翻訳**、低遅延な **Focus Stage 単一フィード UI**、**アダプティブなダークグラス背景とホバーミニ HUD を備えたフローティング字幕**、**カテゴリ別エンジンハブ**、**2×2 コントロールセンター風メニューバー**、**検索・絞り込み・Markdown/TXT 書き出し対応の履歴ライブラリ**、**用語チップエディター**を追加します。Apple モードは引き続き既定のローカル優先フローです。
 
 ## 1.18.0 の新機能: ローカル Hy-MT2 翻訳 · Focus Stage UI · 字幕 HUD
@@ -81,11 +87,12 @@ AirTranslate **1.18.0/build1180** は、オプションのローカル **Hy-MT2 
 
 ## ダウンロード
 
-現在の公開最新版: **v1.18.0**。
+現在の公開最新版: **v1.18.1**。
 
 - [AirTranslate.dmgをダウンロード](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [AirTranslate-1.18.0.zipをダウンロード](https://github.com/himomohi/AirTranslate/releases/download/v1.18.0/AirTranslate-1.18.0.zip)
+- [AirTranslate-1.18.1.zipをダウンロード](https://github.com/himomohi/AirTranslate/releases/download/v1.18.1/AirTranslate-1.18.1.zip)
 - [AirTranslate.dmg.sha256をダウンロード](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
+- [AirTranslate 1.18.1 リリースノート](https://github.com/himomohi/AirTranslate/releases/tag/v1.18.1)
 - [AirTranslate 1.18.0 リリースノート](https://github.com/himomohi/AirTranslate/releases/tag/v1.18.0)
 - [バージョン履歴を見る](Release/VERSION-HISTORY.md)
 

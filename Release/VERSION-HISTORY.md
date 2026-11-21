@@ -1,5 +1,11 @@
 # AirTranslate Version History
 
+## 1.18.1 - 2026-11-22
+
+### Fixed
+
+- The DMG and ZIP no longer include absolute build-machine source paths from the bundled llama.cpp framework used by local translation. The app features and system requirements are unchanged from 1.18.0.
+
 ## 1.18.0 - 2026-11-22
 
 ### Added

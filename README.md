@@ -27,6 +27,12 @@ Live Mac audio captions and translation for meetings, videos, lectures, intervie
 
 AirTranslate captures audio playing on your Mac, transcribes it live, translates it when you choose a translation workflow, and can keep captions floating above other apps. Apple Mode remains the default local-first workflow. Cloud engines are optional and become available after you configure the matching provider key.
 
+## 1.18.1 packaging fix
+
+AirTranslate **1.18.1 / build 1181** removes absolute build-machine source paths from the bundled llama.cpp framework in the DMG and ZIP. The app features and macOS requirements are unchanged from 1.18.0.
+
+[Release notes](Release/GITHUB-RELEASE-1.18.1.md) · [AirTranslate 1.18.1 release](https://github.com/himomohi/AirTranslate/releases/tag/v1.18.1).
+
 AirTranslate **1.18.0/build1180** adds optional local Hy-MT2 1.8B translation, a redesigned Focus Stage single-feed workspace with lower UI latency, adaptive floating-caption glass backdrops with a hover mini-HUD, a categorized Engine & Voice Hub, a Control Center–style Menu Bar panel, searchable Saved Transcripts with Markdown/TXT export, and an interactive Terminology Chip Editor. Apple Mode remains the default local-first workflow.
 
 ## New in 1.18.0: local Hy-MT2 translation, Focus Stage UI, and floating-caption HUD
@@ -85,11 +91,12 @@ The **categorized Engine & Voice Hub** filters providers by `All`, `On-Device`, 
 
 ## Download
 
-Latest public release: **v1.18.0**.
+Latest public release: **v1.18.1**.
 
 - [Download AirTranslate.dmg](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [Download AirTranslate-1.18.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.18.0/AirTranslate-1.18.0.zip)
+- [Download AirTranslate-1.18.1.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.18.1/AirTranslate-1.18.1.zip)
 - [Download AirTranslate.dmg.sha256](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
+- [AirTranslate 1.18.1 release notes](https://github.com/himomohi/AirTranslate/releases/tag/v1.18.1)
 - [AirTranslate 1.17.0 release notes](https://github.com/himomohi/AirTranslate/releases/tag/v1.17.0)
 - [View release history](Release/VERSION-HISTORY.md)
 
