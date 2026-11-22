@@ -1,5 +1,20 @@
 # AirTranslate Version History
 
+## 1.20.0 - 2026-11-22
+
+### Added
+
+- Apple Mode has a **Quality First / Fast Captions** switch in the main window. During capture, a selection applies to the next capture. Fast Captions uses a shorter recognition context and realtime translation for earlier drafts, with a possible accuracy trade-off.
+- **Set Up Permissions** checks the requirements for the selected input and engine. It skips permissions that are already allowed and helps resume setup after a visit to macOS System Settings.
+
+### Changed
+
+- AirTranslate makes one short warm-up translation per ready language pair for Quality First and Fast Captions. Fast Captions shortens the wait for the first short phrase.
+
+### Fixed
+
+- A single **Screen & System Audio Recording** row shows the screen recording check used for Mac audio. The main window reports when it is waiting for playback and when it receives Mac audio. This resolves [#19](https://github.com/himomohi/AirTranslate/issues/19).
+
 ## 1.19.0 - 2026-11-22
 
 ### Added

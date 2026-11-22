@@ -1,4 +1,9 @@
 import Foundation
+
+enum AppleCaptionProfile: Hashable {
+    case quality
+    case fast
+}
 @preconcurrency import Translation
 
 enum AppleTranslationQuality: String, CaseIterable, Sendable {

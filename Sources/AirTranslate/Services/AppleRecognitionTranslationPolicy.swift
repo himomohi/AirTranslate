@@ -7,13 +7,16 @@ struct AppleRecognitionTranslationPolicy: Sendable {
 
     let partialCadence: TimeInterval
     let smallPartialSilenceFallback: TimeInterval
+    let firstSmallPartialSilenceFallback: TimeInterval?
 
     init(
         partialCadence: TimeInterval = Self.defaultPartialCadence,
-        smallPartialSilenceFallback: TimeInterval = Self.defaultSmallPartialSilenceFallback
+        smallPartialSilenceFallback: TimeInterval = Self.defaultSmallPartialSilenceFallback,
+        firstSmallPartialSilenceFallback: TimeInterval? = nil
     ) {
         self.partialCadence = partialCadence
         self.smallPartialSilenceFallback = smallPartialSilenceFallback
+        self.firstSmallPartialSilenceFallback = firstSmallPartialSilenceFallback
     }
 
     struct State: Equatable, Sendable {
@@ -111,7 +114,7 @@ struct AppleRecognitionTranslationPolicy: Sendable {
             return .unchanged
         }
 
-        let dueAt = pending.lastChangedAt.addingTimeInterval(smallPartialSilenceFallback)
+        let dueAt = pending.lastChangedAt.addingTimeInterval(smallPartialWait(state))
         guard now >= dueAt else {
             return .hold(until: dueAt)
         }
@@ -150,6 +153,7 @@ struct AppleRecognitionTranslationPolicy: Sendable {
         now: Date,
         state: inout State
     ) -> Decision {
+        let wait = smallPartialWait(state)
         if let pending = state.pendingSmallPartialBySegmentID[identity.segmentKey] {
             // 같은 문자열로 타이머가 재진입할 때는 마감을 밀지 않는다.
             let lastChangedAt = pending.sourceText == sourceText ? pending.lastChangedAt : now
@@ -157,7 +161,7 @@ struct AppleRecognitionTranslationPolicy: Sendable {
                 sourceText: sourceText,
                 lastChangedAt: lastChangedAt
             )
-            let dueAt = lastChangedAt.addingTimeInterval(smallPartialSilenceFallback)
+            let dueAt = lastChangedAt.addingTimeInterval(wait)
             guard now >= dueAt else {
                 return .hold(until: dueAt)
             }
@@ -167,13 +171,20 @@ struct AppleRecognitionTranslationPolicy: Sendable {
             return .requestNow(identity)
         }
 
-        let dueAt = now.addingTimeInterval(smallPartialSilenceFallback)
+        let dueAt = now.addingTimeInterval(wait)
         state.pendingSmallPartialBySegmentID[identity.segmentKey] = PendingSmallPartial(
             sourceText: sourceText,
             lastChangedAt: now
         )
         pruneTrackedSegments(state: &state)
         return .hold(until: dueAt)
+    }
+
+    private func smallPartialWait(_ state: State) -> TimeInterval {
+        if state.lastRequestedAtBySegmentID.isEmpty, let firstSmallPartialSilenceFallback {
+            return firstSmallPartialSilenceFallback
+        }
+        return smallPartialSilenceFallback
     }
 
     private func isStaleRecognition(

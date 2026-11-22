@@ -1,7 +1,4 @@
 import AppKit
-import AVFoundation
-import CoreGraphics
-import Speech
 import SwiftUI
 
 struct SettingsView: View {
@@ -9,9 +6,9 @@ struct SettingsView: View {
     @SceneStorage("AirTranslate.SettingsView.selectedCategory") private var selectedCategoryID = SettingsCategory.general.rawValue
     @State private var credentialScrollTarget: String?
     @State private var credentialScrollRequest = UUID()
-    @State private var screenRecordingPermission: SettingsPermissionState = .unknown
-    @State private var microphonePermission: SettingsPermissionState = .unknown
-    @State private var speechRecognitionPermission: SettingsPermissionState = .unknown
+    @State private var screenRecordingPermission: CapturePermissionStatus = .unknown
+    @State private var microphonePermission: CapturePermissionStatus = .unknown
+    @State private var speechRecognitionPermission: CapturePermissionStatus = .unknown
     @State private var showsAudioFileTools = false
     @State private var showsInactiveAppleSettings = false
 
@@ -59,11 +56,6 @@ struct SettingsView: View {
         .onAppear(perform: applyRequestedSettingsCategory)
         .onChange(of: session.requestedSettingsCategoryID) { _, _ in
             applyRequestedSettingsCategory()
-        }
-        .task(id: selectedCategoryID) {
-            if selectedCategory.wrappedValue == .permissions {
-                refreshPermissionStatuses()
-            }
         }
     }
 
@@ -687,6 +679,46 @@ struct SettingsView: View {
 
     private var permissionSettings: some View {
         SettingsGroup(title: AppText.permissions) {
+            SettingsControlRow(
+                title: PermissionSetupCopy.title,
+                detail: session.capturePermissionSteps.map(permissionTitle).joined(separator: " · "),
+                systemImage: "checkmark.shield"
+            ) {
+                switch permissionSetupState {
+                case .requesting(let pane):
+                    ProgressView { Text(PermissionSetupCopy.checking(permissionTitle(pane))) }
+                        .controlSize(.small)
+                default:
+                    if session.capturePermissionSteps.allSatisfy({ permissionStatus($0) == .allowed }) {
+                        Label(PermissionSetupCopy.ready, systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(AirTranslateDesign.Palette.live)
+                    } else {
+                        Button(PermissionSetupCopy.start, action: session.startCapturePermissionSetup)
+                            .buttonStyle(.borderedProminent)
+                            .disabled(isSessionConfigurationLocked || session.capturePermissionSetup.isRequesting)
+                            .accessibilityIdentifier("capturePermissionSetup")
+                            .accessibilityHint(PermissionSetupCopy.instruction)
+                    }
+                }
+            }
+
+            if case .waiting(let pane, let result) = permissionSetupState,
+               permissionStatus(pane) != .allowed {
+                if result == .restricted {
+                    SettingsNoticeRow(text: PermissionSetupCopy.restricted(permissionTitle(pane)), systemImage: "lock")
+                } else {
+                    SettingsNoticeActionRow(
+                        text: pane == .screenRecording
+                            ? PermissionSetupCopy.screenInstruction
+                            : PermissionSetupCopy.resumeInstruction(permissionTitle(pane)),
+                        systemImage: "lock.shield",
+                        actionTitle: AppText.openPrivacySettings
+                    ) {
+                        session.openPrivacySettings(pane)
+                    }
+                }
+            }
+
             SettingsPermissionRow(
                 title: SettingsCopy.screenRecording,
                 detail: SettingsCopy.screenRecordingPermissionDetail,
@@ -715,7 +747,7 @@ struct SettingsView: View {
             }
 
             HStack {
-                Label(SettingsCopy.permissionReadOnlyNotice, systemImage: "info.circle")
+                Label(PermissionSetupCopy.instruction, systemImage: "info.circle")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -724,9 +756,35 @@ struct SettingsView: View {
                 Button(action: refreshPermissionStatuses) {
                     Label(SettingsCopy.refreshPermissionStatus, systemImage: "arrow.clockwise")
                 }
-                .accessibilityHint(SettingsCopy.permissionReadOnlyNotice)
             }
             .padding(.vertical, 8)
+        }
+        .onAppear(perform: refreshPermissionStatuses)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            refreshPermissionStatuses()
+        }
+        .onChange(of: permissionSetupState) { _, _ in
+            refreshPermissionStatuses()
+        }
+    }
+
+    private var permissionSetupState: CapturePermissionSetup.State {
+        session.capturePermissionSetup.state(for: session.capturePermissionSteps)
+    }
+
+    private func permissionTitle(_ pane: PrivacySettingsPane) -> String {
+        switch pane {
+        case .screenRecording: SettingsCopy.screenRecording
+        case .microphone: SettingsCopy.microphonePermission
+        case .speechRecognition: SettingsCopy.speechRecognitionPermission
+        }
+    }
+
+    private func permissionStatus(_ pane: PrivacySettingsPane) -> CapturePermissionStatus {
+        switch pane {
+        case .screenRecording: screenRecordingPermission
+        case .microphone: microphonePermission
+        case .speechRecognition: speechRecognitionPermission
         }
     }
 
@@ -1020,33 +1078,9 @@ struct SettingsView: View {
     }
 
     private func refreshPermissionStatuses() {
-        screenRecordingPermission = CGPreflightScreenCaptureAccess() ? .allowed : .notGranted
-
-        switch AVCaptureDevice.authorizationStatus(for: .audio) {
-        case .authorized:
-            microphonePermission = .allowed
-        case .denied:
-            microphonePermission = .denied
-        case .restricted:
-            microphonePermission = .restricted
-        case .notDetermined:
-            microphonePermission = .notDetermined
-        @unknown default:
-            microphonePermission = .unknown
-        }
-
-        switch SFSpeechRecognizer.authorizationStatus() {
-        case .authorized:
-            speechRecognitionPermission = .allowed
-        case .denied:
-            speechRecognitionPermission = .denied
-        case .restricted:
-            speechRecognitionPermission = .restricted
-        case .notDetermined:
-            speechRecognitionPermission = .notDetermined
-        @unknown default:
-            speechRecognitionPermission = .unknown
-        }
+        screenRecordingPermission = .read(.screenRecording)
+        microphonePermission = .read(.microphone)
+        speechRecognitionPermission = .read(.speechRecognition)
     }
 
     private var savedAPIKeyBadge: String {
@@ -1236,8 +1270,10 @@ enum SettingsCopy {
         korean: "로컬 음성 인식 및 번역 자산을 확인합니다."
     )
     static let permissionsDetail = AppText.localized(
-        english: "Open macOS privacy controls required for capture.",
-        korean: "캡처에 필요한 macOS 개인정보 보호 권한을 엽니다."
+        english: "Set up and check permissions for the selected input and engine.",
+        korean: "선택한 입력과 엔진에 필요한 권한을 설정하고 확인합니다.",
+        japanese: "選択した入力とエンジンに必要な権限を設定・確認します。",
+        chineseSimplified: "设置并检查所选输入和引擎所需的权限。"
     )
     static let infoDetail = AppText.localized(
         english: "Review local-first behavior and privacy notes.",
@@ -1552,12 +1588,6 @@ enum SettingsCopy {
         japanese: "Apple音声認識モードに必要です。",
         chineseSimplified: "Apple 语音识别模式需要此权限。"
     )
-    static let permissionReadOnlyNotice = AppText.localized(
-        english: "Statuses are read-only. Permission prompts are never shown from this page.",
-        korean: "상태만 확인하며 이 화면에서 권한 요청 창을 띄우지 않습니다.",
-        japanese: "状態の確認のみ行い、この画面から権限要求は表示しません。",
-        chineseSimplified: "这里只读取状态，不会从此页面弹出权限请求。"
-    )
     static let refreshPermissionStatus = AppText.localized(
         english: "Refresh Status",
         korean: "상태 새로고침",
@@ -1778,14 +1808,7 @@ private struct SettingsPageHeader: View {
     }
 }
 
-private enum SettingsPermissionState: Equatable {
-    case allowed
-    case notGranted
-    case denied
-    case restricted
-    case notDetermined
-    case unknown
-
+private extension CapturePermissionStatus {
     var title: String {
         switch self {
         case .allowed:
@@ -1828,7 +1851,7 @@ private struct SettingsPermissionRow: View {
     let title: String
     let detail: String
     let systemImage: String
-    let status: SettingsPermissionState
+    let status: CapturePermissionStatus
     let openSettings: () -> Void
 
     var body: some View {

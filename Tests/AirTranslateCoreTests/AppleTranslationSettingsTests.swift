@@ -6,6 +6,65 @@ import Testing
 @Suite(.serialized)
 @MainActor
 struct AppleTranslationSettingsTests {
+    @Test func fastCaptionsUsesRealtimeForAppleTranslationAndPreservesSavedQuality() throws {
+        let fixture = try AppleSettingsFixture()
+        defer { fixture.cleanUp() }
+        let session = fixture.session
+        session.useAppleDefaultMode()
+        session.appleTranslationQuality = .highQuality
+        session.appleProtectedTermsText = "AirTranslate"
+        #expect(!session.isUsingAppleFastCaptions)
+        session.appleFastCaptionsEnabled = true
+        #expect(session.isUsingAppleFastCaptions)
+        #expect(session.appleTranslationOptions.quality == .realtime)
+        #expect(session.appleTranslationOptions.normalizedProtectedTerms == ["AirTranslate"])
+
+        let restored = fixture.makeSession()
+        defer { restored.prepareForTermination() }
+        #expect(restored.isUsingAppleFastCaptions)
+        #expect(restored.appleTranslationQuality == .highQuality)
+        restored.useTranscribeOnlyMode()
+        #expect(!restored.isUsingAppleFastCaptions)
+        restored.useTranslationMode()
+        #expect(restored.isUsingAppleFastCaptions)
+
+        _ = session.activateLiveCallbackPipelineForTesting()
+        session.appleFastCaptionsEnabled = false
+        #expect(session.isUsingAppleFastCaptions)
+        restored.appleFastCaptionsEnabled = false
+        #expect(restored.appleTranslationOptions.quality == .highQuality)
+    }
+
+    @Test func mainCaptionModeSelectionWaitsForTheCurrentCaptureToStop() throws {
+        let fixture = try AppleSettingsFixture()
+        defer { fixture.cleanUp() }
+        let session = fixture.session
+        session.useAppleDefaultMode()
+        session.selectAppleCaptionProfile(.quality)
+        #expect(session.activeAppleCaptionProfile == .quality)
+
+        _ = session.activateLiveCallbackPipelineForTesting()
+        session.selectAppleCaptionProfile(.fast)
+        #expect(session.isRunning)
+        #expect(session.activeAppleCaptionProfile == .quality)
+        #expect(session.nextAppleCaptionProfile == .fast)
+        session.selectAppleCaptionProfile(.quality)
+        #expect(session.nextAppleCaptionProfile == nil)
+
+        session.selectAppleCaptionProfile(.fast)
+        session.stop()
+        #expect(!session.isRunning)
+        #expect(session.activeAppleCaptionProfile == .fast)
+        #expect(session.nextAppleCaptionProfile == nil)
+        #expect(session.appleTranslationOptions.quality == .realtime)
+
+        session.selectAppleCaptionProfile(.quality)
+        #expect(session.activeAppleCaptionProfile == .quality)
+        if session.supportsAppleTranslationOptions {
+            #expect(session.appleTranslationOptions.quality == .highQuality)
+        }
+    }
+
     @Test func protectedPhraseRemainsIntactWhenAppliedToCaptionInLongSession() async throws {
         guard AppleTranslationOptions.supportsStrategySelection else { return }
         let fixture = try AppleSettingsFixture()

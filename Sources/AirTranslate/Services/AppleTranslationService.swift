@@ -11,6 +11,13 @@ actor AppleTranslationService {
     private var availabilityByQuality: [AppleTranslationQuality: LanguageAvailability] = [:]
     private var sessionsByLanguagePair: [CacheKey: TranslationSession] = [:]
     private var availabilityByLanguagePair: [CacheKey: LanguageAvailability.Status] = [:]
+    private var activationAttempts = Set<CacheKey>()
+
+    private static let warmupSentences = [
+        "en-US": "This is a test.", "ko-KR": "이것은 테스트입니다.", "ja-JP": "これはテストです。",
+        "zh-CN": "这是一个测试。", "es-ES": "Esto es una prueba.",
+        "fr-FR": "Ceci est un test.", "de-DE": "Dies ist ein Test."
+    ]
 
     private var realtimeFallbackPairs = Set<String>()
     private(set) var didKeepOriginalForProtectedTerms = false
@@ -38,11 +45,14 @@ actor AppleTranslationService {
 
     func prepare(
         source: LanguageOption, target: LanguageOption, model: IntelligenceModel,
-        options: AppleTranslationOptions = .init()
+        options: AppleTranslationOptions = .init(), activatesRealtimeSession: Bool = false
     ) async throws {
         let resolved = resolvedOptions(options, source: source, target: target)
         do {
-            try await prepareOnce(source: source, target: target, model: model, options: resolved)
+            try await prepareOnce(
+                source: source, target: target, model: model, options: resolved,
+                activatesRealtimeSession: activatesRealtimeSession
+            )
         } catch {
             try Task.checkCancellation()
             guard resolved.effectiveQuality == .highQuality, !(error is CancellationError),
@@ -87,7 +97,8 @@ actor AppleTranslationService {
         source: LanguageOption,
         target: LanguageOption,
         model: IntelligenceModel,
-        options: AppleTranslationOptions = .init()
+        options: AppleTranslationOptions = .init(),
+        activatesRealtimeSession: Bool = false
     ) async throws {
         guard model != .appleSpeechOnly else { return }
 
@@ -112,6 +123,13 @@ actor AppleTranslationService {
         )
         if !(await session.isReady) {
             try await session.prepareTranslation()
+        } else if cacheKey.quality == .highQuality || activatesRealtimeSession,
+                  source != target, !Task.isCancelled,
+                  let sample = Self.warmupSentences[source.id],
+                  activationAttempts.insert(cacheKey).inserted {
+            // 캡처 시작 직후 설치된 엔진을 한 번 호출해 초기 비용을 앞당긴다.
+            // 정해진 예문의 결과는 자막, 기록, 번역 캐시에 사용하지 않는다.
+            _ = try? await session.translate(sample)
         }
     }
 
@@ -152,6 +170,7 @@ actor AppleTranslationService {
             try await session.prepareTranslation()
         }
 
+        activationAttempts.insert(cacheKey)
         let response: TranslationSession.Response
         if #available(macOS 26.4, *),
            let attributed = options.attributedTextPreservingTerms(in: text) {

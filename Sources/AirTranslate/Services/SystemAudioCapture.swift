@@ -45,6 +45,10 @@ struct ScreenRecordingRequestAttemptStore: @unchecked Sendable {
 final class ScreenRecordingAccessPolicy: @unchecked Sendable {
     typealias AccessCheck = () -> Bool
 
+    enum Outcome: Equatable {
+        case allowed, requested, settingsRequired
+    }
+
     private let preflightAccess: AccessCheck
     private let requestAccess: AccessCheck
     private let requestAttemptStore: ScreenRecordingRequestAttemptStore
@@ -60,20 +64,20 @@ final class ScreenRecordingAccessPolicy: @unchecked Sendable {
         self.requestAttemptStore = requestAttemptStore
     }
 
-    func hasAccessOrRequestsOnce() -> Bool {
+    func accessOrRequestOnce() -> Outcome {
         if preflightAccess() {
             return withStateLock {
                 if !requestAttemptStore.hasRequestedAccess() {
                     requestAttemptStore.markRequestedAccess()
                 }
-                return true
+                return .allowed
             }
         }
 
         return withStateLock {
-            guard !requestAttemptStore.hasRequestedAccess() else { return false }
+            guard !requestAttemptStore.hasRequestedAccess() else { return .settingsRequired }
             requestAttemptStore.markRequestedAccess()
-            return requestAccess()
+            return requestAccess() ? .allowed : .requested
         }
     }
 
@@ -154,9 +158,14 @@ final class SystemAudioCapture: NSObject, @unchecked Sendable {
 
     @MainActor
     func requestScreenRecordingAccess() throws {
-        guard screenRecordingAccessPolicy.hasAccessOrRequestsOnce() else {
+        guard screenRecordingAccessOutcome() == .allowed else {
             throw CaptureError.screenRecordingNotGranted
         }
+    }
+
+    @MainActor
+    func screenRecordingAccessOutcome() -> ScreenRecordingAccessPolicy.Outcome {
+        screenRecordingAccessPolicy.accessOrRequestOnce()
     }
 
     @MainActor

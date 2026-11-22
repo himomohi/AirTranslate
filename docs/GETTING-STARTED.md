@@ -30,11 +30,13 @@ cat AirTranslate.dmg.sha256
 
 ## First Launch
 
-AirTranslate asks for the permissions used by the selected capture flow:
+Open **Settings > Permissions > Set Up Permissions** to start setting up the selected audio input and engine. Confirm the macOS prompts as they appear. AirTranslate skips allowed permissions and opens the corresponding System Settings pane when an existing denial needs to be changed. Return to AirTranslate after allowing access to continue the setup. macOS may ask you to reopen AirTranslate after granting screen recording access.
 
-- Screen & System Audio Recording, when Mac audio is selected
-- Microphone, only when microphone input is selected
-- Speech Recognition
+The selected capture flow determines which permissions are needed:
+
+- **Screen & System Audio Recording** for Mac audio
+- **Microphone** for microphone input
+- **Speech Recognition** for Apple speech recognition, including Hy-MT2 mode
 
 Screen Recording is required because ScreenCaptureKit provides the system-audio capture path. The **Screen & System Audio Recording** row shows the screen recording access AirTranslate checks before starting capture. If macOS also lists AirTranslate under **System Audio Recording Only**, enable AirTranslate under **Screen & System Audio Recording** for this workflow. AirTranslate does not save screen frames as recordings.
 
@@ -44,7 +46,7 @@ When troubleshooting permissions, check which app copy is running. Older or diff
 
 ## Choose A Workflow
 
-- **Apple Mode:** default local-first transcription and translation path. Choose the source language manually; Apple source-language auto-detection is currently disabled while language-switch handling is improved.
+- **Apple Mode:** default local-first transcription and translation path. Choose the source language manually; Apple source-language auto-detection is currently disabled while language-switch handling is improved. Choose **Quality First** or **Fast Captions** in the main window. A selection made during capture applies to the next capture. Fast Captions uses shorter recognition context and realtime translation, which can reduce accuracy.
 - **Transcribe Only:** source captions without translation.
 - **OpenAI Audio, Gemini, Meta, Azure, or Nari:** optional provider modes that require user-supplied keys.
 - **Grok STT (1.10.0+):** Grok Voice Transcribe 2.0 transcription with your own SpaceXAI (xAI) key. Select Grok STT after adding the key in API Keys. See [Grok STT notes](grok-stt.md).

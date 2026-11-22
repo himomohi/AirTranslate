@@ -23,6 +23,13 @@
 
 AirTranslate 会捕获 Mac 正在播放的音频，实时转写；当你选择翻译流程时，它会进行翻译，并可将字幕悬浮在其他应用上方。Apple Mode 仍然是默认的本地优先流程。云端引擎为可选项，配置对应提供方密钥后即可使用。
 
+## 1.20.0 快速字幕与捕获设置
+
+- 在 Apple 模式的主窗口顶部切换 **质量优先 / 快速字幕**。捕获期间的选择会在下次捕获时生效。快速字幕可以更早显示草稿，准确率可能降低。
+- 设置 > 权限中的 **开始设置权限** 会检查所选输入和引擎需要的权限，跳过已允许的项目，并在从 macOS 系统设置返回后继续。
+- 质量优先和快速字幕会按语言对预先调用一次已就绪的 Apple 翻译引擎。快速字幕还会缩短首个短语的等待时间。
+- **屏幕与系统音频录制** 一栏显示 Mac 音频使用的权限。第一条字幕出现前，主窗口会区分等待音频和正在接收音频。
+
 ## 1.19.0 应用更新
 
 主窗口左下角显示当前版本。点击即可检查最新稳定版。有新版时，可以阅读发布说明，或选择 **下载更新**，验证官方 DMG 后打开并替换「应用程序」中的旧版。
@@ -91,12 +98,12 @@ AirTranslate **1.18.0/build1180** 新增可选本地 **Hy-MT2 1.8B 翻译**、�
 
 ## 下载
 
-当前公开最新版：**v1.19.0**。
+当前公开最新版：**v1.20.0**。
 
 - [下载 AirTranslate.dmg](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [下载 AirTranslate-1.19.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.19.0/AirTranslate-1.19.0.zip)
+- [下载 AirTranslate-1.20.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.20.0/AirTranslate-1.20.0.zip)
 - [下载 AirTranslate.dmg.sha256](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
-- [AirTranslate 1.19.0 发布说明](https://github.com/himomohi/AirTranslate/releases/tag/v1.19.0)
+- [AirTranslate 1.20.0 发布说明](https://github.com/himomohi/AirTranslate/releases/tag/v1.20.0)
 - [AirTranslate 1.18.1 发布说明](https://github.com/himomohi/AirTranslate/releases/tag/v1.18.1)
 - [AirTranslate 1.18.0 发布说明](https://github.com/himomohi/AirTranslate/releases/tag/v1.18.0)
 - [查看版本历史](Release/VERSION-HISTORY.md)

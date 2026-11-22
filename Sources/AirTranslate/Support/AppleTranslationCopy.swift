@@ -6,6 +6,21 @@ enum AppleTranslationCopy {
     static var fallbackTitle: String { AppText.localized(english: "Realtime fallback", korean: "실시간으로 복귀", japanese: "リアルタイムに復帰", chineseSimplified: "已回退到实时") }
     static var fallbackDetail: String { AppText.localized(english: "The quality-first model failed for this language pair. Realtime translation will be used until the app restarts. Protected terms still apply.", korean: "이 언어쌍의 품질 우선 모델이 실패해 앱을 다시 실행할 때까지 실시간 번역을 사용합니다. 등록한 용어는 계속 보존합니다.", japanese: "この言語ペアの品質優先モデルが失敗したため、アプリを再起動するまでリアルタイム翻訳を使用します。登録した用語は引き続き保持します。", chineseSimplified: "此语言对的质量优先模型失败，将使用实时翻译，直到重新启动应用。已注册的术语仍会保留。") }
     static var title: String { AppText.localized(english: "Apple translation", korean: "Apple 번역", japanese: "Apple 翻訳", chineseSimplified: "Apple 翻译") }
+    static let fastCaptions = AppText.localized(
+        english: "Fast Captions", korean: "빠른 자막", japanese: "高速字幕", chineseSimplified: "快速字幕"
+    )
+    static var captionProfile: String { AppText.localized(
+        english: "Apple Caption Mode", korean: "Apple 자막 모드", japanese: "Apple 字幕モード", chineseSimplified: "Apple 字幕模式"
+    ) }
+    static var nextCapture: String { AppText.localized(
+        english: "Applies to the next capture", korean: "다음 캡처부터 적용", japanese: "次のキャプチャから適用", chineseSimplified: "下次捕获时生效"
+    ) }
+    static let fastCaptionsDetail = AppText.localized(
+        english: "Uses faster Apple speech recognition and Realtime translation. Draft captions appear sooner and may be less accurate.",
+        korean: "빠른 Apple 음성 인식과 실시간 번역을 사용합니다. 자막 초안이 더 일찍 표시되며 정확도가 낮아질 수 있습니다.",
+        japanese: "高速な Apple 音声認識とリアルタイム翻訳を使います。字幕の下書きが早く表示され、精度が下がる場合があります。",
+        chineseSimplified: "使用更快的 Apple 语音识别与实时翻译。字幕草稿会更早显示，准确率可能降低。"
+    )
     static var quality: String { AppText.localized(english: "Translation quality", korean: "번역 품질", japanese: "翻訳品質", chineseSimplified: "翻译质量") }
     static var detail: String { AppText.localized(english: "Realtime favors speed and lower power use. Quality first uses Apple Intelligence when available and may take longer; otherwise Apple uses traditional translation. Applies only to Apple text translation.", korean: "실시간은 빠른 응답과 낮은 전력 사용을 우선합니다. 품질 우선은 사용 가능한 Apple Intelligence를 활용하며 더 오래 걸릴 수 있습니다. 사용할 수 없으면 Apple이 기존 번역 모델로 처리합니다. Apple 텍스트 번역에만 적용됩니다.", japanese: "リアルタイムは速度と省電力を優先します。品質優先は利用可能な Apple Intelligence を使用するため時間がかかる場合があります。利用できない場合は従来の翻訳を使用します。Apple のテキスト翻訳に適用されます。", chineseSimplified: "实时模式优先考虑速度和低功耗。质量优先使用可用的 Apple Intelligence，可能耗时更长；不可用时使用传统翻译。仅适用于 Apple 文本翻译。") }
     static func title(for quality: AppleTranslationQuality) -> String {

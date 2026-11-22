@@ -53,7 +53,7 @@ final class MicrophoneAudioCapture: NSObject, @unchecked Sendable {
         generation: UInt64 = 0
     ) async throws {
         let operation = beginOperation()
-        guard await requestMicrophoneAccess() else {
+        guard await Self.requestMicrophoneAccess() else {
             throw CaptureError.microphoneNotGranted
         }
         try ensureOperationIsCurrent(operation)
@@ -81,7 +81,7 @@ final class MicrophoneAudioCapture: NSObject, @unchecked Sendable {
     }
 
     @MainActor
-    private func requestMicrophoneAccess() async -> Bool {
+    static func requestMicrophoneAccess() async -> Bool {
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .authorized:
             return true

@@ -27,6 +27,13 @@ Live Mac audio captions and translation for meetings, videos, lectures, intervie
 
 AirTranslate captures audio playing on your Mac, transcribes it live, translates it when you choose a translation workflow, and can keep captions floating above other apps. Apple Mode remains the default local-first workflow. Cloud engines are optional and become available after you configure the matching provider key.
 
+## 1.20.0 Fast Captions and capture setup
+
+- Use **Quality First / Fast Captions** at the top of Apple Mode. A change made during capture applies to the next capture. Fast Captions favors earlier drafts and may reduce accuracy.
+- **Set Up Permissions** in Settings > Permissions checks the selected input and engine, skips granted permissions, and helps you continue after a visit to macOS System Settings.
+- AirTranslate warms up ready Apple translation engines once per language pair for Quality First and Fast Captions. Fast Captions waits less for the first short phrase.
+- The **Screen & System Audio Recording** row shows the permission used for Mac audio. The main window distinguishes **Waiting for Mac audio** from **Receiving Mac audio** before the first caption.
+
 ## 1.19.0 app updates
 
 The installed version appears at the bottom left of the main window. Select it to check for the latest stable release. When an update is available, you can read its release notes or choose **Download Update**, which verifies the official DMG before you open it and replace the app in Applications.
@@ -95,12 +102,12 @@ The **categorized Engine & Voice Hub** filters providers by `All`, `On-Device`, 
 
 ## Download
 
-Latest public release: **v1.19.0**.
+Latest public release: **v1.20.0**.
 
 - [Download AirTranslate.dmg](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [Download AirTranslate-1.19.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.19.0/AirTranslate-1.19.0.zip)
+- [Download AirTranslate-1.20.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.20.0/AirTranslate-1.20.0.zip)
 - [Download AirTranslate.dmg.sha256](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
-- [AirTranslate 1.19.0 release notes](https://github.com/himomohi/AirTranslate/releases/tag/v1.19.0)
+- [AirTranslate 1.20.0 release notes](https://github.com/himomohi/AirTranslate/releases/tag/v1.20.0)
 - [AirTranslate 1.18.1 release notes](https://github.com/himomohi/AirTranslate/releases/tag/v1.18.1)
 - [AirTranslate 1.17.0 release notes](https://github.com/himomohi/AirTranslate/releases/tag/v1.17.0)
 - [View release history](Release/VERSION-HISTORY.md)

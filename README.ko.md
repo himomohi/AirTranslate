@@ -23,6 +23,13 @@
 
 AirTranslate는 Mac에서 재생되는 소리를 캡처해 실시간으로 전사하고, 번역 흐름을 선택하면 번역하며, 필요하면 다른 앱 위에 플로팅 자막을 유지합니다. Apple 기본 모드는 계속 로컬 우선 기본 경로입니다. 클라우드 엔진은 선택형이며 해당 제공자 키를 설정하면 사용할 수 있습니다.
 
+## 1.20.0 빠른 자막과 캡처 설정
+
+- Apple 기본 모드 상단에서 **품질 우선 / 빠른 자막**을 전환할 수 있습니다. 캡처 중 변경은 다음 캡처부터 적용됩니다. 빠른 자막은 초안을 일찍 표시하며 정확도가 낮아질 수 있습니다.
+- 설정 > 권한의 **권한 설정 시작**은 선택한 입력과 엔진에 필요한 권한을 확인합니다. 허용된 권한을 건너뛰고, macOS 시스템 설정에 다녀온 뒤 이어서 설정할 수 있습니다.
+- 품질 우선과 빠른 자막은 준비된 Apple 번역 엔진을 언어쌍별로 한 번 미리 호출합니다. 빠른 자막은 첫 짧은 구절의 대기 시간도 줄입니다.
+- **화면 및 시스템 오디오 기록** 행에 PC 소리에 사용하는 권한이 표시됩니다. 메인 창은 첫 자막 전에 **PC 소리 대기 중**과 **PC 소리 수신 중**을 구분합니다.
+
 ## 1.19.0 앱 업데이트
 
 메인 창 왼쪽 아래에 현재 버전이 표시됩니다. 버전 표시를 누르면 최신 안정 버전을 확인할 수 있습니다. 새 버전이 있으면 릴리즈 노트를 읽거나 **업데이트 다운로드**로 공식 DMG를 검증한 뒤 열어서 응용 프로그램 폴더의 앱을 교체할 수 있습니다.
@@ -91,12 +98,12 @@ AirTranslate **1.18.0/build1180**은 선택형 로컬 **Hy-MT2 1.8B 번역**, �
 
 ## 다운로드
 
-현재 공개 최신 릴리즈: **v1.19.0**.
+현재 공개 최신 릴리즈: **v1.20.0**.
 
 - [AirTranslate.dmg 다운로드](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [AirTranslate-1.19.0.zip 다운로드](https://github.com/himomohi/AirTranslate/releases/download/v1.19.0/AirTranslate-1.19.0.zip)
+- [AirTranslate-1.20.0.zip 다운로드](https://github.com/himomohi/AirTranslate/releases/download/v1.20.0/AirTranslate-1.20.0.zip)
 - [AirTranslate.dmg.sha256 다운로드](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
-- [AirTranslate 1.19.0 릴리스 노트](https://github.com/himomohi/AirTranslate/releases/tag/v1.19.0)
+- [AirTranslate 1.20.0 릴리스 노트](https://github.com/himomohi/AirTranslate/releases/tag/v1.20.0)
 - [AirTranslate 1.18.1 릴리스 노트](https://github.com/himomohi/AirTranslate/releases/tag/v1.18.1)
 - [AirTranslate 1.18.0 릴리즈 노트](https://github.com/himomohi/AirTranslate/releases/tag/v1.18.0)
 - [버전 이력 보기](Release/VERSION-HISTORY.md)

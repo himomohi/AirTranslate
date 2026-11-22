@@ -86,6 +86,10 @@ struct StageHeaderView: View {
 
             Spacer(minLength: AirTranslateDesign.Spacing.sm)
 
+            if session.canUseAppleFastCaptions {
+                appleCaptionProfilePicker
+            }
+
             if needsAPIKey {
                 Button {
                     session.requestAPIKeySettings()
@@ -129,6 +133,31 @@ struct StageHeaderView: View {
             isRunning: session.isRunning,
             isStarting: session.isStarting
         )
+    }
+
+    private var appleCaptionProfilePicker: some View {
+        VStack(spacing: 2) {
+            Picker(AppleTranslationCopy.captionProfile, selection: Binding<AppleCaptionProfile?>(
+                get: { session.nextAppleCaptionProfile ?? session.activeAppleCaptionProfile },
+                set: { if let profile = $0 { session.selectAppleCaptionProfile(profile) } }
+            )) {
+                Text(AppleTranslationCopy.title(for: session.supportsAppleTranslationOptions ? .highQuality : .realtime))
+                    .tag(AppleCaptionProfile.quality as AppleCaptionProfile?)
+                Text(AppleTranslationCopy.fastCaptions)
+                    .tag(AppleCaptionProfile.fast as AppleCaptionProfile?)
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .controlSize(.small)
+            .fixedSize()
+            .accessibilityIdentifier("appleCaptionProfilePicker")
+
+            if session.nextAppleCaptionProfile != nil {
+                Text(AppleTranslationCopy.nextCapture)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 
     private var usesAutomaticSource: Bool {
@@ -874,25 +903,30 @@ private struct SessionStatusPill: View {
 
 struct PermissionActionButton: View {
     let session: TranslationSessionStore
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         if needsPermissionAction {
             Button {
-                session.openPrivacySettings()
+                session.requestPermissionSettings()
+                openSettings()
+                session.startCapturePermissionSetup()
             } label: {
-                Label(AppText.openPrivacySettings, systemImage: "lock.shield.fill")
+                Label(PermissionSetupCopy.start, systemImage: "lock.shield.fill")
                     .font(AirTranslateDesign.Typography.label)
                     .foregroundStyle(AirTranslateDesign.Palette.warning)
             }
             .buttonStyle(.plain)
             .airFocusRing(cornerRadius: AirTranslateDesign.Radius.control)
-            .help(AppText.openPrivacySettings)
-            .accessibilityLabel(AppText.openPrivacySettings)
+            .disabled(session.capturePermissionSetup.isRequesting)
+            .help(PermissionSetupCopy.start)
         }
     }
 
     var needsPermissionAction: Bool {
-        session.statusMessage.localizedCaseInsensitiveContains("permission")
+        guard !session.isRunning, !session.isStarting,
+              session.captureStartFailureMessage == nil else { return false }
+        return session.statusMessage.localizedCaseInsensitiveContains("permission")
             || session.statusMessage.localizedCaseInsensitiveContains("권한")
             || session.statusMessage.localizedCaseInsensitiveContains("権限")
             || session.statusMessage.localizedCaseInsensitiveContains("权限")

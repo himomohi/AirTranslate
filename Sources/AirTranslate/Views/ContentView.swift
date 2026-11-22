@@ -146,8 +146,10 @@ struct ContentView: View {
         case .generalSettings:
             session.requestGeneralSettings()
             openSettings()
-        case .privacy(let pane):
-            session.openPrivacySettings(pane)
+        case .privacy:
+            session.requestPermissionSettings()
+            openSettings()
+            session.startCapturePermissionSetup()
         case .retry:
             session.start()
         }
@@ -233,7 +235,7 @@ private struct CaptureStartFailureView: View {
         switch action {
         case .apiKeys: AppText.openAPIKeySettings
         case .generalSettings: NariCopy.chooseGAModel
-        case .privacy: AppText.openPrivacySettings
+        case .privacy: PermissionSetupCopy.start
         case .retry: AppText.retry
         }
     }

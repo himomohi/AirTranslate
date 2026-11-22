@@ -7,6 +7,7 @@ struct CaptureControlState: Equatable {
     var isReconnectingQwen = false
     var isReconnectingNari = false
     var isReconnectingGrok = false
+    var isSettingUpPermissions = false
 
     var phase: MenuBarCapturePhase {
         MenuBarCapturePhase(
@@ -29,7 +30,7 @@ struct CaptureControlState: Equatable {
     }
 
     var canTogglePause: Bool { isPaused ? canResume : canPause }
-    var canToggleCapture: Bool { phase != .finishing }
+    var canToggleCapture: Bool { phase != .finishing && !isSettingUpPermissions }
 
     func statusTitle(statusMessage: String) -> String {
         switch phase {
@@ -51,7 +52,8 @@ extension TranslationSessionStore {
                 || isFinishingGrokSTT || isFinishingQwenTranslation || isFinishingHyMT,
             isReconnectingQwen: isReconnectingQwenTranslation,
             isReconnectingNari: isReconnectingNariSTT,
-            isReconnectingGrok: isReconnectingGrokSTT
+            isReconnectingGrok: isReconnectingGrokSTT,
+            isSettingUpPermissions: capturePermissionSetup.isRequesting
         )
     }
 }

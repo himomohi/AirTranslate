@@ -80,6 +80,28 @@ struct AppleRecognitionTranslationPolicyTests {
     }
 
     @Test
+    func fastCaptionsShortensOnlyTheFirstSmallPartialWait() {
+        let policy = AppleRecognitionTranslationPolicy(firstSmallPartialSilenceFallback: 0.20)
+        var state = AppleRecognitionTranslationPolicy.State()
+        let lineID = UUID()
+        let now = Date(timeIntervalSinceReferenceDate: 250)
+
+        let first = policy.receive(sourceText: "Yes", lineID: lineID, metadata: nil, now: now, state: &state)
+        #expect(first == .hold(until: now.addingTimeInterval(0.20)))
+        let firstRequest = policy.flushSmallPartial(
+            lineID: lineID, metadata: nil, now: now.addingTimeInterval(0.20), state: &state
+        )
+        guard case .requestNow = firstRequest else {
+            Issue.record("빠른 자막 모드에서 첫 구절을 예약하지 않았습니다.")
+            return
+        }
+
+        let nextTime = now.addingTimeInterval(1)
+        let second = policy.receive(sourceText: "We", lineID: lineID, metadata: nil, now: nextTime, state: &state)
+        #expect(second == .hold(until: nextTime.addingTimeInterval(0.70)))
+    }
+
+    @Test
     func meaningfulPartialUsesBoundedCadence() {
         var state = AppleRecognitionTranslationPolicy.State()
         let lineID = UUID()

@@ -81,4 +81,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         session?.prepareForTermination()
     }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        session?.resumeCapturePermissionSetupIfApproved()
+    }
 }

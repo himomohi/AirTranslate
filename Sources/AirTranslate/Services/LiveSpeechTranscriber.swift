@@ -435,7 +435,11 @@ final class LiveSpeechTranscriber: @unchecked Sendable {
         return installedLanguages
     }
 
-    func start(languages: [LanguageOption], includesAlternatives: Bool = false) async throws {
+    func start(
+        languages: [LanguageOption],
+        includesAlternatives: Bool = false,
+        prefersFastResults: Bool = false
+    ) async throws {
         let lifecycleTransition = takeLifecycleTransition()
         let lifecycleGeneration = lifecycleTransition.generation
         await lifecycleTransition.cleanupTask.value
@@ -455,6 +459,9 @@ final class LiveSpeechTranscriber: @unchecked Sendable {
             let uniqueLanguages = languages.filter { language in
                 seenLanguageIDs.insert(language.id).inserted
             }
+            var reportingOptions: Set<SpeechTranscriber.ReportingOption> = [.volatileResults]
+            if includesAlternatives { reportingOptions.insert(.alternativeTranscriptions) }
+            if prefersFastResults { reportingOptions.insert(.fastResults) }
             var transcribers: [(language: LanguageOption, transcriber: SpeechTranscriber)] = []
             for language in uniqueLanguages {
                 try Task.checkCancellation()
@@ -478,9 +485,7 @@ final class LiveSpeechTranscriber: @unchecked Sendable {
                     transcriber: SpeechTranscriber(
                         locale: supportedLocale,
                         transcriptionOptions: [],
-                        // 문맥 창을 줄이는 fastResults 대신 기본 정확도를 유지하고 중간 결과만 받는다.
-                        reportingOptions: includesAlternatives
-                            ? [.volatileResults, .alternativeTranscriptions] : [.volatileResults],
+                        reportingOptions: reportingOptions,
                         attributeOptions: [.transcriptionConfidence]
                     )
                 ))
@@ -852,7 +857,7 @@ final class LiveSpeechTranscriber: @unchecked Sendable {
         }
     }
 
-    private static func requestAuthorization() async -> Bool {
+    static func requestAuthorization() async -> Bool {
         await withCheckedContinuation { continuation in
             SFSpeechRecognizer.requestAuthorization { status in
                 continuation.resume(returning: status == .authorized)

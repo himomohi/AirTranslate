@@ -92,6 +92,7 @@ private enum SettingsKey {
     static let speechSynthesisModelID = "speechSynthesisModelID"
     static let translatedVoiceVolume = "translatedVoiceVolume"
     static let appleTranslationQuality = "appleTranslationQuality"
+    static let appleFastCaptionsEnabled = "appleFastCaptionsEnabled"
     static let appleProtectedTermsText = "appleProtectedTermsText"
     static let isJevSelectionEnabled = "isJevSelectionEnabled"
     static let isTranscriptLintEnabled = "isTranscriptLintEnabled"
@@ -187,6 +188,7 @@ struct StartConfiguration: Equatable {
     let usesMetaSpeakerLabels: Bool
     let usesAppleSourceAutoDetection: Bool
     let usesJevSelection: Bool
+    let usesAppleFastCaptions: Bool
     let appleTranslationOptions: AppleTranslationOptions
     let hyMTEnabled: Bool
     let hyMTTerminologyText: String
@@ -216,6 +218,7 @@ struct StartConfiguration: Equatable {
         usesMetaSpeakerLabels: Bool = true,
         usesAppleSourceAutoDetection: Bool,
         usesJevSelection: Bool = false,
+        usesAppleFastCaptions: Bool = false,
         appleTranslationOptions: AppleTranslationOptions = .init(),
         hyMTEnabled: Bool = false,
         hyMTTerminologyText: String = ""
@@ -244,6 +247,7 @@ struct StartConfiguration: Equatable {
         self.usesMetaSpeakerLabels = usesMetaSpeakerLabels
         self.usesAppleSourceAutoDetection = usesAppleSourceAutoDetection
         self.usesJevSelection = usesJevSelection
+        self.usesAppleFastCaptions = usesAppleFastCaptions
         self.appleTranslationOptions = appleTranslationOptions
         self.hyMTEnabled = hyMTEnabled
         self.hyMTTerminologyText = hyMTTerminologyText
@@ -1041,20 +1045,63 @@ final class TranslationSessionStore {
         didSet { persistSelectedSettings() }
     }
     private var storedAppleTranslationQuality: AppleTranslationQuality = .realtime
+    private var storedAppleFastCaptionsEnabled = false
+    private(set) var nextAppleCaptionProfile: AppleCaptionProfile?
     private(set) var isUsingAppleRealtimeFallback = false
     private(set) var didKeepOriginalForAppleProtectedTerms = false
     var appleTranslationQuality: AppleTranslationQuality {
         get { storedAppleTranslationQuality }
         set {
-            guard !isRunning, !isStarting, newValue != storedAppleTranslationQuality else { return }
-            storedAppleTranslationQuality = newValue
-            isUsingAppleRealtimeFallback = false
-            persistSelectedSettings()
-            resetTranslationCache()
-            resetDubbingProgress()
-            if !isRestoringSelectedSettings { refreshModelAvailability() }
+            updateAppleCaptionPreferences(quality: newValue, fast: storedAppleFastCaptionsEnabled)
         }
     }
+    var appleFastCaptionsEnabled: Bool {
+        get { storedAppleFastCaptionsEnabled }
+        set {
+            updateAppleCaptionPreferences(quality: storedAppleTranslationQuality, fast: newValue)
+        }
+    }
+
+    var canUseAppleFastCaptions: Bool {
+        ProcessingEngine.current(for: self) == .apple && !isTranscribeOnlyMode
+    }
+
+    var isUsingAppleFastCaptions: Bool { appleFastCaptionsEnabled && canUseAppleFastCaptions }
+
+    var activeAppleCaptionProfile: AppleCaptionProfile? {
+        guard canUseAppleFastCaptions else { return nil }
+        if isUsingAppleFastCaptions { return .fast }
+        return appleTranslationQuality == .highQuality || !supportsAppleTranslationOptions ? .quality : nil
+    }
+
+    func selectAppleCaptionProfile(_ profile: AppleCaptionProfile) {
+        guard canUseAppleFastCaptions else { return }
+        if isStarting || isRunning {
+            nextAppleCaptionProfile = profile == activeAppleCaptionProfile ? nil : profile
+            return
+        }
+        nextAppleCaptionProfile = nil
+        let quality = profile == .quality && supportsAppleTranslationOptions ? .highQuality : appleTranslationQuality
+        updateAppleCaptionPreferences(quality: quality, fast: profile == .fast)
+    }
+
+    private func applyNextAppleCaptionProfile() {
+        if let nextAppleCaptionProfile { selectAppleCaptionProfile(nextAppleCaptionProfile) }
+    }
+
+    private func updateAppleCaptionPreferences(quality: AppleTranslationQuality, fast: Bool) {
+        guard !isRunning, !isStarting,
+              quality != storedAppleTranslationQuality || fast != storedAppleFastCaptionsEnabled else { return }
+        nextAppleCaptionProfile = nil
+        storedAppleTranslationQuality = quality
+        storedAppleFastCaptionsEnabled = fast
+        isUsingAppleRealtimeFallback = false
+        persistSelectedSettings()
+        resetTranslationCache()
+        resetDubbingProgress()
+        if !isRestoringSelectedSettings { refreshModelAvailability() }
+    }
+
     private var storedAppleProtectedTermsText = ""
     var appleProtectedTermsText: String {
         get { storedAppleProtectedTermsText }
@@ -1070,7 +1117,7 @@ final class TranslationSessionStore {
     }
     var appleTranslationOptions: AppleTranslationOptions {
         AppleTranslationOptions(
-            quality: appleTranslationQuality,
+            quality: isUsingAppleFastCaptions ? .realtime : appleTranslationQuality,
             protectedTerms: AppleTranslationOptions.parseProtectedTerms(appleProtectedTermsText)
         )
     }
@@ -1092,9 +1139,11 @@ final class TranslationSessionStore {
         !isTranscribeOnlyMode && usesAppleSpeechTranscriber(for: currentStartConfiguration())
     }
     var processingEngineTitle: String {
+        let mode = ProcessingEngine.current(for: self).title + (isUsingJevSelection ? " + Jev" : "")
+        if isUsingAppleFastCaptions { return mode + " · " + AppleTranslationCopy.fastCaptions }
         let quality = isUsingAppleTextTranslation && appleTranslationOptions.effectiveQuality == .highQuality
             ? " · " + (isUsingAppleRealtimeFallback ? AppleTranslationCopy.fallbackTitle : AppleTranslationCopy.title(for: .highQuality)) : ""
-        return ProcessingEngine.current(for: self).title + (isUsingJevSelection ? " + Jev" : "") + quality
+        return mode + quality
     }
     var isUsingJevSelection: Bool { isJevSelectionEnabled && isJevSelectionAvailable }
 
@@ -1207,6 +1256,7 @@ final class TranslationSessionStore {
     var statusMessage = AppText.ready
     var captureStartFailureMessage: String?
     var captureStartRecoveryAction: CaptureStartRecoveryAction?
+    let capturePermissionSetup = CapturePermissionSetup()
     var toastMessage: String?
     var toastSequence = 0
     var floatingNoticeText: String?
@@ -1351,7 +1401,11 @@ final class TranslationSessionStore {
     private var translationSegmentCache = TranslationSegmentCache(
         capacity: TranslationSessionStore.maxTranslationCacheEntries
     )
-    private let appleRecognitionTranslationPolicy = AppleRecognitionTranslationPolicy()
+    private let standardAppleRecognitionPolicy = AppleRecognitionTranslationPolicy()
+    private let fastAppleRecognitionPolicy = AppleRecognitionTranslationPolicy(firstSmallPartialSilenceFallback: 0.20)
+    private var appleRecognitionTranslationPolicy: AppleRecognitionTranslationPolicy {
+        isUsingAppleFastCaptions ? fastAppleRecognitionPolicy : standardAppleRecognitionPolicy
+    }
     private var appleRecognitionTranslationState = AppleRecognitionTranslationPolicy.State()
     private var appleSpeechSegmentIDByLineID: [UUID: String] = [:]
     private var appleSpeechRevisionByLineID: [UUID: Int] = [:]
@@ -1573,7 +1627,9 @@ final class TranslationSessionStore {
 
     func start() {
         isPreviewingFloatingCaptions = false
-        guard !isRunning, !isStarting else { return }
+        guard !isRunning, !isStarting, !capturePermissionSetup.isRequesting else { return }
+        capturePermissionSetup.dismissPendingSetup()
+        applyNextAppleCaptionProfile()
 
         let readiness = startReadinessAssessment()
         guard readiness.canStart else {
@@ -1681,6 +1737,7 @@ final class TranslationSessionStore {
                 captureStartFailureMessage = nil
                 captureStartRecoveryAction = nil
                 statusMessage = AppText.listeningForSpeech(from: configuration.audioInputSource)
+                PipelineDiagnostics.record("capture.running", values: ["generation": Double(generation)])
                 warmTranslationSession()
             } catch let error as CancellationError {
                 await handleCancelledCaptureStart(
@@ -1895,6 +1952,7 @@ final class TranslationSessionStore {
         setCaptionersPaused(false)
         isStarting = false
         isRunning = false
+        applyNextAppleCaptionProfile()
         if let statusOverride {
             statusMessage = statusOverride
         } else if didSaveTranscript {
@@ -2005,6 +2063,7 @@ final class TranslationSessionStore {
             usesMetaSpeakerLabels: isMetaSpeakerLabelsEnabled,
             usesAppleSourceAutoDetection: isUsingAppleSourceAutoDetection,
             usesJevSelection: isJevSelectionEnabled,
+            usesAppleFastCaptions: isUsingAppleFastCaptions,
             appleTranslationOptions: appleTranslationOptions,
             hyMTEnabled: isUsingHyMT,
             hyMTTerminologyText: hyMTTerminologyText
@@ -2332,8 +2391,56 @@ final class TranslationSessionStore {
         _ = flushPendingTranscriptSave()
     }
 
-    func openPrivacySettings() {
-        openPrivacySettings(audioInputSource == .microphone ? .microphone : .screenRecording)
+    var capturePermissionSteps: [PrivacySettingsPane] {
+        CapturePermissionSetup.steps(
+            usesMicrophone: audioInputSource == .microphone,
+            usesAppleSpeech: usesAppleSpeechTranscriber(for: currentStartConfiguration())
+        )
+    }
+
+    func startCapturePermissionSetup() {
+        let steps = capturePermissionSteps
+        Task { @MainActor [weak self] in
+            guard let self, self.canSetUpCapturePermissions(for: steps) else { return }
+            let settingsPane = await self.capturePermissionSetup.run(
+                steps: steps,
+                isCurrent: { self.canSetUpCapturePermissions(for: steps) },
+                request: self.requestCapturePermission
+            )
+            if let settingsPane { self.openPrivacySettings(settingsPane) }
+        }
+    }
+
+    func resumeCapturePermissionSetupIfApproved() {
+        let steps = capturePermissionSteps
+        if capturePermissionSetup.canResume(steps: steps, isAllowed: { CapturePermissionStatus.read($0) == .allowed }) {
+            startCapturePermissionSetup()
+        }
+    }
+
+    private func canSetUpCapturePermissions(for steps: [PrivacySettingsPane]) -> Bool {
+        !isRunning && !isStarting && capturePermissionSteps == steps
+    }
+
+    private func requestCapturePermission(_ pane: PrivacySettingsPane) async -> CapturePermissionSetup.RequestResult {
+        if pane == .screenRecording {
+            return switch systemAudioCapture.screenRecordingAccessOutcome() {
+            case .allowed: .allowed
+            case .requested: .approvalNeeded
+            case .settingsRequired: .settingsRequired
+            }
+        }
+
+        switch CapturePermissionStatus.read(pane) {
+        case .allowed: return .allowed
+        case .restricted: return .restricted
+        case .notDetermined:
+            let allowed = await (pane == .microphone
+                ? MicrophoneAudioCapture.requestMicrophoneAccess()
+                : LiveSpeechTranscriber.requestAuthorization())
+            return allowed ? .allowed : .approvalNeeded
+        case .notGranted, .denied, .unknown: return .settingsRequired
+        }
     }
 
     func openPrivacySettings(_ pane: PrivacySettingsPane) {
@@ -2494,6 +2601,11 @@ final class TranslationSessionStore {
     func requestGeneralSettings() {
         requestedAPIKeyProvider = nil
         requestedSettingsCategoryID = "general"
+    }
+
+    func requestPermissionSettings() {
+        requestedAPIKeyProvider = nil
+        requestedSettingsCategoryID = "permissions"
     }
 
     func useAppleDefaultMode() {
@@ -3625,7 +3737,11 @@ final class TranslationSessionStore {
 
             let languages = await appleSpeechLanguages(for: configuration)
             try Task.checkCancellation()
-            try await candidate.start(languages: languages, includesAlternatives: configuration.usesJevSelection && !configuration.isTranscribeOnlyMode)
+            try await candidate.start(
+                languages: languages,
+                includesAlternatives: configuration.usesJevSelection && !configuration.isTranscribeOnlyMode,
+                prefersFastResults: configuration.usesAppleFastCaptions
+            )
             try validatePipelineStart(generation: generation, configuration: configuration)
 
             stopCaptioners()
@@ -4485,7 +4601,8 @@ final class TranslationSessionStore {
                         source: warmSourceLanguage,
                         target: warmTargetLanguage,
                         model: warmSelectedModel,
-                        options: warmConfiguration.appleTranslationOptions
+                        options: warmConfiguration.appleTranslationOptions,
+                        activatesRealtimeSession: warmConfiguration.usesAppleFastCaptions
                     )
                     let fellBack = await translator.usesRealtimeFallback(source: warmSourceLanguage, target: warmTargetLanguage)
                     if !Task.isCancelled, currentStartConfiguration() == warmConfiguration {
@@ -4617,6 +4734,7 @@ final class TranslationSessionStore {
         }
         appleTranslationQuality = defaults.string(forKey: SettingsKey.appleTranslationQuality)
             .flatMap(AppleTranslationQuality.init(rawValue:)) ?? .realtime
+        appleFastCaptionsEnabled = defaults.bool(forKey: SettingsKey.appleFastCaptionsEnabled)
         appleProtectedTermsText = String((defaults.string(forKey: SettingsKey.appleProtectedTermsText) ?? "").prefix(8_000))
         isJevSelectionEnabled = defaults.bool(forKey: SettingsKey.isJevSelectionEnabled)
         if defaults.object(forKey: SettingsKey.isTranscriptLintEnabled) != nil {
@@ -4833,6 +4951,7 @@ final class TranslationSessionStore {
         defaults.set(speechSynthesisModel.rawValue, forKey: SettingsKey.speechSynthesisModelID)
         defaults.set(translatedVoiceVolume, forKey: SettingsKey.translatedVoiceVolume)
         defaults.set(appleTranslationQuality.rawValue, forKey: SettingsKey.appleTranslationQuality)
+        defaults.set(appleFastCaptionsEnabled, forKey: SettingsKey.appleFastCaptionsEnabled)
         defaults.set(appleProtectedTermsText, forKey: SettingsKey.appleProtectedTermsText)
         defaults.set(isJevSelectionEnabled, forKey: SettingsKey.isJevSelectionEnabled)
         defaults.set(isTranscriptLintEnabled, forKey: SettingsKey.isTranscriptLintEnabled)
@@ -8771,6 +8890,9 @@ extension TranslationSessionStore: SystemAudioCaptureDelegate {
             }
             audioSampleCount = count
             latestAudioLevel = level
+            if PipelineDiagnostics.isEnabled, let level, level >= -55 {
+                PipelineDiagnostics.record("capture.audible", values: ["level": Double(level)])
+            }
             guard !isPaused else {
                 statusMessage = AppText.paused
                 return
