@@ -186,6 +186,37 @@ struct AppleLifecycleP2Tests {
 
     @Test
     @MainActor
+    func macAudioPromptDistinguishesSilentAndAudibleInput() async {
+        let suiteName = "MacAudioPromptTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let session = TranslationSessionStore(
+            modelAvailabilityProvider: { _, _ in [:] }, settingsDefaults: defaults
+        )
+        session.audioInputSource = .systemAudio
+        #expect(session.waitingForTranscriptMessage == AppText.waitingForTranscript)
+
+        let generation = session.activateLiveCallbackPipelineForTesting().generation
+        let capture = session.systemAudioCaptureForTesting
+        #expect(session.waitingForTranscriptMessage == AppText.waitingForMacAudio)
+
+        session.systemAudioCapture(capture, didReceiveAudioSampleCount: 8, level: -120, generation: generation)
+        #expect(await waitUntil { session.latestAudioLevel == -120 })
+        #expect(session.waitingForTranscriptMessage == AppText.waitingForMacAudio)
+        #expect(session.statusMessage == AppText.waitingForMacAudio)
+
+        session.systemAudioCapture(capture, didReceiveAudioSampleCount: 16, level: -25, generation: generation)
+        #expect(await waitUntil { session.latestAudioLevel == -25 })
+        #expect(session.waitingForTranscriptMessage == AppText.receivingMacAudio)
+        #expect(session.statusMessage == AppText.receivingMacAudio)
+
+        session.pause()
+        #expect(session.waitingForTranscriptMessage == AppText.waitingForTranscript)
+        session.stop()
+    }
+
+    @Test
+    @MainActor
     func externalUserStopSavesUnlocksRestartsAndIgnoresStaleGeneration() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("AirTranslateUserStopTests-\(UUID().uuidString)", isDirectory: true)

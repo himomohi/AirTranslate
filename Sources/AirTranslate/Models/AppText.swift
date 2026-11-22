@@ -1063,17 +1063,19 @@ enum AppText {
     static let idle = localized(english: "Idle", korean: "대기")
     static let noCaptionsYet = localized(english: "No captions yet", korean: "아직 기록 없음")
     static let noCaptionsDescription = localized(
-        english: "Start capture, play audio on this Mac, and grant Screen Recording, System Audio Recording, and Speech permissions.",
-        korean: "캡처를 시작하고 이 Mac에서 오디오를 재생한 뒤 화면 기록, 시스템 오디오 녹음, 음성 인식 권한을 허용하세요."
+        english: "Play speech on this Mac for Mac Audio, or speak into the selected microphone.",
+        korean: "PC 소리는 이 Mac에서 음성이 나오는 영상을 재생하세요. 마이크를 선택했다면 직접 말해 보세요.",
+        japanese: "Macの音声を使う場合は、このMacで発話のある動画を再生してください。マイクを選んだ場合は、話しかけてください。",
+        chineseSimplified: "使用 Mac 音频时，请在这台 Mac 上播放有语音的视频。选择麦克风时，请对着麦克风说话。"
     )
     static func gptTranscriptionNoCaptionsDescription(for source: AudioInputSource) -> String {
         switch source {
         case .systemAudio:
             localized(
-                english: "Start capture, play audio on this Mac, and grant Screen Recording and System Audio Recording permissions.",
-                korean: "캡처를 시작하고 이 Mac에서 오디오를 재생한 뒤 화면 기록과 시스템 오디오 녹음 권한을 허용하세요.",
-                japanese: "キャプチャを開始してMacで音声を再生し、画面収録とシステムオーディオ収録を許可してください。",
-                chineseSimplified: "开始捕获并在这台 Mac 上播放音频，然后允许屏幕录制和系统音频录制。"
+                english: "Start capture and play a video with speech on this Mac.",
+                korean: "캡처를 시작한 뒤 이 Mac에서 음성이 나오는 영상을 재생하세요.",
+                japanese: "キャプチャを開始し、このMacで発話のある動画を再生してください。",
+                chineseSimplified: "开始捕获后，在这台 Mac 上播放有语音的视频。"
             )
         case .microphone:
             localized(
@@ -1357,13 +1359,24 @@ enum AppText {
         )
     }
 
+    static let waitingForMacAudio = localized(
+        english: "Waiting for Mac audio. Play a video or audio and check that the player is unmuted.",
+        korean: "PC 소리 대기 중. 영상이나 음성을 재생하고 플레이어의 음소거를 해제하세요.",
+        japanese: "Macの音声を待っています。動画や音声を再生し、プレーヤーのミュートを解除してください。",
+        chineseSimplified: "正在等待 Mac 音频。请播放视频或音频，并确认播放器已取消静音。"
+    )
+
+    static let receivingMacAudio = localized(
+        english: "Receiving Mac audio. Captions appear when speech is recognized.",
+        korean: "PC 소리 수신 중. 음성이 인식되면 자막이 표시됩니다.",
+        japanese: "Macの音声を受信中です。発話が認識されると字幕が表示されます。",
+        chineseSimplified: "正在接收 Mac 音频。识别到语音后会显示字幕。"
+    )
+
     static func receivingAudioWaiting(sampleCount: Int, source: AudioInputSource) -> String {
         switch source {
         case .systemAudio:
-            localized(
-                english: "Receiving Mac audio (\(sampleCount) samples), waiting for speech...",
-                korean: "Mac 오디오 수신 중(\(sampleCount) 샘플), 음성을 기다리는 중..."
-            )
+            waitingForMacAudio
         case .microphone:
             localized(
                 english: "Receiving microphone audio (\(sampleCount) samples), waiting for speech...",
@@ -1375,10 +1388,7 @@ enum AppText {
     static func receivingSilentAudio(sampleCount: Int, level: Int, source: AudioInputSource) -> String {
         switch source {
         case .systemAudio:
-            localized(
-                english: "Receiving silent audio (\(sampleCount) samples, \(level) dB). Check System Audio Recording.",
-                korean: "무음 오디오 수신 중(\(sampleCount) 샘플, \(level) dB). 시스템 오디오 녹음 권한을 확인하세요."
-            )
+            waitingForMacAudio
         case .microphone:
             localized(
                 english: "Receiving quiet microphone audio (\(sampleCount) samples, \(level) dB). Check Microphone permission or input level.",
@@ -1390,10 +1400,7 @@ enum AppText {
     static func receivingAudioTranscribing(sampleCount: Int, level: Int, source: AudioInputSource) -> String {
         switch source {
         case .systemAudio:
-            localized(
-                english: "Receiving Mac audio (\(sampleCount) samples, \(level) dB), transcribing live...",
-                korean: "Mac 오디오 수신 중(\(sampleCount) 샘플, \(level) dB), 실시간 기록 중..."
-            )
+            receivingMacAudio
         case .microphone:
             localized(
                 english: "Receiving microphone audio (\(sampleCount) samples, \(level) dB), transcribing live...",

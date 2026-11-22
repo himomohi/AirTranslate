@@ -3114,6 +3114,13 @@ final class TranslationSessionStore {
         isRunning || !lines.isEmpty
     }
 
+    var waitingForTranscriptMessage: String {
+        guard audioInputSource == .systemAudio, captureControlState.phase == .running else {
+            return AppText.waitingForTranscript
+        }
+        return audioStatusMessage(sampleCount: audioSampleCount, level: latestAudioLevel)
+    }
+
     var shouldShowTranslationPane: Bool {
         !isTranscribeOnlyMode
     }

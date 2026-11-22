@@ -90,9 +90,10 @@ private struct CaptionTranscriptFeed: View {
                         }
 
                         if session.shouldShowTranscript && session.lines.isEmpty {
-                            Text(AppText.waitingForTranscript)
+                            Text(session.waitingForTranscriptMessage)
                                 .font(AirTranslateDesign.Typography.label)
                                 .foregroundStyle(AirTranslateDesign.Palette.textSecondary)
+                                .multilineTextAlignment(.center)
                                 .frame(maxWidth: .infinity, minHeight: 96)
                         }
 

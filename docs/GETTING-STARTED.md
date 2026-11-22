@@ -38,6 +38,8 @@ AirTranslate asks for the permissions used by the selected capture flow:
 
 Screen Recording is required because ScreenCaptureKit provides the system-audio capture path. The **Screen & System Audio Recording** row shows the screen recording access AirTranslate checks before starting capture. If macOS also lists AirTranslate under **System Audio Recording Only**, enable AirTranslate under **Screen & System Audio Recording** for this workflow. AirTranslate does not save screen frames as recordings.
 
+To check audio input, choose **Mac Audio** in the main window, start capture, and play a video with speech. Before the first caption, AirTranslate shows **Waiting for Mac audio** while the input is quiet and **Receiving Mac audio** when it detects sound. If it keeps waiting, check the player's mute and volume controls. Captions appear once speech is recognized.
+
 When troubleshooting permissions, check which app copy is running. Older or differently signed builds can share `dev.appcaster.AirTranslate` while macOS keeps separate permission identities for them. Launch the intended copy before checking its permissions.
 
 ## Choose A Workflow

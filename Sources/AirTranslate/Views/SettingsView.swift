@@ -1535,10 +1535,10 @@ enum SettingsCopy {
         chineseSimplified: "语音识别"
     )
     static let screenRecordingPermissionDetail = AppText.localized(
-        english: "Shows the screen recording access AirTranslate checks before capturing Mac audio.",
-        korean: "PC 소리를 캡처하기 전에 AirTranslate가 확인하는 화면 기록 권한의 상태입니다.",
-        japanese: "Macの音声をキャプチャする前にAirTranslateが確認する画面収録の許可状態です。",
-        chineseSimplified: "显示 AirTranslate 捕获 Mac 音频前检查的屏幕录制权限。"
+        english: "Screen recording access is required for Mac audio. To test audio input, start Mac Audio capture and play a video.",
+        korean: "PC 소리 캡처에 필요한 화면 기록 권한입니다. 소리가 들어오는지 확인하려면 PC 소리로 시작한 뒤 영상을 재생하세요.",
+        japanese: "Macの音声キャプチャに必要な画面収録の許可です。音声入力を確認するには、Macの音声のキャプチャを開始し、動画を再生してください。",
+        chineseSimplified: "捕获 Mac 音频需要屏幕录制权限。要检查音频输入，请开始捕获 Mac 音频并播放视频。"
     )
     static let microphonePermissionDetail = AppText.localized(
         english: "Required only when Microphone is selected as the audio input.",
