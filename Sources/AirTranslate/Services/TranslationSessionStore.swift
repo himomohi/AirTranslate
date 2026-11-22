@@ -7,14 +7,12 @@ import SwiftUI
 
 enum PrivacySettingsPane: Equatable {
     case screenRecording
-    case systemAudioRecording
     case microphone
     case speechRecognition
 
     fileprivate var anchor: String {
         switch self {
-        case .screenRecording, .systemAudioRecording:
-            // macOS groups Screen Recording and System Audio Recording in this pane.
+        case .screenRecording:
             "Privacy_ScreenCapture"
         case .microphone:
             "Privacy_Microphone"

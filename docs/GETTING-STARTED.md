@@ -32,12 +32,11 @@ cat AirTranslate.dmg.sha256
 
 AirTranslate asks for the permissions used by the selected capture flow:
 
-- Screen Recording
-- System Audio Recording
+- Screen & System Audio Recording, when Mac audio is selected
 - Microphone, only when microphone input is selected
 - Speech Recognition
 
-Screen Recording is required because ScreenCaptureKit provides the system-audio capture path. AirTranslate does not save screen frames as recordings.
+Screen Recording is required because ScreenCaptureKit provides the system-audio capture path. The **Screen & System Audio Recording** row shows the screen recording access AirTranslate checks before starting capture. If macOS also lists AirTranslate under **System Audio Recording Only**, enable AirTranslate under **Screen & System Audio Recording** for this workflow. AirTranslate does not save screen frames as recordings.
 
 When troubleshooting permissions, check which app copy is running. Older or differently signed builds can share `dev.appcaster.AirTranslate` while macOS keeps separate permission identities for them. Launch the intended copy before checking its permissions.
 

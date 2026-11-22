@@ -697,15 +697,6 @@ struct SettingsView: View {
             }
 
             SettingsPermissionRow(
-                title: SettingsCopy.systemAudioRecording,
-                detail: SettingsCopy.systemAudioPermissionDetail,
-                systemImage: "speaker.wave.2",
-                status: .unknown
-            ) {
-                session.openPrivacySettings(.systemAudioRecording)
-            }
-
-            SettingsPermissionRow(
                 title: SettingsCopy.microphonePermission,
                 detail: SettingsCopy.microphonePermissionDetail,
                 systemImage: "mic",
@@ -1526,16 +1517,10 @@ enum SettingsCopy {
         korean: "플로팅 자막 미리보기. 원문: We're going to focus on real-time translation. 번역: 우리는 실시간 번역에 집중할 것입니다."
     )
     static let screenRecording = AppText.localized(
-        english: "Screen Recording",
-        korean: "화면 기록",
-        japanese: "画面収録",
-        chineseSimplified: "屏幕录制"
-    )
-    static let systemAudioRecording = AppText.localized(
-        english: "System Audio Recording",
-        korean: "시스템 오디오 녹음",
-        japanese: "システムオーディオ録音",
-        chineseSimplified: "系统音频录制"
+        english: "Screen & System Audio Recording",
+        korean: "화면 및 시스템 오디오 기록",
+        japanese: "画面とシステムオーディオの収録",
+        chineseSimplified: "屏幕与系统音频录制"
     )
     static let microphonePermission = AppText.localized(
         english: "Microphone",
@@ -1550,16 +1535,10 @@ enum SettingsCopy {
         chineseSimplified: "语音识别"
     )
     static let screenRecordingPermissionDetail = AppText.localized(
-        english: "Required to capture Mac audio. This check never requests permission.",
-        korean: "PC 소리를 캡처하는 데 필요합니다. 이 확인 과정에서는 권한을 요청하지 않습니다.",
-        japanese: "Mac音声のキャプチャに必要です。この確認では権限を要求しません。",
-        chineseSimplified: "捕获 Mac 音频时需要。此检查不会请求权限。"
-    )
-    static let systemAudioPermissionDetail = AppText.localized(
-        english: "macOS can allow screen and audio together or audio only. Confirm the exact choice in System Settings.",
-        korean: "macOS에서는 화면과 오디오를 함께 또는 오디오만 허용할 수 있습니다. 정확한 상태는 시스템 설정에서 확인하세요.",
-        japanese: "macOSでは画面と音声の両方、または音声のみを許可できます。正確な状態はシステム設定で確認してください。",
-        chineseSimplified: "macOS 可允许屏幕和音频，或仅允许音频。请在系统设置中确认确切状态。"
+        english: "Shows the screen recording access AirTranslate checks before capturing Mac audio.",
+        korean: "PC 소리를 캡처하기 전에 AirTranslate가 확인하는 화면 기록 권한의 상태입니다.",
+        japanese: "Macの音声をキャプチャする前にAirTranslateが確認する画面収録の許可状態です。",
+        chineseSimplified: "显示 AirTranslate 捕获 Mac 音频前检查的屏幕录制权限。"
     )
     static let microphonePermissionDetail = AppText.localized(
         english: "Required only when Microphone is selected as the audio input.",
