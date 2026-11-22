@@ -23,6 +23,10 @@
 
 AirTranslate 会捕获 Mac 正在播放的音频，实时转写；当你选择翻译流程时，它会进行翻译，并可将字幕悬浮在其他应用上方。Apple Mode 仍然是默认的本地优先流程。云端引擎为可选项，配置对应提供方密钥后即可使用。
 
+## 1.19.0 应用更新
+
+主窗口左下角显示当前版本。点击即可检查最新稳定版。有新版时，可以阅读发布说明，或选择 **下载更新**，验证官方 DMG 后打开并替换「应用程序」中的旧版。
+
 ## 1.18.1 打包修复
 
 AirTranslate **1.18.1 / 构建 1181** 通过将 llama.cpp 静态链接到应用，修复了 DMG 和 ZIP 发行版的启动失败，并移除了构建环境的绝对源码路径。应用功能和 macOS 系统要求与 1.18.0 相同。
@@ -87,11 +91,12 @@ AirTranslate **1.18.0/build1180** 新增可选本地 **Hy-MT2 1.8B 翻译**、�
 
 ## 下载
 
-当前公开最新版：**v1.18.1**。
+当前公开最新版：**v1.19.0**。
 
 - [下载 AirTranslate.dmg](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [下载 AirTranslate-1.18.1.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.18.1/AirTranslate-1.18.1.zip)
+- [下载 AirTranslate-1.19.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.19.0/AirTranslate-1.19.0.zip)
 - [下载 AirTranslate.dmg.sha256](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
+- [AirTranslate 1.19.0 发布说明](https://github.com/himomohi/AirTranslate/releases/tag/v1.19.0)
 - [AirTranslate 1.18.1 发布说明](https://github.com/himomohi/AirTranslate/releases/tag/v1.18.1)
 - [AirTranslate 1.18.0 发布说明](https://github.com/himomohi/AirTranslate/releases/tag/v1.18.0)
 - [查看版本历史](Release/VERSION-HISTORY.md)

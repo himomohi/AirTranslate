@@ -44,10 +44,13 @@ struct ContentView: View {
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if isMainCaptionVisible {
-                    ConsoleBarView(session: session, isCompact: geometry.size.width < 840)
-                        .padding(.horizontal, AirTranslateDesign.Spacing.lg)
-                        .padding(.top, AirTranslateDesign.Spacing.sm)
-                        .padding(.bottom, AirTranslateDesign.Spacing.md)
+                    VStack(alignment: .leading, spacing: AirTranslateDesign.Spacing.xs) {
+                        ConsoleBarView(session: session, isCompact: geometry.size.width < 840)
+                        AppUpdateFooter()
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, AirTranslateDesign.Spacing.lg)
+                    .padding(.vertical, AirTranslateDesign.Spacing.sm)
                 }
             }
         }

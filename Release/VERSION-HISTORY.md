@@ -1,5 +1,12 @@
 # AirTranslate Version History
 
+## 1.19.0 - 2026-11-22
+
+### Added
+
+- The main window shows the installed version at the bottom left. Open it to see the build number, check GitHub for the latest stable release, or download and open the SHA-256-verified DMG.
+- Requires macOS 26 or later. DMG and ZIP packages are ad-hoc signed and unnotarized.
+
 ## 1.18.1 - 2026-11-22
 
 ### Fixed

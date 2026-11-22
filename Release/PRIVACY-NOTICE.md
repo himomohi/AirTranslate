@@ -13,6 +13,10 @@ AirTranslate is an independent open-source project and is not affiliated with Ap
 - Transcript file saving is off by default. When the user enables **Save Transcript Files**, saved transcripts are stored locally as plain-text files under the user's `~/Library/Application Support/AirTranslate/Transcripts` directory.
 - Settings are stored locally with macOS app preferences.
 
+## Software Updates (1.19.0+)
+
+AirTranslate reads public release metadata from GitHub when the main window opens and when you check for updates. It compares the installed version on your Mac. Choosing **Download Update** fetches the selected DMG from GitHub and verifies its size and SHA-256 digest. These requests use no account or API key and include no audio, transcripts, or translation settings.
+
 ## Apple System Services
 
 AirTranslate uses Apple system frameworks, including ScreenCaptureKit, Speech, and Translation.

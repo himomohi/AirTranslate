@@ -2,6 +2,12 @@
 
 All notable changes to AirTranslate are documented in this file.
 
+## 1.19.0 - 2026-11-22
+
+### Added
+
+- The bottom-left corner of the main window shows the installed version and flags a new stable release. Open the version menu to check again, read the release notes, or download the official DMG. AirTranslate verifies the download against GitHub’s SHA-256 digest before opening it for installation in Finder.
+
 ## 1.18.1 - 2026-11-22
 
 ### Fixed

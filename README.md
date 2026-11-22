@@ -27,6 +27,10 @@ Live Mac audio captions and translation for meetings, videos, lectures, intervie
 
 AirTranslate captures audio playing on your Mac, transcribes it live, translates it when you choose a translation workflow, and can keep captions floating above other apps. Apple Mode remains the default local-first workflow. Cloud engines are optional and become available after you configure the matching provider key.
 
+## 1.19.0 app updates
+
+The installed version appears at the bottom left of the main window. Select it to check for the latest stable release. When an update is available, you can read its release notes or choose **Download Update**, which verifies the official DMG before you open it and replace the app in Applications.
+
 ## 1.18.1 packaging fix
 
 AirTranslate **1.18.1 / build 1181** fixes startup failures in the DMG and ZIP by linking llama.cpp into the app. The release also omits absolute build-machine source paths. The app features and macOS requirements are unchanged from 1.18.0.
@@ -91,11 +95,12 @@ The **categorized Engine & Voice Hub** filters providers by `All`, `On-Device`, 
 
 ## Download
 
-Latest public release: **v1.18.1**.
+Latest public release: **v1.19.0**.
 
 - [Download AirTranslate.dmg](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [Download AirTranslate-1.18.1.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.18.1/AirTranslate-1.18.1.zip)
+- [Download AirTranslate-1.19.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.19.0/AirTranslate-1.19.0.zip)
 - [Download AirTranslate.dmg.sha256](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
+- [AirTranslate 1.19.0 release notes](https://github.com/himomohi/AirTranslate/releases/tag/v1.19.0)
 - [AirTranslate 1.18.1 release notes](https://github.com/himomohi/AirTranslate/releases/tag/v1.18.1)
 - [AirTranslate 1.17.0 release notes](https://github.com/himomohi/AirTranslate/releases/tag/v1.17.0)
 - [View release history](Release/VERSION-HISTORY.md)

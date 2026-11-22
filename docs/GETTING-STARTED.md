@@ -11,6 +11,14 @@ This guide covers installation, first-launch permissions, provider setup, and th
 
 The current public DMG and ZIP are ad-hoc signed and not Apple-notarized. macOS may show an unidentified-developer warning on first launch, and TCC permission inheritance is not guaranteed across updates.
 
+## Update AirTranslate (1.19.0+)
+
+1. Select the version at the bottom left of the main window. The panel shows the installed build and lets you check for the latest stable GitHub release.
+2. Choose **Download Update** when one is available. AirTranslate verifies the DMG’s file size and SHA-256 digest before enabling **Open Installer**.
+3. Open the installer, quit AirTranslate, and drag the new app into Applications. Open the updated app from Applications.
+
+When an update is available, you can open its release notes from the same panel. The update check uses public GitHub release metadata and requires no API key.
+
 ## Verify The Download
 
 Download `AirTranslate.dmg.sha256` next to the DMG, then compare:

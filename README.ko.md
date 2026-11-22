@@ -23,6 +23,10 @@
 
 AirTranslate는 Mac에서 재생되는 소리를 캡처해 실시간으로 전사하고, 번역 흐름을 선택하면 번역하며, 필요하면 다른 앱 위에 플로팅 자막을 유지합니다. Apple 기본 모드는 계속 로컬 우선 기본 경로입니다. 클라우드 엔진은 선택형이며 해당 제공자 키를 설정하면 사용할 수 있습니다.
 
+## 1.19.0 앱 업데이트
+
+메인 창 왼쪽 아래에 현재 버전이 표시됩니다. 버전 표시를 누르면 최신 안정 버전을 확인할 수 있습니다. 새 버전이 있으면 릴리즈 노트를 읽거나 **업데이트 다운로드**로 공식 DMG를 검증한 뒤 열어서 응용 프로그램 폴더의 앱을 교체할 수 있습니다.
+
 ## 1.18.1 패키징 수정
 
 AirTranslate **1.18.1 / 빌드 1181**은 llama.cpp를 앱에 정적으로 링크해 DMG와 ZIP 배포본에서 발생하는 실행 실패를 수정하고, 빌드 환경의 절대 소스 경로를 제거했습니다. 앱 기능과 macOS 요구 사항은 1.18.0과 같습니다.
@@ -87,11 +91,12 @@ AirTranslate **1.18.0/build1180**은 선택형 로컬 **Hy-MT2 1.8B 번역**, �
 
 ## 다운로드
 
-현재 공개 최신 릴리즈: **v1.18.1**.
+현재 공개 최신 릴리즈: **v1.19.0**.
 
 - [AirTranslate.dmg 다운로드](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [AirTranslate-1.18.1.zip 다운로드](https://github.com/himomohi/AirTranslate/releases/download/v1.18.1/AirTranslate-1.18.1.zip)
+- [AirTranslate-1.19.0.zip 다운로드](https://github.com/himomohi/AirTranslate/releases/download/v1.19.0/AirTranslate-1.19.0.zip)
 - [AirTranslate.dmg.sha256 다운로드](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
+- [AirTranslate 1.19.0 릴리스 노트](https://github.com/himomohi/AirTranslate/releases/tag/v1.19.0)
 - [AirTranslate 1.18.1 릴리스 노트](https://github.com/himomohi/AirTranslate/releases/tag/v1.18.1)
 - [AirTranslate 1.18.0 릴리즈 노트](https://github.com/himomohi/AirTranslate/releases/tag/v1.18.0)
 - [버전 이력 보기](Release/VERSION-HISTORY.md)
