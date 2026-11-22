@@ -25,7 +25,7 @@ AirTranslate는 Mac에서 재생되는 소리를 캡처해 실시간으로 전�
 
 ## 1.18.1 패키징 수정
 
-AirTranslate **1.18.1 / 빌드 1181**은 DMG와 ZIP에 포함된 llama.cpp 프레임워크에서 빌드 환경의 절대 소스 경로를 제거했습니다. 앱 기능과 macOS 요구 사항은 1.18.0과 같습니다.
+AirTranslate **1.18.1 / 빌드 1181**은 llama.cpp를 앱에 정적으로 링크해 DMG와 ZIP 배포본에서 발생하는 실행 실패를 수정하고, 빌드 환경의 절대 소스 경로를 제거했습니다. 앱 기능과 macOS 요구 사항은 1.18.0과 같습니다.
 
 [릴리스 노트](Release/GITHUB-RELEASE-1.18.1.md) · [AirTranslate 1.18.1 릴리스](https://github.com/himomohi/AirTranslate/releases/tag/v1.18.1).
 

@@ -2,6 +2,20 @@
 
 import PackageDescription
 
+let usesStaticLlama = Context.environment["AIRTRANSLATE_STATIC_LLAMA"] == "1"
+let llamaTarget: Target = usesStaticLlama
+    ? .binaryTarget(name: "llama", path: "Release/build/static-llama/llama.xcframework")
+    : .binaryTarget(
+        name: "llama",
+        url: "https://github.com/ggml-org/llama.cpp/releases/download/b12317/llama-b12317-xcframework.zip",
+        checksum: "db87353dcfed41f2bd6474dd146fbd26ef0630d2f48c4e07a4b269f4646f7ec0"
+    )
+let staticLlamaLibraries: [LinkerSetting] = usesStaticLlama ? [
+    .linkedFramework("Accelerate"),
+    .linkedFramework("Metal"),
+    .linkedLibrary("c++")
+] : []
+
 let package = Package(
     name: "AirTranslate",
     platforms: [
@@ -11,11 +25,7 @@ let package = Package(
         .executable(name: "AirTranslate", targets: ["AirTranslate"])
     ],
     targets: [
-        .binaryTarget(
-            name: "llama",
-            url: "https://github.com/ggml-org/llama.cpp/releases/download/b12317/llama-b12317-xcframework.zip",
-            checksum: "db87353dcfed41f2bd6474dd146fbd26ef0630d2f48c4e07a4b269f4646f7ec0"
-        ),
+        llamaTarget,
         .target(name: "AirTranslateCore"),
         .executableTarget(
             name: "AirTranslate",
@@ -28,7 +38,7 @@ let package = Package(
                 .linkedFramework("Security"),
                 .linkedFramework("Speech"),
                 .linkedFramework("Translation")
-            ]
+            ] + staticLlamaLibraries
         ),
         .testTarget(
             name: "AirTranslateCoreTests",

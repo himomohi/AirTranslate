@@ -25,7 +25,7 @@ AirTranslateはMacで再生中の音声を取り込み、ライブで文字起�
 
 ## 1.18.1 パッケージングの修正
 
-AirTranslate **1.18.1 / ビルド 1181** では、DMG と ZIP に同梱した llama.cpp フレームワークからビルド環境のソースコードの絶対パスを除去しました。アプリの機能と macOS の動作要件は 1.18.0 と同じです。
+AirTranslate **1.18.1 / ビルド 1181** では、llama.cpp をアプリに静的リンクして DMG と ZIP の起動エラーを修正し、ビルド環境のソースコードの絶対パスを除去しました。アプリの機能と macOS の動作要件は 1.18.0 と同じです。
 
 [リリースノート](Release/GITHUB-RELEASE-1.18.1.md) · [AirTranslate 1.18.1 リリース](https://github.com/himomohi/AirTranslate/releases/tag/v1.18.1)。
 

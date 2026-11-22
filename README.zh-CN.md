@@ -25,7 +25,7 @@ AirTranslate 会捕获 Mac 正在播放的音频，实时转写；当你选择�
 
 ## 1.18.1 打包修复
 
-AirTranslate **1.18.1 / 构建 1181** 移除了 DMG 和 ZIP 所附的 llama.cpp 框架中的构建环境绝对源码路径。应用功能和 macOS 系统要求与 1.18.0 相同。
+AirTranslate **1.18.1 / 构建 1181** 通过将 llama.cpp 静态链接到应用，修复了 DMG 和 ZIP 发行版的启动失败，并移除了构建环境的绝对源码路径。应用功能和 macOS 系统要求与 1.18.0 相同。
 
 [发布说明](Release/GITHUB-RELEASE-1.18.1.md) · [AirTranslate 1.18.1 发布](https://github.com/himomohi/AirTranslate/releases/tag/v1.18.1)。
 

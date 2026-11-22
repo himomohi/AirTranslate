@@ -6,7 +6,7 @@ All notable changes to AirTranslate are documented in this file.
 
 ### Fixed
 
-- The DMG and ZIP no longer include absolute build-machine source paths from the bundled llama.cpp framework used by local translation. The app features and system requirements are unchanged from 1.18.0.
+- Fixes startup failures when macOS blocks the local translation framework in the signed DMG or ZIP. The release links llama.cpp into the app and omits absolute build-machine source paths. The app features and system requirements are unchanged from 1.18.0.
 
 ## 1.18.0 - 2026-11-22
 

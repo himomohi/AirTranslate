@@ -65,16 +65,23 @@ rm -f \
   "$VERSIONED_DMG_PATH" \
   "$VERSIONED_DMG_SHA256_PATH"
 
-swift build -c release
-BUILD_BINARY="$(swift build -c release --show-bin-path)/$APP_NAME"
+# 배포본은 ad-hoc 서명에서도 라이브러리 검증을 유지하도록 정적으로 링크한다.
+bash "$SCRIPT_DIR/build_static_llama.sh" "$BUILD_DIR/static-llama"
+export AIRTRANSLATE_STATIC_LLAMA=1
+SWIFT_BUILD_ARGS=(-c release --scratch-path "$ROOT_DIR/.build/airtranslate-release")
+swift build "${SWIFT_BUILD_ARGS[@]}"
+BUILD_BINARY="$(swift build "${SWIFT_BUILD_ARGS[@]}" --show-bin-path)/$APP_NAME"
 
 install -m 755 "$BUILD_BINARY" "$APP_BINARY"
 # 배포 실행 파일의 디버그 심볼을 제거한 뒤 서명한다.
 /usr/bin/strip -S "$APP_BINARY"
-bash "$SCRIPT_DIR/embed_local_translation.sh" "$APP_BUNDLE" "$BUILD_BINARY"
-# Remap the pinned vendor's compiled source paths on the staged copy, before signing.
-python3 "$SCRIPT_DIR/redact_llama_build_paths.py" \
-  "$APP_CONTENTS/Frameworks/llama.framework/Versions/A/llama"
+if ! /usr/bin/otool -L "$APP_BINARY" | /usr/bin/awk 'NR > 1 && $1 !~ /^\/(System\/Library|usr\/lib)\// { exit 1 }'; then
+  echo "Release executable contains a non-system dynamic dependency." >&2
+  exit 1
+fi
+mkdir -p "$APP_RESOURCES/ThirdParty"
+install -m 644 "$ROOT_DIR/Resources/ThirdParty/llama.cpp-LICENSE.txt" \
+  "$ROOT_DIR/Resources/ThirdParty/Hy-MT2-LICENSE.txt" "$APP_RESOURCES/ThirdParty/"
 set +e
 /usr/bin/grep -aEq '/(Users|home)/[^[:space:]]+' "$APP_BINARY"
 build_path_status=$?

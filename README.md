@@ -29,7 +29,7 @@ AirTranslate captures audio playing on your Mac, transcribes it live, translates
 
 ## 1.18.1 packaging fix
 
-AirTranslate **1.18.1 / build 1181** removes absolute build-machine source paths from the bundled llama.cpp framework in the DMG and ZIP. The app features and macOS requirements are unchanged from 1.18.0.
+AirTranslate **1.18.1 / build 1181** fixes startup failures in the DMG and ZIP by linking llama.cpp into the app. The release also omits absolute build-machine source paths. The app features and macOS requirements are unchanged from 1.18.0.
 
 [Release notes](Release/GITHUB-RELEASE-1.18.1.md) · [AirTranslate 1.18.1 release](https://github.com/himomohi/AirTranslate/releases/tag/v1.18.1).
 

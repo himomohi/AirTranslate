@@ -4,11 +4,11 @@ AirTranslate **1.18.1 / build 1181** is a packaging-only update. The app feature
 
 ## Fixed
 
-- The DMG and ZIP no longer include absolute build-machine source paths from the bundled llama.cpp framework used by local translation.
+- Fixes startup failures when macOS blocks the local translation framework in the signed DMG or ZIP. The release links llama.cpp into the app and omits absolute build-machine source paths.
 
 ## 한국어 요약
 
-AirTranslate **1.18.1 / 빌드 1181**는 배포 파일만 수정한 업데이트입니다. DMG와 ZIP에 포함된 로컬 번역용 llama.cpp 프레임워크에서 빌드 환경의 절대 소스 경로를 제거했습니다. 앱 기능과 macOS 요구 사항은 1.18.0과 같습니다.
+AirTranslate **1.18.1 / 빌드 1181**은 로컬 번역용 llama.cpp를 앱에 정적으로 링크해 DMG와 ZIP 배포본의 실행 실패를 수정합니다. 빌드 환경의 절대 소스 경로도 제거했습니다. 앱 기능과 macOS 요구 사항은 1.18.0과 같습니다.
 
 ## Compatibility and distribution
 
