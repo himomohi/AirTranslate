@@ -147,6 +147,7 @@ struct MetaVoiceTranscribeServiceTests {
         #expect(LanguageOption.korean.metaLanguageBiasName == "Korean")
         #expect(LanguageOption.supported.first { $0.id == "ja-JP" }?.metaLanguageBiasName == "Japanese")
         #expect(LanguageOption.supported.first { $0.id == "zh-CN" }?.metaLanguageBiasName == "Mandarin Chinese")
+        #expect(LanguageOption.supported.first { $0.id == "vi-VN" }?.metaLanguageBiasName == "Vietnamese")
         #expect(
             LanguageOption(
                 id: "ru-RU",

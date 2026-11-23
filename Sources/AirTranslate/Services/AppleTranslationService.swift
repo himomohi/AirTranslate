@@ -16,7 +16,8 @@ actor AppleTranslationService {
     private static let warmupSentences = [
         "en-US": "This is a test.", "ko-KR": "이것은 테스트입니다.", "ja-JP": "これはテストです。",
         "zh-CN": "这是一个测试。", "es-ES": "Esto es una prueba.",
-        "fr-FR": "Ceci est un test.", "de-DE": "Dies ist ein Test."
+        "fr-FR": "Ceci est un test.", "de-DE": "Dies ist ein Test.",
+        "vi-VN": "Đây là một bài kiểm tra."
     ]
 
     private var realtimeFallbackPairs = Set<String>()
