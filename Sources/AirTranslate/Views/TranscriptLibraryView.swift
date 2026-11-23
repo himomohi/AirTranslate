@@ -150,10 +150,17 @@ struct TranscriptLibraryView: View {
                 Spacer(minLength: 8)
             }
 
-            HStack(spacing: AirTranslateDesign.Spacing.sm) {
-                contentModeControl
-                Spacer(minLength: 12)
-                libraryActions
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: AirTranslateDesign.Spacing.sm) {
+                    contentModeControl
+                    Spacer(minLength: 12)
+                    libraryActions
+                }
+
+                VStack(alignment: .leading, spacing: AirTranslateDesign.Spacing.sm) {
+                    contentModeControl
+                    libraryActions
+                }
             }
         }
     }
