@@ -14,6 +14,7 @@ final class GeminiSpeechOutput: NSObject, AVAudioPlayerDelegate {
 
     private let session: URLSession
     private var speechVolume: Float = 1
+    private var outputDeviceUID: String?
     private var queuedSpeech: [QueuedSpeech] = []
     private var queuedSpeechKeys: Set<String> = []
     private var generation: UInt64 = 0
@@ -118,6 +119,9 @@ final class GeminiSpeechOutput: NSObject, AVAudioPlayerDelegate {
         try Task.checkCancellation()
         let nextPlayer = try AVAudioPlayer(data: audioData)
         nextPlayer.volume = speechVolume
+        if let uid = outputDeviceUID, SpeechOutputDeviceCatalog.deviceID(forUID: uid) != nil {
+            nextPlayer.currentDevice = uid
+        }
         nextPlayer.delegate = self
         guard nextPlayer.prepareToPlay() else {
             throw GeminiSpeechOutputError.audioPlaybackFailed
@@ -249,4 +253,10 @@ private enum GeminiSpeechOutputError: Error {
     case invalidModel
     case invalidAudio
     case audioPlaybackFailed
+}
+
+extension GeminiSpeechOutput: @MainActor SpeechOutputRouting {
+    func setOutputDevice(uid: String?) {
+        outputDeviceUID = uid
+    }
 }
