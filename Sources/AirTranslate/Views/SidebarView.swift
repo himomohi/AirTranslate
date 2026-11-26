@@ -406,6 +406,10 @@ struct ConsoleBarView: View {
         .buttonStyle(AirChipButtonStyle(isActive: isActive))
         .airFocusRing(cornerRadius: 18)
         .disabled(!isActive && (session.isRunning || session.isStarting))
+        .contextMenu {
+            Button(AppText.changeScreenTextRegion) { session.changeScreenTextRegion() }
+                .disabled(!session.canChangeScreenTextRegion)
+        }
         .help(isActive ? title : AppText.readScreenTextHelp)
         .accessibilityLabel(title)
     }

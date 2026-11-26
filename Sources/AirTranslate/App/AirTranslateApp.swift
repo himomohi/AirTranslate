@@ -73,6 +73,11 @@ private struct CaptureCommands: Commands {
             .keyboardShortcut("o", modifiers: [.command, .shift])
             .disabled(!session.isReadingScreenText && (session.isRunning || session.isStarting))
 
+            Button(AppText.changeScreenTextRegion) {
+                session.changeScreenTextRegion()
+            }
+            .disabled(!session.canChangeScreenTextRegion)
+
             Toggle(AppText.screenTextUsesGeminiLive, isOn: $session.screenTextUsesGeminiLive)
                 .disabled(session.isReadingScreenText || !session.hasGeminiAPIKey)
         }

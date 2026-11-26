@@ -182,6 +182,25 @@ struct MenuBarStatusView: View {
         .disabled(!isActive && (session.isRunning || session.isStarting))
         .help(isActive ? title : AppText.readScreenTextHelp)
         .accessibilityLabel(title)
+        .overlay(alignment: .bottomTrailing) {
+            Button {
+                session.changeScreenTextRegion()
+            } label: {
+                Image(systemName: "rectangle.dashed")
+                    .font(.system(size: 12, weight: .semibold))
+                    .frame(width: 26, height: 26)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .padding(6)
+            .disabled(!session.canChangeScreenTextRegion)
+            .help(AppText.changeScreenTextRegion)
+            .accessibilityLabel(AppText.changeScreenTextRegion)
+        }
+        .contextMenu {
+            Button(AppText.changeScreenTextRegion) { session.changeScreenTextRegion() }
+                .disabled(!session.canChangeScreenTextRegion)
+        }
     }
 
     private var canSwitchAudioInput: Bool {
