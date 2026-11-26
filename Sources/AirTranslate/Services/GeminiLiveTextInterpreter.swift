@@ -1,4 +1,7 @@
 import Foundation
+import os
+
+private let screenTextLog = Logger(subsystem: "dev.appcaster.AirTranslate", category: "ScreenText")
 
 /// Speaks text lines in another language through one Gemini Live session.
 ///
@@ -22,6 +25,9 @@ final class GeminiLiveTextInterpreter {
         "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent")!
     private static let outputSampleRate = 24_000.0
     private static let maxGeneration: Duration = .seconds(10)
+    /// Playback speed normally, and while a newer line is already waiting.
+    static let normalRate: Float = 1.1
+    static let catchUpRate: Float = 1.35
 
     let configuration: Configuration
     /// (source line, translation so far), as Gemini's transcript of its speech arrives.
@@ -44,6 +50,8 @@ final class GeminiLiveTextInterpreter {
     private var generatingLine: String?
     private var transcript = ""
     private var watchdog: Task<Void, Never>?
+    private var turnSentAt: ContinuousClock.Instant?
+    private var receivedAudioThisTurn = false
 
     init(
         configuration: Configuration,
@@ -70,8 +78,15 @@ final class GeminiLiveTextInterpreter {
         let line = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !line.isEmpty, line != lastQueued else { return }
         lastQueued = line
+        if waiting != nil { screenTextLog.notice("line replaced while waiting") }
         waiting = line
         sendNextIfPossible()
+        updateRate()
+    }
+
+    /// Faster while a newer line waits behind the one being spoken, so speech catches up.
+    private func updateRate() {
+        audio.setRate(waiting != nil ? Self.catchUpRate : Self.normalRate)
     }
 
     func stop() {
@@ -79,6 +94,7 @@ final class GeminiLiveTextInterpreter {
         waiting = nil
         generatingLine = nil
         audio.stop()
+        audio.setRate(1)  // The output is shared with OpenAI realtime speech.
         disconnect()
     }
 
@@ -91,6 +107,10 @@ final class GeminiLiveTextInterpreter {
         waiting = nil
         generatingLine = line
         transcript = ""
+        turnSentAt = .now
+        receivedAudioThisTurn = false
+        screenTextLog.notice("turn sent (\(line.count, privacy: .public) chars)")
+        updateRate()
         armWatchdog(for: line)
         Task { [weak self] in
             guard let self else { return }
@@ -116,6 +136,9 @@ final class GeminiLiveTextInterpreter {
 
     private func finishTurn() {
         guard generatingLine != nil else { return }
+        if let turnSentAt {
+            screenTextLog.notice("turn complete after \(String(describing: ContinuousClock.now - turnSentAt), privacy: .public)")
+        }
         watchdog?.cancel()
         generatingLine = nil
         sendNextIfPossible()
@@ -156,6 +179,10 @@ final class GeminiLiveTextInterpreter {
                 guard let inline = part["inlineData"] as? [String: Any],
                       let base64 = inline["data"] as? String else { continue }
                 onError?(nil)
+                if !receivedAudioThisTurn, let turnSentAt {
+                    receivedAudioThisTurn = true
+                    screenTextLog.notice("first audio after \(String(describing: ContinuousClock.now - turnSentAt), privacy: .public)")
+                }
                 audio.playPCM16Base64(base64, sampleRate: Self.outputSampleRate)
             }
         }
@@ -223,8 +250,8 @@ final class GeminiLiveTextInterpreter {
         let instruction = """
             You are a live dubbing interpreter. Every user message is one line of on-screen text \
             (usually a video subtitle) in \(configuration.sourceLanguage). Respond only by speaking \
-            its translation in \(configuration.targetLanguage), naturally and concisely, in the \
-            speaker's tone. Never add greetings, explanations, questions or anything that is not \
+            its translation in \(configuration.targetLanguage), concisely and at a brisk pace so it \
+            keeps up with the video, in the speaker's tone. Never add greetings, explanations, questions or anything that is not \
             in the line. Keep names consistent with earlier lines.
             """
         return [

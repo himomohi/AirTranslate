@@ -31,11 +31,11 @@ final class ScreenTextReader {
     private var consecutiveFailures = 0
 
     /// Gap before the confirming read of a new line, well under one interval.
-    private static let confirmDelay: Duration = .milliseconds(60)
+    private static let confirmDelay: Duration = .milliseconds(40)
     /// Re-read at least this often even when the frame looks unchanged.
     private static let maxSkip: Duration = .seconds(1)
 
-    init(region: CGRect, language: LanguageOption, interval: Duration = .milliseconds(250)) {
+    init(region: CGRect, language: LanguageOption, interval: Duration = .milliseconds(150)) {
         self.region = region.integral
         self.interval = interval
         recognitionLanguages = Self.visionLanguages(for: language)

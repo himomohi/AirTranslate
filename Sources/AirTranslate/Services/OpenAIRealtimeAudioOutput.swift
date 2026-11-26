@@ -5,6 +5,8 @@ final class OpenAIRealtimeAudioOutput: @unchecked Sendable {
     private let queue = DispatchQueue(label: "AirTranslate.OpenAIRealtimeAudioOutput")
     private let engine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
+    /// Speeds playback up without raising pitch (screen text catches up with the video).
+    private let timePitch = AVAudioUnitTimePitch()
     private let translatedSampleGain: Float = 1.6
     private let maximumBacklogSeconds: Double = 3
     private var outputVolume: Float = 1
@@ -17,6 +19,13 @@ final class OpenAIRealtimeAudioOutput: @unchecked Sendable {
             guard let self else { return }
             outputVolume = Float(min(max(volume, 0), 1))
             player.volume = outputVolume
+        }
+    }
+
+    /// Playback speed, 1 = normal. Clamped to 0.5...2.
+    func setRate(_ rate: Float) {
+        queue.async { [weak self] in
+            self?.timePitch.rate = min(max(rate, 0.5), 2)
         }
     }
 
@@ -111,9 +120,11 @@ final class OpenAIRealtimeAudioOutput: @unchecked Sendable {
             player.stop()
             engine.stop()
             engine.disconnectNodeOutput(player)
+            engine.disconnectNodeOutput(timePitch)
             scheduledFrames = 0
         } else {
             engine.attach(player)
+            engine.attach(timePitch)
             isConfigured = true
         }
 
@@ -126,7 +137,8 @@ final class OpenAIRealtimeAudioOutput: @unchecked Sendable {
             return nil
         }
 
-        engine.connect(player, to: engine.mainMixerNode, format: format)
+        engine.connect(player, to: timePitch, format: format)
+        engine.connect(timePitch, to: engine.mainMixerNode, format: format)
         player.volume = outputVolume
         engine.mainMixerNode.outputVolume = 1
         engine.prepare()
