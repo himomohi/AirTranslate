@@ -65,6 +65,18 @@ final class ScreenTextReader {
 
     private func tick() async {
         do {
+            if filter == nil {
+                do {
+                    try await prepareCapture()
+                } catch is CancellationError {
+                    return
+                } catch {
+                    // Setting up asks macOS for screen access, and each refused attempt can
+                    // show another permission prompt: give up at once instead of retrying.
+                    fail(with: error)
+                    return
+                }
+            }
             let image = try await captureFrame()
             consecutiveFailures = 0
             let fingerprint = Self.fingerprint(of: image)
@@ -85,13 +97,26 @@ final class ScreenTextReader {
         } catch is CancellationError {
             return
         } catch {
-            consecutiveFailures += 1
-            filter = nil  // Displays or windows may have changed; rebuild on the next pass.
-            if consecutiveFailures >= 5 {
-                stop()
-                onFailure?(error)
+            if Self.isPermissionDenial(error) {
+                fail(with: error)
+                return
             }
+            consecutiveFailures += 1
+            // A display or window may have changed: rebuild once, but not on every failure.
+            if consecutiveFailures == 2 { filter = nil }
+            if consecutiveFailures >= 5 { fail(with: error) }
         }
+    }
+
+    private func fail(with error: Error) {
+        guard loopTask != nil else { return }
+        stop()
+        onFailure?(error)
+    }
+
+    nonisolated static func isPermissionDenial(_ error: Error) -> Bool {
+        let error = error as NSError
+        return error.domain == SCStreamErrorDomain && error.code == SCStreamError.Code.userDeclined.rawValue
     }
 
     private func emit(_ text: String?) {
@@ -102,7 +127,6 @@ final class ScreenTextReader {
     // MARK: - Capture
 
     private func captureFrame() async throws -> CGImage {
-        if filter == nil { try await prepareCapture() }
         guard let filter, let configuration else { throw ScreenTextReaderError.captureFailed }
         return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
     }

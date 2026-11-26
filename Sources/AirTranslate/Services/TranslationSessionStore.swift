@@ -1834,7 +1834,14 @@ final class TranslationSessionStore {
         reader.onTextChanged = { [weak self] text in self?.handleScreenText(text) }
         reader.onFailure = { [weak self] error in
             self?.stopScreenTextReading()
-            self?.presentCaptureStartFailure(error.localizedDescription, recoveryAction: .retry)
+            if ScreenTextReader.isPermissionDenial(error) {
+                self?.presentCaptureStartFailure(
+                    CaptureError.screenRecordingNotGranted.localizedDescription,
+                    recoveryAction: .privacy(.screenRecording)
+                )
+            } else {
+                self?.presentCaptureStartFailure(error.localizedDescription, recoveryAction: .retry)
+            }
         }
         resetLiveSessionState(clearsVisibleLines: true)
         stopSpeaking()

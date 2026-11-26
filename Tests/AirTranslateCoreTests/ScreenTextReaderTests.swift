@@ -71,3 +71,12 @@ struct ScreenTextReaderTests {
         return context.makeImage()
     }
 }
+
+@Suite
+struct ScreenTextReaderPermissionTests {
+    @Test func onlyAUserDeclinedCaptureCountsAsAPermissionDenial() {
+        let declined = NSError(domain: "com.apple.ScreenCaptureKit.SCStreamErrorDomain", code: -3801)
+        #expect(ScreenTextReader.isPermissionDenial(declined))
+        #expect(!ScreenTextReader.isPermissionDenial(ScreenTextReaderError.captureFailed))
+    }
+}
