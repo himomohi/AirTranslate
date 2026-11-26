@@ -214,6 +214,9 @@ enum AppText {
     static let stopReadingScreenText = localized(
         english: "Stop Reading Screen Text", korean: "화면 텍스트 읽기 중지", japanese: "画面のテキストの読み上げを停止", chineseSimplified: "停止朗读屏幕文字"
     )
+    static let systemDefaultSpeaker = localized(
+        english: "System Default", korean: "시스템 기본값", japanese: "システムのデフォルト", chineseSimplified: "系统默认"
+    )
     static let readScreenShort = localized(
         english: "Read Screen", korean: "화면 읽기", japanese: "画面を読む", chineseSimplified: "读屏幕"
     )
