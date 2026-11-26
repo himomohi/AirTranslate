@@ -401,6 +401,7 @@ struct ConsoleBarView: View {
                   systemImage: isActive ? "stop.fill" : "text.viewfinder")
                 .labelStyle(.titleAndIcon)
                 .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
         }
         .buttonStyle(AirChipButtonStyle(isActive: isActive))
         .airFocusRing(cornerRadius: 18)
