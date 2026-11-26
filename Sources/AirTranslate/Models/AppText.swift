@@ -214,6 +214,12 @@ enum AppText {
     static let stopReadingScreenText = localized(
         english: "Stop Reading Screen Text", korean: "화면 텍스트 읽기 중지", japanese: "画面のテキストの読み上げを停止", chineseSimplified: "停止朗读屏幕文字"
     )
+    static let readScreenShort = localized(
+        english: "Read Screen", korean: "화면 읽기", japanese: "画面を読む", chineseSimplified: "读屏幕"
+    )
+    static let stopReadingScreenShort = localized(
+        english: "Stop Reading", korean: "읽기 중지", japanese: "読み取り停止", chineseSimplified: "停止读取"
+    )
     static let readScreenTextHelp = localized(
         english: "Pick a screen region, such as video subtitles. New text there is translated and read aloud.",
         korean: "동영상 자막 같은 화면 영역을 선택하세요. 새로 나타나는 텍스트를 번역해 읽어 줍니다.",

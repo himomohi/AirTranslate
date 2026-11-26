@@ -397,10 +397,12 @@ struct ConsoleBarView: View {
         return Button {
             session.toggleScreenTextReading()
         } label: {
-            Image(systemName: isActive ? "stop.circle.fill" : "text.viewfinder")
-                .foregroundStyle(isActive ? AirTranslateDesign.Palette.danger : .primary)
+            Label(isActive ? AppText.stopReadingScreenShort : AppText.readScreenShort,
+                  systemImage: isActive ? "stop.fill" : "text.viewfinder")
+                .labelStyle(.titleAndIcon)
+                .lineLimit(1)
         }
-        .buttonStyle(AirIconButton())
+        .buttonStyle(AirChipButtonStyle(isActive: isActive))
         .airFocusRing(cornerRadius: 18)
         .disabled(!isActive && (session.isRunning || session.isStarting))
         .help(isActive ? title : AppText.readScreenTextHelp)

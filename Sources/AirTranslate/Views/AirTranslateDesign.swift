@@ -406,6 +406,28 @@ struct AirChip: View {
     }
 }
 
+/// A secondary console button with an icon and a short label, the size of `AirIconButton`.
+struct AirChipButtonStyle: ButtonStyle {
+    var isActive = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(isActive ? AirTranslateDesign.Palette.danger : AirTranslateDesign.Palette.textSecondary)
+            .padding(.horizontal, 12)
+            .frame(height: 36)
+            .background(
+                isActive ? AirTranslateDesign.Palette.dangerFill
+                    : configuration.isPressed ? AirTranslateDesign.Palette.accentSoft : AirTranslateDesign.Palette.raisedHover,
+                in: Capsule()
+            )
+            .overlay { Capsule().strokeBorder(AirTranslateDesign.Palette.hairline) }
+            .scaleEffect(reduceMotion ? 1 : (configuration.isPressed ? 0.96 : 1))
+            .animation(reduceMotion ? nil : AirTranslateDesign.Motion.quick, value: configuration.isPressed)
+    }
+}
+
 struct AirIconButton: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
