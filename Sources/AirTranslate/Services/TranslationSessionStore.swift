@@ -547,6 +547,10 @@ final class TranslationSessionStore {
     @ObservationIgnored private var screenTextTranslationTask: Task<Void, Never>?
     @ObservationIgnored private var screenTextInterpreter: GeminiLiveTextInterpreter?
     @ObservationIgnored private var lastScreenText = ""
+    @ObservationIgnored private var screenTextLineIDs: [Int: UUID] = [:]
+    /// Gemini Live speech for screen text. Held turns are released in bursts, so this keeps
+    /// a longer backlog than live interpretation does.
+    @ObservationIgnored private lazy var screenTextAudioOutput = OpenAIRealtimeAudioOutput(maximumBacklogSeconds: 30)
     /// Read screen text through Gemini Live (translate and speak in one step) when a
     /// Gemini key is set; otherwise Apple Translation and the selected voice.
     var screenTextUsesGeminiLive = UserDefaults.standard.object(forKey: "screenTextUsesGeminiLive") as? Bool ?? true {
@@ -1848,16 +1852,23 @@ final class TranslationSessionStore {
         stopSpeaking()
         applyTranslatedVoiceVolume()
         lastScreenText = ""
+        screenTextLineIDs.removeAll()
         screenTextReader = reader
         isReadingScreenText = true
         statusMessage = AppText.readingScreenText
         if screenTextUsesGeminiLive, hasGeminiAPIKey {
             let interpreter = GeminiLiveTextInterpreter(
                 configuration: .init(sourceLanguage: sourceLanguage.title, targetLanguage: targetLanguage.title),
-                audio: openAIRealtimeAudioOutput
+                audio: screenTextAudioOutput
             )
-            interpreter.onTranscript = { [weak self] source, translation in
-                self?.showScreenTextTranslation(translation, for: source)
+            screenTextAudioOutput.setVolume(translatedVoiceVolume)
+            interpreter.onTurnStarted = { [weak self] turn, text in
+                guard let self else { return }
+                screenTextLineIDs[turn] = appendScreenTextLine(text).id
+            }
+            interpreter.onTranscript = { [weak self] turn, translation in
+                guard let self, let id = screenTextLineIDs[turn] else { return }
+                showScreenTextTranslation(translation, lineID: id)
             }
             interpreter.onError = { [weak self] message in
                 guard let self, isReadingScreenText else { return }
@@ -1869,14 +1880,20 @@ final class TranslationSessionStore {
         reader.start()
     }
 
-    private func showScreenTextTranslation(_ translation: String, for source: String) {
-        guard isReadingScreenText,
-              // A turn may join several lines; it ends with the newest of them.
-              let index = lines.lastIndex(where: { source.hasSuffix($0.sourceText) }) else { return }
+    private func appendScreenTextLine(_ text: String) -> CaptionLine {
+        let line = CaptionLine(sourceText: text, translatedText: "", createdAt: Date(), isFinal: true)
+        lines.append(line)
+        if lines.count > 200 { lines.removeFirst(lines.count - 200) }
+        return line
+    }
+
+    private func showScreenTextTranslation(_ translation: String, lineID: UUID) {
+        guard isReadingScreenText, let index = lines.lastIndex(where: { $0.id == lineID }) else { return }
         let line = lines[index]
         lines[index] = CaptionLine(
-            id: line.id, sourceText: source, translatedText: translation, translatedSourceText: source,
-            createdAt: line.createdAt, isFinal: true, revision: line.revision + 1
+            id: line.id, sourceText: line.sourceText, translatedText: translation,
+            translatedSourceText: line.sourceText, createdAt: line.createdAt, isFinal: true,
+            revision: line.revision + 1
         )
     }
 
@@ -1885,13 +1902,12 @@ final class TranslationSessionStore {
         let text = ScreenTextDelta.newText(screenText, after: lastScreenText)
         lastScreenText = screenText
         guard !text.isEmpty else { return }
-        let line = CaptionLine(sourceText: text, translatedText: "", createdAt: Date(), isFinal: true)
-        lines.append(line)
-        if lines.count > 200 { lines.removeFirst(lines.count - 200) }
         if let screenTextInterpreter {
+            // One caption card per phrase Gemini receives (see onTurnStarted).
             screenTextInterpreter.enqueue(text)
             return
         }
+        let line = appendScreenTextLine(text)
 
         let source = sourceLanguage
         let target = targetLanguage
@@ -1917,7 +1933,7 @@ final class TranslationSessionStore {
                 }
             }
             guard !Task.isCancelled, isReadingScreenText else { return }
-            showScreenTextTranslation(translated, for: text)
+            showScreenTextTranslation(translated, lineID: line.id)
             statusMessage = AppText.readingScreenText
             speak(translated)
         }

@@ -3,15 +3,23 @@ import os
 
 private let screenTextLog = Logger(subsystem: "dev.appcaster.AirTranslate", category: "ScreenText")
 
-/// Speaks text lines in another language through one Gemini Live session.
+/// Where interpreted speech is played (OpenAIRealtimeAudioOutput in the app).
+protocol ScreenTextAudioSink: AnyObject {
+    func playPCM16Base64(_ audio: String, sampleRate: Double)
+    func setRate(_ rate: Float)
+    func setVolume(_ volume: Double)
+    func stop()
+}
+
+extension OpenAIRealtimeAudioOutput: ScreenTextAudioSink {}
+
+/// Speaks screen text in another language through Gemini Live.
 ///
-/// Each line goes out as text and comes back as streamed speech in the target language,
-/// so translation and synthesis are one round trip and playback starts while audio is
-/// still arriving. The session keeps earlier lines as context, so names stay consistent.
-///
-/// A new turn would cut off a reply still being generated, so one turn is in flight at a
-/// time; lines arriving meanwhile are joined and sent together as the next turn, so fast
-/// subtitles are not skipped. Playback speeds up while lines wait.
+/// Text is grouped into phrases (a sentence end, a few words, or a short pause), and each
+/// phrase is one turn: it goes out as text and comes back as streamed speech in the target
+/// language. Gemini streams a reply at about real-time speed, so one session alone falls
+/// behind fast subtitles; turns are spread over two sessions so the next phrase is generated
+/// while the current one is still speaking. Audio is played strictly in turn order.
 @MainActor
 final class GeminiLiveTextInterpreter {
     struct Configuration: Equatable {
@@ -21,70 +29,131 @@ final class GeminiLiveTextInterpreter {
         var targetLanguage: String
     }
 
-    private static let endpoint = URL(string:
-        "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent")!
-    private static let outputSampleRate = 24_000.0
-    private static let maxGeneration: Duration = .seconds(10)
-    /// Playback speed normally, and while a newer line is already waiting.
+    static let laneCount = 2
     static let normalRate: Float = 1.1
-    static let catchUpRate: Float = 1.35
+    static let catchUpRate: Float = 1.3
+    /// A phrase is sent once it has this many words, ends a sentence, or waited `phraseDelay`.
+    nonisolated static let phraseWords = 6
+    static let phraseDelay: Duration = .milliseconds(800)
+    private static let outputSampleRate = 24_000.0
 
     let configuration: Configuration
-    /// (source line, translation so far), as Gemini's transcript of its speech arrives.
-    var onTranscript: ((String, String) -> Void)?
+    /// A turn was sent: (turn, source text).
+    var onTurnStarted: ((Int, String) -> Void)?
+    /// (turn, translation so far), from Gemini's transcript of its own speech.
+    var onTranscript: ((Int, String) -> Void)?
     /// Reports a failure, or nil once a reply arrives again.
     var onError: ((String?) -> Void)?
 
-    private let audio: OpenAIRealtimeAudioOutput
-    /// Replaces the socket in tests: receives each line that would be sent.
-    private let sendOverride: ((String) async throws -> Void)?
-    private var urlSession: URLSession?
-    private var socket: URLSessionWebSocketTask?
-    private var receiveTask: Task<Void, Never>?
-    private var connecting: Task<Void, Error>?
-    private var setupWaiter: CheckedContinuation<Void, Error>?
-    private var isSetupComplete = false
+    private let audio: ScreenTextAudioSink
+    private let sendOverride: ((Int, String) async throws -> Void)?
+    private var lanes: [GeminiLiveLane] = []
 
-    private var waiting: String?
+    private var pending = ""
+    private var pendingSince: ContinuousClock.Instant?
+    private var flushTask: Task<Void, Never>?
     private var lastQueued = ""
-    private var generatingLine: String?
-    private var transcript = ""
-    private var watchdog: Task<Void, Never>?
-    private var turnSentAt: ContinuousClock.Instant?
-    private var receivedAudioThisTurn = false
+
+    // Turn order: audio of turn `playHead` goes straight to the player; later turns are held.
+    private struct HeldTurn {
+        var chunks: [String] = []
+        var complete = false
+    }
+    private var lastSentTurn = 0
+    private var playHead = 1
+    private var held: [Int: HeldTurn] = [:]
 
     init(
         configuration: Configuration,
-        audio: OpenAIRealtimeAudioOutput,
-        sendOverride: ((String) async throws -> Void)? = nil
+        audio: ScreenTextAudioSink,
+        sendOverride: ((Int, String) async throws -> Void)? = nil
     ) {
         self.configuration = configuration
         self.audio = audio
         self.sendOverride = sendOverride
-    }
-
-    /// Opens the session before the first line so that line doesn't wait for setup.
-    func prepare() {
-        guard sendOverride == nil else { return }
-        Task { [weak self] in
-            do { try await self?.ensureConnected() } catch {
-                self?.onError?(self?.describe(error) ?? error.localizedDescription)
-                self?.disconnect()
+        lanes = (0..<Self.laneCount).map { index in
+            GeminiLiveLane(index: index, setup: Self.setupMessage(for: configuration))
+        }
+        for lane in lanes {
+            lane.onMessage = { [weak self, weak lane] json in
+                guard let self, let lane else { return }
+                self.handleServerMessage(json, lane: lane.index)
+            }
+            lane.onFailure = { [weak self, weak lane] reason in
+                guard let self, let lane else { return }
+                self.onError?(reason)
+                if let turn = lane.turn { self.turnFinished(turn, lane: lane) }
             }
         }
+    }
+
+    /// Opens the sessions before the first phrase so it doesn't wait for setup.
+    func prepare() {
+        guard sendOverride == nil else { return }
+        for lane in lanes { lane.prepare() }
     }
 
     func enqueue(_ text: String) {
         let line = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !line.isEmpty, line != lastQueued else { return }
         lastQueued = line
-        waiting = Self.joined(waiting, line)
-        sendNextIfPossible()
-        updateRate()
+        pending = Self.joined(pending, line)
+        if pendingSince == nil { pendingSince = .now }
+        dispatch()
     }
 
-    /// Appends `line` to the waiting text, keeping only the most recent ~400 characters
-    /// so a long backlog cannot grow without bound.
+    func stop() {
+        flushTask?.cancel()
+        pending = ""
+        held.removeAll()
+        for lane in lanes { lane.close() }
+        audio.stop()
+        audio.setRate(1)
+    }
+
+    // MARK: - Phrases and turns
+
+    /// Sends the pending text on a free session once it reads as a phrase.
+    private func dispatch(force: Bool = false) {
+        flushTask?.cancel()
+        flushTask = nil
+        guard !pending.isEmpty, let lane = lanes.first(where: { $0.turn == nil }) else {
+            updateRate()
+            return
+        }
+        let waited = pendingSince.map { ContinuousClock.now - $0 } ?? .zero
+        guard force || Self.isPhrase(pending) || waited >= Self.phraseDelay else {
+            flushTask = Task { [weak self] in
+                try? await Task.sleep(for: Self.phraseDelay - waited)
+                guard !Task.isCancelled else { return }
+                self?.dispatch(force: true)
+            }
+            return
+        }
+        let text = pending
+        pending = ""
+        pendingSince = nil
+        lastSentTurn += 1
+        let turn = lastSentTurn
+        onTurnStarted?(turn, text)
+        screenTextLog.notice("turn \(turn, privacy: .public) sent on lane \(lane.index, privacy: .public) (\(text.count, privacy: .public) chars)")
+        updateRate()
+        if let sendOverride {
+            lane.turn = turn
+            Task { [weak self] in
+                do { try await sendOverride(lane.index, text) } catch { self?.turnFinished(turn, lane: lane) }
+            }
+        } else {
+            lane.send(text, turn: turn)
+        }
+    }
+
+    nonisolated static func isPhrase(_ text: String) -> Bool {
+        if let last = text.last, ".!?…。！？".contains(last) { return true }
+        return text.split(whereSeparator: \.isWhitespace).count >= phraseWords
+    }
+
+    /// Appends `line`, keeping only the most recent ~400 characters.
     nonisolated static func joined(_ waiting: String?, _ line: String) -> String {
         guard let waiting, !waiting.isEmpty else { return line }
         let text = waiting + " " + line
@@ -92,120 +161,189 @@ final class GeminiLiveTextInterpreter {
         return String(text.suffix(400)).drop { !$0.isWhitespace }.trimmingCharacters(in: .whitespaces)
     }
 
-    /// Faster while a newer line waits behind the one being spoken, so speech catches up.
-    private func updateRate() {
-        audio.setRate(waiting != nil ? Self.catchUpRate : Self.normalRate)
+    private func turnFinished(_ turn: Int, lane: GeminiLiveLane) {
+        guard lane.turn == turn else { return }
+        lane.finishTurn()
+        screenTextLog.notice("turn \(turn, privacy: .public) complete")
+        if turn == playHead {
+            advancePlayHead()
+        } else {
+            held[turn, default: HeldTurn()].complete = true
+        }
+        dispatch()
     }
 
-    func stop() {
-        watchdog?.cancel()
-        waiting = nil
-        generatingLine = nil
-        audio.stop()
-        audio.setRate(1)  // The output is shared with OpenAI realtime speech.
-        disconnect()
-    }
-
-    var isGenerating: Bool { generatingLine != nil }
-
-    // MARK: - Turns
-
-    private func sendNextIfPossible() {
-        guard generatingLine == nil, let line = waiting else { return }
-        waiting = nil
-        generatingLine = line
-        transcript = ""
-        turnSentAt = .now
-        receivedAudioThisTurn = false
-        screenTextLog.notice("turn sent (\(line.count, privacy: .public) chars)")
+    /// Moves playback to the next turn, releasing audio that arrived while it waited.
+    private func advancePlayHead() {
+        playHead += 1
+        while playHead <= lastSentTurn {
+            let turn = held.removeValue(forKey: playHead) ?? HeldTurn()
+            for chunk in turn.chunks { audio.playPCM16Base64(chunk, sampleRate: Self.outputSampleRate) }
+            guard turn.complete else { break }
+            playHead += 1
+        }
         updateRate()
-        armWatchdog(for: line)
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                if let sendOverride {
-                    try await sendOverride(line)
-                } else {
-                    try await ensureConnected()
-                    try await send([
-                        "clientContent": [
-                            "turns": [["role": "user", "parts": [["text": line]]]],
-                            "turnComplete": true,
-                        ],
-                    ])
-                }
-            } catch {
-                onError?(describe(error))
-                disconnect()
-                finishTurn()  // Skip this line; the next one reconnects.
-            }
-        }
     }
 
-    private func finishTurn() {
-        guard generatingLine != nil else { return }
-        if let turnSentAt {
-            screenTextLog.notice("turn complete after \(String(describing: ContinuousClock.now - turnSentAt), privacy: .public)")
-        }
-        watchdog?.cancel()
-        generatingLine = nil
-        sendNextIfPossible()
-    }
-
-    private func armWatchdog(for line: String) {
-        watchdog?.cancel()
-        watchdog = Task { [weak self] in
-            try? await Task.sleep(for: Self.maxGeneration)
-            guard !Task.isCancelled, let self, generatingLine == line else { return }
-            onError?(AppText.geminiLiveScreenTextTimedOut)
-            disconnect()
-            finishTurn()
-        }
+    /// Faster while more turns or text wait behind the one playing.
+    private func updateRate() {
+        let behind = lastSentTurn > playHead || !pending.isEmpty
+        audio.setRate(behind ? Self.catchUpRate : Self.normalRate)
     }
 
     // MARK: - Server messages
 
-    /// Handles one decoded server message. Internal so tests can feed recorded messages.
-    func handleServerMessage(_ json: [String: Any]) {
+    /// Handles one decoded server message from lane `index`. Internal so tests can feed messages.
+    func handleServerMessage(_ json: [String: Any], lane index: Int) {
+        let lane = lanes[index]
         if json["setupComplete"] != nil {
-            isSetupComplete = true
-            setupWaiter?.resume()
-            setupWaiter = nil
+            lane.markSetupComplete()
             return
         }
         if json["goAway"] != nil {
-            // This connection closes soon: let the reply finish on it and open the next now.
-            socket = nil
-            prepare()
+            lane.reopenSoon()
             return
         }
-        guard let content = json["serverContent"] as? [String: Any] else { return }
+        guard let turn = lane.turn, let content = json["serverContent"] as? [String: Any] else { return }
 
-        if generatingLine != nil,
-           let parts = (content["modelTurn"] as? [String: Any])?["parts"] as? [[String: Any]] {
+        if let parts = (content["modelTurn"] as? [String: Any])?["parts"] as? [[String: Any]] {
             for part in parts {
                 guard let inline = part["inlineData"] as? [String: Any],
                       let base64 = inline["data"] as? String else { continue }
                 onError?(nil)
-                if !receivedAudioThisTurn, let turnSentAt {
-                    receivedAudioThisTurn = true
-                    screenTextLog.notice("first audio after \(String(describing: ContinuousClock.now - turnSentAt), privacy: .public)")
+                if turn == playHead {
+                    audio.playPCM16Base64(base64, sampleRate: Self.outputSampleRate)
+                } else {
+                    held[turn, default: HeldTurn()].chunks.append(base64)
                 }
-                audio.playPCM16Base64(base64, sampleRate: Self.outputSampleRate)
             }
         }
-        if let line = generatingLine,
-           let text = (content["outputTranscription"] as? [String: Any])?["text"] as? String {
-            transcript += text
-            let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty { onTranscript?(line, trimmed) }
+        if let text = (content["outputTranscription"] as? [String: Any])?["text"] as? String {
+            lane.transcript += text
+            let trimmed = lane.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { onTranscript?(turn, trimmed) }
         }
         if content["turnComplete"] as? Bool == true || content["interrupted"] as? Bool == true {
-            finishTurn()
+            turnFinished(turn, lane: lane)
         }
     }
 
-    // MARK: - Connection
+    nonisolated static func setupMessage(for configuration: Configuration) -> [String: Any] {
+        let instruction = """
+            You are a live dubbing interpreter. Every user message is a phrase of on-screen text \
+            (usually video subtitles) in \(configuration.sourceLanguage); it may be part of a \
+            longer sentence. Respond only by speaking its translation in \
+            \(configuration.targetLanguage), concisely and at a brisk pace so it keeps up with the \
+            video, in the speaker's tone. Never add greetings, explanations, questions or anything \
+            that is not in the text.
+            """
+        return [
+            "setup": [
+                "model": "models/\(configuration.model)",
+                "generationConfig": [
+                    "responseModalities": ["AUDIO"],
+                    "speechConfig": [
+                        "voiceConfig": ["prebuiltVoiceConfig": ["voiceName": configuration.voice]],
+                    ],
+                ],
+                "systemInstruction": ["parts": [["text": instruction]]],
+                "outputAudioTranscription": [String: Any](),
+                "contextWindowCompression": ["slidingWindow": [String: Any]()],
+            ],
+        ]
+    }
+}
+
+// MARK: - One Gemini Live session
+
+@MainActor
+final class GeminiLiveLane {
+    private static let endpoint = URL(string:
+        "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent")!
+    /// A reply streams at about real time, so allow a long phrase to finish.
+    private static let maxTurn: Duration = .seconds(25)
+
+    let index: Int
+    private let setup: [String: Any]
+    var onMessage: (([String: Any]) -> Void)?
+    var onFailure: ((String) -> Void)?
+
+    /// The turn this session is generating, if any.
+    var turn: Int?
+    var transcript = ""
+
+    private var urlSession: URLSession?
+    private var socket: URLSessionWebSocketTask?
+    private var receiveTask: Task<Void, Never>?
+    private var connecting: Task<Void, Error>?
+    private var setupWaiter: CheckedContinuation<Void, Error>?
+    private var isSetupComplete = false
+    private var watchdog: Task<Void, Never>?
+
+    init(index: Int, setup: [String: Any]) {
+        self.index = index
+        self.setup = setup
+    }
+
+    func prepare() {
+        Task { [weak self] in
+            do { try await self?.ensureConnected() } catch {
+                guard let self else { return }
+                onFailure?(describe(error))
+                disconnect()
+            }
+        }
+    }
+
+    func send(_ text: String, turn: Int) {
+        self.turn = turn
+        transcript = ""
+        watchdog?.cancel()
+        watchdog = Task { [weak self] in
+            try? await Task.sleep(for: Self.maxTurn)
+            guard !Task.isCancelled, let self, self.turn == turn else { return }
+            disconnect()
+            onFailure?(AppText.geminiLiveScreenTextTimedOut)
+        }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await ensureConnected()
+                try await sendJSON([
+                    "clientContent": [
+                        "turns": [["role": "user", "parts": [["text": text]]]],
+                        "turnComplete": true,
+                    ],
+                ])
+            } catch {
+                guard self.turn == turn else { return }
+                disconnect()
+                onFailure?(describe(error))
+            }
+        }
+    }
+
+    func finishTurn() {
+        watchdog?.cancel()
+        turn = nil
+    }
+
+    func close() {
+        finishTurn()
+        disconnect()
+    }
+
+    func markSetupComplete() {
+        isSetupComplete = true
+        setupWaiter?.resume()
+        setupWaiter = nil
+    }
+
+    /// The server will close this connection soon: let the reply finish on it, open a new one next.
+    func reopenSoon() {
+        socket = nil
+        prepare()
+    }
 
     private func ensureConnected() async throws {
         if socket != nil, connecting == nil { return }
@@ -222,7 +360,6 @@ final class GeminiLiveTextInterpreter {
         }
         var request = URLRequest(url: Self.endpoint)
         request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")  // Never in the URL.
-
         let session = URLSession(configuration: .default)
         let socket = session.webSocketTask(with: request)
         urlSession = session
@@ -231,7 +368,7 @@ final class GeminiLiveTextInterpreter {
         socket.resume()
         startReceiving(on: socket)
 
-        try await send(setupMessage())
+        try await sendJSON(setup)
         guard !isSetupComplete else { return }
         let timeout = Task { [weak self] in
             try? await Task.sleep(for: .seconds(10))
@@ -254,32 +391,7 @@ final class GeminiLiveTextInterpreter {
         setupWaiter = nil
     }
 
-    func setupMessage() -> [String: Any] {
-        let instruction = """
-            You are a live dubbing interpreter. Every user message is one line of on-screen text \
-            (usually a video subtitle) in \(configuration.sourceLanguage). Respond only by speaking \
-            its translation in \(configuration.targetLanguage), concisely and at a brisk pace so it \
-            keeps up with the video, in the speaker's tone. Never add greetings, explanations, questions or anything that is not \
-            in the line. Keep names consistent with earlier lines.
-            """
-        return [
-            "setup": [
-                "model": "models/\(configuration.model)",
-                "generationConfig": [
-                    "responseModalities": ["AUDIO"],
-                    "speechConfig": [
-                        "voiceConfig": ["prebuiltVoiceConfig": ["voiceName": configuration.voice]],
-                    ],
-                ],
-                "systemInstruction": ["parts": [["text": instruction]]],
-                "outputAudioTranscription": [String: Any](),
-                // Keeps long videos within the context window instead of ending the session.
-                "contextWindowCompression": ["slidingWindow": [String: Any]()],
-            ],
-        ]
-    }
-
-    private func send(_ message: [String: Any]) async throws {
+    private func sendJSON(_ message: [String: Any]) async throws {
         guard let socket else { throw GeminiLiveTextInterpreterError.notConnected }
         let data = try JSONSerialization.data(withJSONObject: message)
         try await socket.send(.string(String(decoding: data, as: UTF8.self)))
@@ -296,7 +408,7 @@ final class GeminiLiveTextInterpreter {
                     @unknown default: continue
                     }
                     guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
-                    self?.handleServerMessage(json)
+                    self?.onMessage?(json)
                 } catch {
                     guard !Task.isCancelled, let self else { return }
                     connectionLost(socket, error: error)
@@ -313,10 +425,9 @@ final class GeminiLiveTextInterpreter {
             waiter.resume(throwing: GeminiLiveTextInterpreterError.connection(reason))
         }
         if socket === lost { disconnect() }
-        // An idle session closing is normal; the next line reconnects. Only a cut-off reply is an error.
-        guard generatingLine != nil else { return }
-        onError?(reason)
-        finishTurn()
+        // An idle session closing is normal; the next turn reconnects. Only a cut-off reply is an error.
+        guard turn != nil else { return }
+        onFailure?(reason)
     }
 
     private func describe(_ error: Error, socket: URLSessionWebSocketTask? = nil) -> String {

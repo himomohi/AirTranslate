@@ -8,11 +8,15 @@ final class OpenAIRealtimeAudioOutput: @unchecked Sendable {
     /// Speeds playback up without raising pitch (screen text catches up with the video).
     private let timePitch = AVAudioUnitTimePitch()
     private let translatedSampleGain: Float = 1.6
-    private let maximumBacklogSeconds: Double = 3
+    private let maximumBacklogSeconds: Double
     private var outputVolume: Float = 1
     private var format: AVAudioFormat?
     private var isConfigured = false
     private var scheduledFrames: AVAudioFramePosition = 0
+
+    init(maximumBacklogSeconds: Double = 3) {
+        self.maximumBacklogSeconds = maximumBacklogSeconds
+    }
 
     func setVolume(_ volume: Double) {
         queue.async { [weak self] in
