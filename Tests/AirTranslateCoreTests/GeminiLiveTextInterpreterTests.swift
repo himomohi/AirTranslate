@@ -70,8 +70,9 @@ struct GeminiLiveTextInterpreterTests {
 
     @Test func lagSetsRateAndCondenses() {
         #expect(GeminiLiveTextInterpreter.rate(forLag: 0.5) == 1.1)
-        #expect(abs(GeminiLiveTextInterpreter.rate(forLag: 2.25) - 1.3) < 0.001)
-        #expect(GeminiLiveTextInterpreter.rate(forLag: 5) == 1.5)
+        #expect(abs(GeminiLiveTextInterpreter.rate(forLag: 2.75) - 1.65) < 0.001)
+        #expect(GeminiLiveTextInterpreter.rate(forLag: 4) == 2.2)
+        #expect(GeminiLiveTextInterpreter.rate(forLag: 9) == 2.2)
         let calm = GeminiLiveTextInterpreter.turnMessage("one two three", context: "", lag: 1)
         #expect(calm == "Translate: one two three")
         let behind = GeminiLiveTextInterpreter.turnMessage(

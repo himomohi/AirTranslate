@@ -189,11 +189,16 @@ final class GeminiLiveTextInterpreter {
     }
 
     /// Playback speed for an estimated lag in seconds.
+    /// 1.1x while close to the screen, rising to `maxRate` as the lag grows to 4 s.
     nonisolated static func rate(forLag lag: Double) -> Float {
-        if lag <= 1.5 { return 1.1 }
-        if lag >= 3 { return 1.5 }
-        return Float(1.1 + (lag - 1.5) / 1.5 * 0.4)
+        let (calm, behind) = (1.5, 4.0)
+        if lag <= calm { return normalRate }
+        if lag >= behind { return maxRate }
+        return normalRate + Float((lag - calm) / (behind - calm)) * (maxRate - normalRate)
     }
+
+    nonisolated static let normalRate: Float = 1.1
+    nonisolated static let maxRate: Float = 2.2
 
     /// Appends `line`, keeping only the most recent ~400 characters.
     nonisolated static func joined(_ waiting: String?, _ line: String) -> String {

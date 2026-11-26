@@ -59,10 +59,10 @@ final class OpenAIRealtimeAudioOutput: SpeechOutputRouting, @unchecked Sendable 
         }
     }
 
-    /// Playback speed, 1 = normal. Clamped to 0.5...2.
+    /// Playback speed, 1 = normal. Clamped to 0.5...4.
     func setRate(_ rate: Float) {
         queue.async { [weak self] in
-            self?.timePitch.rate = min(max(rate, 0.5), 2)
+            self?.timePitch.rate = min(max(rate, 0.5), 4)
         }
     }
 
