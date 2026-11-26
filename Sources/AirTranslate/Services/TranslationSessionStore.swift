@@ -1789,9 +1789,30 @@ final class TranslationSessionStore {
         }
     }
 
-    /// Lets the user drag out a screen region, then keeps reading its text:
-    /// each new line is translated into the target language and spoken.
+    /// Keeps reading the text of the last screen region (or one the user drags out when
+    /// there is none on a connected screen): each new line is translated into the target
+    /// language and spoken.
     func startScreenTextReading() {
+        startScreenTextReading(picksRegion: false)
+    }
+
+    /// Whether "Change Region" can be used now.
+    var canChangeScreenTextRegion: Bool {
+        !isPickingScreenTextRegion && (isReadingScreenText || (!isRunning && !isStarting))
+    }
+
+    /// Lets the user drag out a new region: reading switches to it without stopping speech,
+    /// or starts on it when not reading.
+    func changeScreenTextRegion() {
+        guard canChangeScreenTextRegion else { return }
+        guard isReadingScreenText else { return startScreenTextReading(picksRegion: true) }
+        pickScreenTextRegion { [weak self] region in
+            ScreenTextRegion.save(region)
+            self?.screenTextReader?.setRegion(region)
+        }
+    }
+
+    private func startScreenTextReading(picksRegion: Bool) {
         guard !isReadingScreenText, !isPickingScreenTextRegion, !isRunning, !isStarting else { return }
         guard systemAudioCapture.screenRecordingAccessOutcome() == .allowed else {
             presentCaptureStartFailure(
@@ -1801,12 +1822,21 @@ final class TranslationSessionStore {
             return
         }
         dismissCaptureStartFailure()
+        if !picksRegion, let region = ScreenTextRegion.saved(),
+           ScreenTextRegion.isOnScreen(region, screens: NSScreen.screens.map(\.frame)) {
+            beginScreenTextReading(in: region)
+        } else {
+            pickScreenTextRegion { [weak self] region in self?.beginScreenTextReading(in: region) }
+        }
+    }
+
+    private func pickScreenTextRegion(then onPicked: @escaping (CGRect) -> Void) {
         isPickingScreenTextRegion = true
         let picker = ScreenTextRegionPicker()
         picker.onPicked = { [weak self] region in
             self?.screenTextRegionPicker = nil
             self?.isPickingScreenTextRegion = false
-            self?.beginScreenTextReading(in: region)
+            onPicked(region)
         }
         picker.onCancel = { [weak self] in
             self?.screenTextRegionPicker = nil
@@ -1836,7 +1866,9 @@ final class TranslationSessionStore {
 
     private func beginScreenTextReading(in region: CGRect) {
         guard !isRunning, !isStarting else { return }
+        ScreenTextRegion.save(region)
         let reader = ScreenTextReader(region: region, language: sourceLanguage)
+        reader.onRegionChanged = { region in ScreenTextRegion.save(region) }
         reader.onText = { [weak self] text, endsUnit in self?.handleScreenText(text, endsUnit: endsUnit) }
         reader.onFailure = { [weak self] error in
             self?.stopScreenTextReading()

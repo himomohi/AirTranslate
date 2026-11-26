@@ -24,8 +24,10 @@ final class ScreenTextReader {
     var onText: ((String, Bool) -> Void)?
     /// Called once when capturing keeps failing (for example the display went away).
     var onFailure: ((Error) -> Void)?
+    /// Called when the user moves or resizes the region with the outline.
+    var onRegionChanged: ((CGRect) -> Void)?
 
-    let region: CGRect
+    private(set) var region: CGRect
     private let interval: Duration
     private let recognitionLanguages: [String]
     private var tracker = ScreenTextTracker()
@@ -43,8 +45,13 @@ final class ScreenTextReader {
 
     func start() {
         guard loopTask == nil else { return }
-        outline = ScreenTextRegionOutline(region: region)
-        outline?.orderFrontRegardless()
+        let outline = ScreenTextRegionOutline(region: region)
+        outline.onChange = { [weak self] region in
+            self?.setRegion(region)
+            self?.onRegionChanged?(region)
+        }
+        outline.orderFrontRegardless()
+        self.outline = outline
         loopTask = Task { [weak self] in
             while !Task.isCancelled {
                 let started = ContinuousClock.now
@@ -58,8 +65,18 @@ final class ScreenTextReader {
     func stop() {
         loopTask?.cancel()
         loopTask = nil
-        outline?.orderOut(nil)
+        outline?.close()
         outline = nil
+    }
+
+    /// Reads `region` from the next frame on. The caption tracker is kept, so text already
+    /// spoken is not repeated if it is still in the new region.
+    func setRegion(_ region: CGRect) {
+        let region = region.integral
+        guard region != self.region else { return }
+        self.region = region
+        filter = nil
+        outline?.region = region
     }
 
     private func tick() async {
@@ -75,6 +92,8 @@ final class ScreenTextReader {
                     fail(with: error)
                     return
                 }
+                // The region changed while setting up: set up again next time.
+                guard filter != nil else { return }
             }
             let started = ContinuousClock.now
             let image = try await captureFrame()
@@ -158,6 +177,7 @@ final class ScreenTextReader {
     }
 
     private func prepareCapture() async throws {
+        let region = region
         let center = CGPoint(x: region.midX, y: region.midY)
         guard let screen = NSScreen.screens.first(where: { $0.frame.contains(center) }) ?? NSScreen.main,
               let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
@@ -179,6 +199,7 @@ final class ScreenTextReader {
         config.height = Int(ceil(clipped.height))
         config.showsCursor = false
 
+        guard region == self.region else { return }
         filter = SCContentFilter(display: display, excludingApplications: ownApps, exceptingWindows: [])
         configuration = config
     }
@@ -440,30 +461,225 @@ struct ScreenTextTracker {
     }
 }
 
+// MARK: - Region
+
+/// The watched region, in global AppKit screen coordinates (origin bottom-left).
+enum ScreenTextRegion {
+    static let minimumSize = CGSize(width: 40, height: 16)
+    private static let defaultsKey = "screenTextRegion"
+
+    static func saved(in defaults: UserDefaults = .standard) -> CGRect? {
+        guard let values = defaults.array(forKey: defaultsKey) as? [Double], values.count == 4,
+              values[2] > 0, values[3] > 0
+        else { return nil }
+        return CGRect(x: values[0], y: values[1], width: values[2], height: values[3])
+    }
+
+    static func save(_ region: CGRect, in defaults: UserDefaults = .standard) {
+        defaults.set([region.minX, region.minY, region.width, region.height].map(Double.init), forKey: defaultsKey)
+    }
+
+    /// Whether enough of `region` lies on the screen holding its center to be read.
+    static func isOnScreen(_ region: CGRect, screens: [CGRect]) -> Bool {
+        let center = CGPoint(x: region.midX, y: region.midY)
+        guard let screen = screens.first(where: { $0.contains(center) }) else { return false }
+        let visible = screen.intersection(region)
+        return visible.width >= minimumSize.width && visible.height >= minimumSize.height
+    }
+
+    /// `region` moved (and shrunk if needed) into the screen holding its center, or the
+    /// nearest screen, and at least `minimumSize`.
+    static func fitted(_ region: CGRect, screens: [CGRect]) -> CGRect {
+        let center = CGPoint(x: region.midX, y: region.midY)
+        func distance(_ screen: CGRect) -> CGFloat {
+            hypot(max(screen.minX - center.x, 0, center.x - screen.maxX),
+                  max(screen.minY - center.y, 0, center.y - screen.maxY))
+        }
+        guard let screen = screens.min(by: { distance($0) < distance($1) }) else { return region }
+        let width = min(max(region.width, minimumSize.width), screen.width)
+        let height = min(max(region.height, minimumSize.height), screen.height)
+        return CGRect(x: min(max(region.minX, screen.minX), screen.maxX - width),
+                      y: min(max(region.minY, screen.minY), screen.maxY - height),
+                      width: width, height: height)
+    }
+
+    struct Edges: OptionSet {
+        let rawValue: Int
+        static let left = Edges(rawValue: 1)
+        static let right = Edges(rawValue: 2)
+        static let bottom = Edges(rawValue: 4)
+        static let top = Edges(rawValue: 8)
+    }
+
+    /// `region` with `edges` dragged by `delta` (no edges: the whole region moves),
+    /// never smaller than `minimumSize`.
+    static func adjusted(_ region: CGRect, edges: Edges, by delta: CGVector) -> CGRect {
+        guard !edges.isEmpty else { return region.offsetBy(dx: delta.dx, dy: delta.dy) }
+        var minX = region.minX, maxX = region.maxX, minY = region.minY, maxY = region.maxY
+        if edges.contains(.left) { minX = min(minX + delta.dx, maxX - minimumSize.width) }
+        if edges.contains(.right) { maxX = max(maxX + delta.dx, minX + minimumSize.width) }
+        if edges.contains(.bottom) { minY = min(minY + delta.dy, maxY - minimumSize.height) }
+        if edges.contains(.top) { maxY = max(maxY + delta.dy, minY + minimumSize.height) }
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+
+    /// The edges `point` grabs when within `margin` of the region's border, or nil.
+    static func edges(at point: CGPoint, of region: CGRect, margin: CGFloat) -> Edges? {
+        guard region.insetBy(dx: -margin, dy: -margin).contains(point),
+              !region.insetBy(dx: margin, dy: margin).contains(point)
+        else { return nil }
+        var edges: Edges = []
+        if point.x < region.minX + margin { edges.insert(.left) } else if point.x > region.maxX - margin { edges.insert(.right) }
+        if point.y < region.minY + margin { edges.insert(.bottom) } else if point.y > region.maxY - margin { edges.insert(.top) }
+        return edges.isEmpty ? nil : edges
+    }
+}
+
 // MARK: - Region outline
 
-/// Click-through dashed frame showing which region is being watched.
-private final class ScreenTextRegionOutline: NSWindow {
+/// Dashed frame showing which region is being watched. It is click-through, except for a
+/// grab handle that moves the region and its edges and corners, which resize it.
+private final class ScreenTextRegionOutline: NSPanel {
+    private static let margin: CGFloat = 6
+    private static let handleSize = CGSize(width: 44, height: 14)
+
+    /// Called with the new region when a move or resize ends.
+    var onChange: ((CGRect) -> Void)?
+    var region: CGRect { didSet { layout() } }
+    private var handleAbove = true
+    private var drag: (edges: ScreenTextRegion.Edges, start: CGPoint, region: CGRect)?
+    private var hovered: ScreenTextRegion.Edges?
+    private var mouseTimer: Timer?
+
     init(region: CGRect) {
-        super.init(contentRect: region.insetBy(dx: -4, dy: -4), styleMask: .borderless,
+        self.region = region
+        super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
                    backing: .buffered, defer: false)
         isOpaque = false
         backgroundColor = .clear
         ignoresMouseEvents = true
+        hidesOnDeactivate = false
         hasShadow = false
         level = .floating
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         isReleasedWhenClosed = false
-        contentView = OutlineView()
+        contentView = OutlineView(owner: self)
+        layout()
+        // Only the handle and edges take clicks: follow the mouse to switch hit testing,
+        // since a click-through window gets no mouse events to track it with.
+        let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.updateHitTesting() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        mouseTimer = timer
+    }
+
+    override func close() {
+        mouseTimer?.invalidate()
+        mouseTimer = nil
+        super.close()
+    }
+
+    private var handleRect: CGRect {
+        let size = Self.handleSize
+        let y = handleAbove ? region.maxY + 4 : region.minY - 4 - size.height
+        return CGRect(x: region.midX - size.width / 2, y: y, width: size.width, height: size.height)
+    }
+
+    private func layout() {
+        // Put the handle below the region when there is no room above it.
+        let top = CGPoint(x: region.midX, y: region.maxY)
+        if let screen = NSScreen.screens.first(where: { $0.frame.contains(top) }) {
+            handleAbove = region.maxY + 4 + Self.handleSize.height <= screen.frame.maxY
+        }
+        setFrame(region.insetBy(dx: -Self.margin, dy: -Self.margin).union(handleRect), display: true)
+        contentView?.needsDisplay = true
+    }
+
+    /// What a press at `point` grabs: [] for the handle (move), edges to resize, nil for nothing.
+    private func grab(at point: CGPoint) -> ScreenTextRegion.Edges? {
+        handleRect.contains(point) ? [] : ScreenTextRegion.edges(at: point, of: region, margin: Self.margin)
+    }
+
+    private func updateHitTesting() {
+        guard drag == nil else { return }
+        let grab = grab(at: NSEvent.mouseLocation)
+        ignoresMouseEvents = grab == nil
+        if grab != hovered {
+            hovered = grab
+            (grab.map(Self.cursor) ?? .arrow).set()
+        }
+    }
+
+    private static func cursor(for edges: ScreenTextRegion.Edges) -> NSCursor {
+        let position: NSCursor.FrameResizePosition? = switch edges {
+        case [.top]: .top
+        case [.bottom]: .bottom
+        case [.left]: .left
+        case [.right]: .right
+        case [.top, .left]: .topLeft
+        case [.top, .right]: .topRight
+        case [.bottom, .left]: .bottomLeft
+        case [.bottom, .right]: .bottomRight
+        default: nil
+        }
+        return position.map { NSCursor.frameResize(position: $0, directions: .all) } ?? .openHand
+    }
+
+    fileprivate func beginDrag() {
+        let point = NSEvent.mouseLocation
+        guard let edges = grab(at: point) else { return }
+        drag = (edges, point, region)
+        if edges.isEmpty { NSCursor.closedHand.set() }
+    }
+
+    fileprivate func continueDrag() {
+        guard let drag else { return }
+        let point = NSEvent.mouseLocation
+        region = ScreenTextRegion.adjusted(
+            drag.region, edges: drag.edges, by: CGVector(dx: point.x - drag.start.x, dy: point.y - drag.start.y)
+        )
+    }
+
+    fileprivate func endDrag() {
+        guard let drag else { return }
+        self.drag = nil
+        hovered = nil
+        region = ScreenTextRegion.fitted(region, screens: NSScreen.screens.map(\.frame)).integral
+        if region != drag.region { onChange?(region) }
     }
 
     private final class OutlineView: NSView {
+        private unowned let owner: ScreenTextRegionOutline
+
+        init(owner: ScreenTextRegionOutline) {
+            self.owner = owner
+            super.init(frame: .zero)
+        }
+
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+        override func mouseDown(with event: NSEvent) { owner.beginDrag() }
+        override func mouseDragged(with event: NSEvent) { owner.continueDrag() }
+        override func mouseUp(with event: NSEvent) { owner.endDrag() }
+
         override func draw(_ dirtyRect: NSRect) {
-            let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 1.5, dy: 1.5), xRadius: 4, yRadius: 4)
+            let orange = NSColor.systemOrange.withAlphaComponent(0.85)
+            let frame = owner.convertFromScreen(owner.region).insetBy(dx: -2.5, dy: -2.5)
+            let path = NSBezierPath(roundedRect: frame, xRadius: 4, yRadius: 4)
             path.lineWidth = 2
             path.setLineDash([6, 4], count: 2, phase: 0)
-            NSColor.systemOrange.withAlphaComponent(0.85).setStroke()
+            orange.setStroke()
             path.stroke()
+
+            let handle = owner.convertFromScreen(owner.handleRect)
+            orange.setFill()
+            NSBezierPath(roundedRect: handle, xRadius: handle.height / 2, yRadius: handle.height / 2).fill()
+            NSColor.white.setFill()
+            for offset in [-3.0, 0, 3.0] {
+                NSBezierPath(rect: CGRect(x: handle.midX - 9, y: handle.midY + offset - 0.5, width: 18, height: 1)).fill()
+            }
         }
     }
 }
@@ -572,7 +788,8 @@ final class ScreenTextRegionPicker: NSWindow {
         }
 
         override func mouseUp(with event: NSEvent) {
-            let picked = selection.flatMap { $0.width >= 20 && $0.height >= 10 ? $0 : nil }
+            let minimum = ScreenTextRegion.minimumSize
+            let picked = selection.flatMap { $0.width >= minimum.width && $0.height >= minimum.height ? $0 : nil }
             start = nil
             current = nil
             onFinish?(picked)

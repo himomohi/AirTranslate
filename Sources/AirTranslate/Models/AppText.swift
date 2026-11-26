@@ -232,6 +232,9 @@ enum AppText {
     static let readingScreenText = localized(
         english: "Reading screen text…", korean: "화면 텍스트를 읽는 중…", japanese: "画面のテキストを読んでいます…", chineseSimplified: "正在读取屏幕文字…"
     )
+    static let changeScreenTextRegion = localized(
+        english: "Change Region…", korean: "영역 변경…", japanese: "領域を変更…", chineseSimplified: "更改区域…"
+    )
     static let screenTextPickRegionHint = localized(
         english: "Drag over the text to read · Esc to cancel",
         korean: "읽을 텍스트 위로 드래그하세요 · Esc로 취소",
