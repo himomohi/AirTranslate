@@ -545,6 +545,12 @@ final class TranslationSessionStore {
     @ObservationIgnored private var screenTextReader: ScreenTextReader?
     @ObservationIgnored private var screenTextRegionPicker: ScreenTextRegionPicker?
     @ObservationIgnored private var screenTextTranslationTask: Task<Void, Never>?
+    @ObservationIgnored private var screenTextInterpreter: GeminiLiveTextInterpreter?
+    /// Read screen text through Gemini Live (translate and speak in one step) when a
+    /// Gemini key is set; otherwise Apple Translation and the selected voice.
+    var screenTextUsesGeminiLive = UserDefaults.standard.object(forKey: "screenTextUsesGeminiLive") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(screenTextUsesGeminiLive, forKey: "screenTextUsesGeminiLive") }
+    }
     var speechSynthesisModel = SpeechSynthesisModel.appleSystem {
         didSet {
             guard speechSynthesisModel != oldValue else { return }
@@ -1815,6 +1821,8 @@ final class TranslationSessionStore {
         screenTextReader = nil
         screenTextTranslationTask?.cancel()
         screenTextTranslationTask = nil
+        screenTextInterpreter?.stop()
+        screenTextInterpreter = nil
         stopSpeaking()
         isReadingScreenText = false
         statusMessage = AppText.ready
@@ -1834,7 +1842,32 @@ final class TranslationSessionStore {
         screenTextReader = reader
         isReadingScreenText = true
         statusMessage = AppText.readingScreenText
+        if screenTextUsesGeminiLive, hasGeminiAPIKey {
+            let interpreter = GeminiLiveTextInterpreter(
+                configuration: .init(sourceLanguage: sourceLanguage.title, targetLanguage: targetLanguage.title),
+                audio: openAIRealtimeAudioOutput
+            )
+            interpreter.onTranscript = { [weak self] source, translation in
+                self?.showScreenTextTranslation(translation, for: source)
+            }
+            interpreter.onError = { [weak self] message in
+                guard let self, isReadingScreenText else { return }
+                statusMessage = message ?? AppText.readingScreenText
+            }
+            screenTextInterpreter = interpreter
+            interpreter.prepare()
+        }
         reader.start()
+    }
+
+    private func showScreenTextTranslation(_ translation: String, for source: String) {
+        guard isReadingScreenText,
+              let index = lines.lastIndex(where: { $0.sourceText == source }) else { return }
+        let line = lines[index]
+        lines[index] = CaptionLine(
+            id: line.id, sourceText: source, translatedText: translation, translatedSourceText: source,
+            createdAt: line.createdAt, isFinal: true, revision: line.revision + 1
+        )
     }
 
     private func handleScreenText(_ text: String) {
@@ -1842,6 +1875,10 @@ final class TranslationSessionStore {
         let line = CaptionLine(sourceText: text, translatedText: "", createdAt: Date(), isFinal: true)
         lines.append(line)
         if lines.count > 200 { lines.removeFirst(lines.count - 200) }
+        if let screenTextInterpreter {
+            screenTextInterpreter.enqueue(text)
+            return
+        }
 
         let source = sourceLanguage
         let target = targetLanguage
@@ -1867,12 +1904,7 @@ final class TranslationSessionStore {
                 }
             }
             guard !Task.isCancelled, isReadingScreenText else { return }
-            if let index = lines.firstIndex(where: { $0.id == line.id }) {
-                lines[index] = CaptionLine(
-                    id: line.id, sourceText: text, translatedText: translated, translatedSourceText: text,
-                    createdAt: line.createdAt, isFinal: true, revision: line.revision + 1
-                )
-            }
+            showScreenTextTranslation(translated, for: text)
             statusMessage = AppText.readingScreenText
             speak(translated)
         }

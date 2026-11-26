@@ -229,6 +229,14 @@ enum AppText {
         japanese: "読み取るテキストをドラッグで囲みます · Esc でキャンセル",
         chineseSimplified: "拖动框选要读取的文字 · 按 Esc 取消"
     )
+    static let screenTextUsesGeminiLive = localized(
+        english: "Speak Screen Text with Gemini Live", korean: "Gemini Live로 화면 텍스트 말하기",
+        japanese: "Gemini Liveで画面のテキストを話す", chineseSimplified: "用 Gemini Live 朗读屏幕文字"
+    )
+    static let geminiLiveScreenTextTimedOut = localized(
+        english: "Gemini Live didn't answer in time; reconnecting.", korean: "Gemini Live 응답이 늦어 다시 연결합니다.",
+        japanese: "Gemini Live の応答が遅いため再接続します。", chineseSimplified: "Gemini Live 响应超时，正在重新连接。"
+    )
     static let screenTextCaptureFailed = localized(
         english: "Couldn't keep capturing the screen region.", korean: "화면 영역을 계속 캡처할 수 없습니다.",
         japanese: "画面の領域をキャプチャし続けられませんでした。", chineseSimplified: "无法持续捕获屏幕区域。"

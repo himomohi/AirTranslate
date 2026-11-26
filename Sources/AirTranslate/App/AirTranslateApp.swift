@@ -72,6 +72,9 @@ private struct CaptureCommands: Commands {
             }
             .keyboardShortcut("o", modifiers: [.command, .shift])
             .disabled(!session.isReadingScreenText && (session.isRunning || session.isStarting))
+
+            Toggle(AppText.screenTextUsesGeminiLive, isOn: $session.screenTextUsesGeminiLive)
+                .disabled(session.isReadingScreenText || !session.hasGeminiAPIKey)
         }
     }
 }
