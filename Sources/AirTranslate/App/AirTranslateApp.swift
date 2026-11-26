@@ -63,6 +63,15 @@ private struct CaptureCommands: Commands {
             }
             .keyboardShortcut(.space, modifiers: [.command, .shift])
             .disabled(!session.captureControlState.canTogglePause)
+
+            Divider()
+
+            Button(session.isReadingScreenText || session.isPickingScreenTextRegion
+                ? AppText.stopReadingScreenText : AppText.readScreenText) {
+                session.toggleScreenTextReading()
+            }
+            .keyboardShortcut("o", modifiers: [.command, .shift])
+            .disabled(!session.isReadingScreenText && (session.isRunning || session.isStarting))
         }
     }
 }

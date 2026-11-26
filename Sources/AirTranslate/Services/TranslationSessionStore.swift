@@ -538,6 +538,13 @@ final class TranslationSessionStore {
     var isRunning = false
     var isStarting = false
     var isPaused = false
+    /// Whether a screen region is being read, translated and spoken.
+    private(set) var isReadingScreenText = false
+    /// Whether the user is dragging out the region to read.
+    private(set) var isPickingScreenTextRegion = false
+    @ObservationIgnored private var screenTextReader: ScreenTextReader?
+    @ObservationIgnored private var screenTextRegionPicker: ScreenTextRegionPicker?
+    @ObservationIgnored private var screenTextTranslationTask: Task<Void, Never>?
     var speechSynthesisModel = SpeechSynthesisModel.appleSystem {
         didSet {
             guard speechSynthesisModel != oldValue else { return }
@@ -1626,6 +1633,7 @@ final class TranslationSessionStore {
     }
 
     func start() {
+        stopScreenTextReading()
         isPreviewingFloatingCaptions = false
         guard !isRunning, !isStarting, !capturePermissionSetup.isRequesting else { return }
         capturePermissionSetup.dismissPendingSetup()
@@ -1756,6 +1764,117 @@ final class TranslationSessionStore {
                     configuration: configuration
                 )
             }
+        }
+    }
+
+    // MARK: - Screen text
+
+    func toggleScreenTextReading() {
+        if isReadingScreenText || isPickingScreenTextRegion {
+            stopScreenTextReading()
+        } else {
+            startScreenTextReading()
+        }
+    }
+
+    /// Lets the user drag out a screen region, then keeps reading its text:
+    /// each new line is translated into the target language and spoken.
+    func startScreenTextReading() {
+        guard !isReadingScreenText, !isPickingScreenTextRegion, !isRunning, !isStarting else { return }
+        guard systemAudioCapture.screenRecordingAccessOutcome() == .allowed else {
+            presentCaptureStartFailure(
+                CaptureError.screenRecordingNotGranted.localizedDescription,
+                recoveryAction: .privacy(.screenRecording)
+            )
+            return
+        }
+        dismissCaptureStartFailure()
+        isPickingScreenTextRegion = true
+        let picker = ScreenTextRegionPicker()
+        picker.onPicked = { [weak self] region in
+            self?.screenTextRegionPicker = nil
+            self?.isPickingScreenTextRegion = false
+            self?.beginScreenTextReading(in: region)
+        }
+        picker.onCancel = { [weak self] in
+            self?.screenTextRegionPicker = nil
+            self?.isPickingScreenTextRegion = false
+        }
+        screenTextRegionPicker = picker
+        picker.begin()
+    }
+
+    func stopScreenTextReading() {
+        if isPickingScreenTextRegion {
+            screenTextRegionPicker?.end()
+            screenTextRegionPicker = nil
+            isPickingScreenTextRegion = false
+        }
+        guard isReadingScreenText else { return }
+        screenTextReader?.stop()
+        screenTextReader = nil
+        screenTextTranslationTask?.cancel()
+        screenTextTranslationTask = nil
+        stopSpeaking()
+        isReadingScreenText = false
+        statusMessage = AppText.ready
+    }
+
+    private func beginScreenTextReading(in region: CGRect) {
+        guard !isRunning, !isStarting else { return }
+        let reader = ScreenTextReader(region: region, language: sourceLanguage)
+        reader.onTextChanged = { [weak self] text in self?.handleScreenText(text) }
+        reader.onFailure = { [weak self] error in
+            self?.stopScreenTextReading()
+            self?.presentCaptureStartFailure(error.localizedDescription, recoveryAction: .retry)
+        }
+        resetLiveSessionState(clearsVisibleLines: true)
+        stopSpeaking()
+        applyTranslatedVoiceVolume()
+        screenTextReader = reader
+        isReadingScreenText = true
+        statusMessage = AppText.readingScreenText
+        reader.start()
+    }
+
+    private func handleScreenText(_ text: String) {
+        guard isReadingScreenText, !text.isEmpty else { return }
+        let line = CaptionLine(sourceText: text, translatedText: "", createdAt: Date(), isFinal: true)
+        lines.append(line)
+        if lines.count > 200 { lines.removeFirst(lines.count - 200) }
+
+        let source = sourceLanguage
+        let target = targetLanguage
+        let model: IntelligenceModel = selectedModel == .appleOnDevice ? .appleOnDevice : .appleSystem
+        let options = appleTranslationOptions
+        // Chain lines so translations land and are spoken in screen order.
+        let previous = screenTextTranslationTask
+        screenTextTranslationTask = Task { @MainActor [weak self] in
+            await previous?.value
+            guard let self, !Task.isCancelled, isReadingScreenText else { return }
+            let translated: String
+            if source.id == target.id {
+                translated = text
+            } else {
+                do {
+                    translated = try await translator.translate(
+                        text, source: source, target: target, model: model, options: options
+                    )
+                } catch {
+                    guard !Task.isCancelled, isReadingScreenText else { return }
+                    statusMessage = error.localizedDescription
+                    return
+                }
+            }
+            guard !Task.isCancelled, isReadingScreenText else { return }
+            if let index = lines.firstIndex(where: { $0.id == line.id }) {
+                lines[index] = CaptionLine(
+                    id: line.id, sourceText: text, translatedText: translated, translatedSourceText: text,
+                    createdAt: line.createdAt, isFinal: true, revision: line.revision + 1
+                )
+            }
+            statusMessage = AppText.readingScreenText
+            speak(translated)
         }
     }
 
@@ -2373,6 +2492,7 @@ final class TranslationSessionStore {
     }
 
     func prepareForTermination() {
+        stopScreenTextReading()
         if isUsingHyMT, isRunning {
             freezeHyMTRecognition()
             flushPendingRecognizedCaption()

@@ -306,6 +306,7 @@ struct ConsoleBarView: View {
         HStack(spacing: AirTranslateDesign.Spacing.sm) {
             captureButton
             pauseButton
+            screenTextButton
 
             consoleDivider
             if !isConfigurationAvailable {
@@ -388,6 +389,22 @@ struct ConsoleBarView: View {
         .disabled(!session.captureControlState.canTogglePause)
         .help(session.isPaused ? AppText.resume : AppText.pause)
         .accessibilityLabel(session.isPaused ? AppText.resume : AppText.pause)
+    }
+
+    private var screenTextButton: some View {
+        let isActive = session.isReadingScreenText || session.isPickingScreenTextRegion
+        let title = isActive ? AppText.stopReadingScreenText : AppText.readScreenText
+        return Button {
+            session.toggleScreenTextReading()
+        } label: {
+            Image(systemName: isActive ? "stop.circle.fill" : "text.viewfinder")
+                .foregroundStyle(isActive ? AirTranslateDesign.Palette.danger : .primary)
+        }
+        .buttonStyle(AirIconButton())
+        .airFocusRing(cornerRadius: 18)
+        .disabled(!isActive && (session.isRunning || session.isStarting))
+        .help(isActive ? title : AppText.readScreenTextHelp)
+        .accessibilityLabel(title)
     }
 
     @ViewBuilder
