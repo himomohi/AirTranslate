@@ -88,6 +88,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+        ReadScreenShortcut.shared.start { [weak self] in
+            self?.session?.toggleScreenTextReading()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {

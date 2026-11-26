@@ -72,6 +72,7 @@ struct SettingsView: View {
         switch selectedCategory.wrappedValue {
         case .general:
             generalSettings
+            SettingsGroup(title: SettingsCopy.shortcuts) { ReadScreenShortcutRow() }
             if session.isUsingAppleTextTranslation {
                 AppleTranslationSettingsView(session: session)
             } else {
@@ -1265,6 +1266,39 @@ enum SettingsCopy {
     static let audio = AppText.localized(english: "Audio", korean: "오디오")
     static let assets = AppText.localized(english: "Assets", korean: "자산")
     static let info = AppText.localized(english: "Info", korean: "정보")
+    static let shortcuts = AppText.localized(english: "Shortcuts", korean: "단축키", japanese: "ショートカット", chineseSimplified: "快捷键")
+    static let readScreenShortcut = AppText.localized(
+        english: "Read Screen Shortcut", korean: "화면 읽기 단축키",
+        japanese: "画面読み上げショートカット", chineseSimplified: "朗读屏幕快捷键"
+    )
+    static let readScreenShortcutDetail = AppText.localized(
+        english: "Starts or stops Read Screen Text from any app. Needs ⌘, ⌥ or ⌃.",
+        korean: "어느 앱에서든 화면 텍스트 읽기를 시작하거나 중지합니다. ⌘, ⌥ 또는 ⌃가 필요합니다.",
+        japanese: "どのアプリからでも画面テキストの読み上げを開始/停止します。⌘、⌥、⌃のいずれかが必要です。",
+        chineseSimplified: "在任何应用中开始或停止朗读屏幕文字。需要包含 ⌘、⌥ 或 ⌃。"
+    )
+    static let typeShortcut = AppText.localized(
+        english: "Type shortcut", korean: "단축키 입력", japanese: "ショートカットを入力", chineseSimplified: "输入快捷键"
+    )
+    static let shortcutOff = AppText.localized(english: "Off", korean: "끔", japanese: "オフ", chineseSimplified: "关闭")
+    static let clearShortcut = AppText.localized(
+        english: "Disable shortcut", korean: "단축키 해제", japanese: "ショートカットを無効にする", chineseSimplified: "停用快捷键"
+    )
+    static let resetShortcut = AppText.localized(
+        english: "Reset to ⌥⌘O", korean: "⌥⌘O로 재설정", japanese: "⌥⌘Oに戻す", chineseSimplified: "重置为 ⌥⌘O"
+    )
+    static let shortcutUnavailable = AppText.localized(
+        english: "That shortcut is already in use. Try another.",
+        korean: "이미 사용 중인 단축키입니다. 다른 조합을 시도하세요.",
+        japanese: "そのショートカットは既に使用されています。別の組み合わせをお試しください。",
+        chineseSimplified: "该快捷键已被占用，请尝试其他组合。"
+    )
+    static let shortcutNeedsModifier = AppText.localized(
+        english: "Include ⌘, ⌥ or ⌃ in the shortcut.",
+        korean: "단축키에 ⌘, ⌥ 또는 ⌃를 포함하세요.",
+        japanese: "ショートカットに⌘、⌥、⌃のいずれかを含めてください。",
+        chineseSimplified: "快捷键需包含 ⌘、⌥ 或 ⌃。"
+    )
     static let generalDetail = AppText.localized(
         english: "Set the default translation mode and language behavior.",
         korean: "기본 번역 방식과 언어 동작을 설정합니다."
