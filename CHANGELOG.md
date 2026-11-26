@@ -2,6 +2,8 @@
 
 All notable changes to AirTranslate are documented in this file.
 
+Former README release highlights: [English](Release/README-HISTORY/README.md), [한국어](Release/README-HISTORY/README.ko.md), [日本語](Release/README-HISTORY/README.ja.md), [简体中文](Release/README-HISTORY/README.zh-CN.md).
+
 ## 1.20.0 - 2026-11-22
 
 ### Added
