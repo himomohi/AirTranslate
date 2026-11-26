@@ -76,14 +76,20 @@ final class ScreenTextReader {
                     return
                 }
             }
+            let started = ContinuousClock.now
             let image = try await captureFrame()
             consecutiveFailures = 0
+            let captured = ContinuousClock.now
             let languages = recognitionLanguages
             // Vision takes ~40 ms here, so every frame is read; no change detection to miss words.
             let lines = await Task.detached(priority: .userInitiated) {
                 Self.recognizeLines(in: image, languages: languages)
             }.value
             guard !Task.isCancelled else { return }
+            let finished = ContinuousClock.now
+            if logsReads, finished - started > .milliseconds(300) {
+                ocrLog.notice("slow pass: capture \(String(describing: captured - started), privacy: .public), OCR \(String(describing: finished - captured), privacy: .public)")
+            }
             if logsReads, lines != lastLoggedLines {
                 lastLoggedLines = lines
                 ocrLog.notice("read: \(lines.joined(separator: " | "), privacy: .public)")
@@ -123,7 +129,32 @@ final class ScreenTextReader {
 
     private func captureFrame() async throws -> CGImage {
         guard let filter, let configuration else { throw ScreenTextReaderError.captureFailed }
-        return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
+        return try await Self.withTimeout(.seconds(2)) {
+            try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
+        }
+    }
+
+    /// Gives up on a capture that never returns, which would otherwise stall reading.
+    /// (Unlike a task group, this does not wait for an operation that ignores cancellation.)
+    private static func withTimeout<T: Sendable>(
+        _ limit: Duration, _ operation: @escaping @MainActor () async throws -> T
+    ) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            var finished = false
+            let finish: @MainActor (Result<T, Error>) -> Void = { result in
+                guard !finished else { return }
+                finished = true
+                continuation.resume(with: result)
+            }
+            let work = Task { @MainActor in
+                do { finish(.success(try await operation())) } catch { finish(.failure(error)) }
+            }
+            Task { @MainActor in
+                try? await Task.sleep(for: limit)
+                work.cancel()
+                finish(.failure(ScreenTextReaderError.captureFailed))
+            }
+        }
     }
 
     private func prepareCapture() async throws {
@@ -206,17 +237,31 @@ final class ScreenTextReader {
         return captionLines(from: boxes)
     }
 
-    /// Groups boxes into rows (top to bottom, left to right) and drops rows that touch the
-    /// top or bottom edge while being shorter than the tallest row: a line scrolled half out.
+    /// Groups boxes into rows (top to bottom, left to right) and keeps only caption-like text:
+    /// - boxes whose height is far from the caption height (taken from boxes with 3+ words)
+    ///   are video graphics, and all-caps snippets are titles or map labels;
+    /// - a box sitting well apart from the caption on the same row is not part of it;
+    /// - a row that touches the top or bottom edge while shorter than the tallest row is a
+    ///   line scrolled half out.
     nonisolated static func captionLines(from boxes: [TextBox]) -> [String] {
+        let wordy = boxes.filter { $0.text.split(separator: " ").count >= 3 }.map(\.box.height).sorted()
+        let captionHeight = wordy.isEmpty ? nil : wordy[wordy.count / 2]
+        // Drop all-caps snippets only next to normal dialogue, so all-caps subtitles still work.
+        let hasDialogue = boxes.contains { !isLabel($0.text) && $0.text.split(separator: " ").count >= 3 }
+        let candidates = boxes.filter { box in
+            if hasDialogue, isLabel(box.text) { return false }
+            guard let captionHeight else { return true }
+            return box.box.height > captionHeight * 0.75 && box.box.height < captionHeight * 1.35
+        }
         var rows: [[TextBox]] = []
-        for box in boxes.sorted(by: { $0.box.midY > $1.box.midY }) {
+        for box in candidates.sorted(by: { $0.box.midY > $1.box.midY }) {
             if let last = rows.last?.last, abs(last.box.midY - box.box.midY) < last.box.height / 2 {
                 rows[rows.count - 1].append(box)
             } else {
                 rows.append([box])
             }
         }
+        rows = rows.map(mainRun)
         let tallest = rows.map { $0.map(\.box.height).max() ?? 0 }.max() ?? 0
         return rows.compactMap { row in
             let minY = row.map(\.box.minY).min() ?? 0
@@ -224,8 +269,28 @@ final class ScreenTextReader {
             let height = row.map(\.box.height).max() ?? 0
             let touchesEdge = minY < 0.02 || maxY > 0.98
             if touchesEdge, height < tallest * 0.85 { return nil }
-            return row.sorted { $0.box.minX < $1.box.minX }.map(\.text).joined(separator: " ")
+            return row.map(\.text).joined(separator: " ")
         }
+    }
+
+    /// The horizontally adjacent boxes around the longest one (gaps under 1.5 line heights).
+    private nonisolated static func mainRun(_ row: [TextBox]) -> [TextBox] {
+        let sorted = row.sorted { $0.box.minX < $1.box.minX }
+        var runs: [[TextBox]] = []
+        for box in sorted {
+            if let last = runs.last?.last, box.box.minX - last.box.maxX < last.box.height * 1.5 {
+                runs[runs.count - 1].append(box)
+            } else {
+                runs.append([box])
+            }
+        }
+        return runs.max { $0.map(\.text.count).reduce(0, +) < $1.map(\.text.count).reduce(0, +) } ?? sorted
+    }
+
+    /// Short all-caps text (CHINA, MOUNTAIN RANGES RANKED) is a label, not dialogue.
+    private nonisolated static func isLabel(_ text: String) -> Bool {
+        let letters = text.filter(\.isLetter)
+        return letters.count >= 2 && letters == letters.uppercased() && text.split(separator: " ").count <= 5
     }
 }
 

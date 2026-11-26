@@ -128,3 +128,37 @@ struct ScreenTextTrackerTests {
         #expect(out.first?.1 == true)
     }
 }
+
+@Suite
+struct ScreenTextCaptionFilterTests {
+    typealias Box = ScreenTextReader.TextBox
+
+    @Test func videoGraphicsAndLabelsAreIgnored() {
+        let boxes = [
+            Box(text: "the mountains between Vietnam and Laos", box: CGRect(x: 0.05, y: 0.55, width: 0.5, height: 0.2)),
+            // A card in the video on the same row, apart from the caption and smaller.
+            Box(text: "I ranked 10 MORE of the world", box: CGRect(x: 0.75, y: 0.6, width: 0.2, height: 0.1)),
+            Box(text: "that I covered in my mountains video.", box: CGRect(x: 0.05, y: 0.3, width: 0.5, height: 0.2)),
+            Box(text: "MOUNTAIN RANGES RANKED", box: CGRect(x: 0.6, y: 0.3, width: 0.3, height: 0.2)),
+            Box(text: "CHINA", box: CGRect(x: 0.8, y: 0.1, width: 0.1, height: 0.1)),
+        ]
+        #expect(ScreenTextReader.captionLines(from: boxes)
+            == ["the mountains between Vietnam and Laos", "that I covered in my mountains video."])
+    }
+
+    @Test func boxesOfOneLineAreJoined() {
+        let boxes = [
+            Box(text: "architectures. Um,", box: CGRect(x: 0.1, y: 0.45, width: 0.3, height: 0.25)),
+            Box(text: "it's just going", box: CGRect(x: 0.42, y: 0.46, width: 0.3, height: 0.25)),
+        ]
+        #expect(ScreenTextReader.captionLines(from: boxes) == ["architectures. Um, it's just going"])
+    }
+}
+
+@Suite
+struct ScreenTextAllCapsSubtitleTests {
+    @Test func allCapsSubtitlesAreKeptWhenThereIsNoOtherDialogue() {
+        let boxes = [ScreenTextReader.TextBox(text: "I DON'T KNOW", box: CGRect(x: 0.2, y: 0.4, width: 0.5, height: 0.2))]
+        #expect(ScreenTextReader.captionLines(from: boxes) == ["I DON'T KNOW"])
+    }
+}
