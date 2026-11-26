@@ -243,6 +243,30 @@ enum ScreenTextReaderError: LocalizedError {
     var errorDescription: String? { AppText.screenTextCaptureFailed }
 }
 
+// MARK: - Roll-up captions
+
+enum ScreenTextDelta {
+    /// The part of `current` not already shown in `previous`. Roll-up captions (YouTube
+    /// auto-captions, live TV) repeat the end of the last line and add a few words; only
+    /// those new words should be spoken. Returns `current` when nothing overlaps.
+    static func newText(_ current: String, after previous: String) -> String {
+        let old = previous.split(whereSeparator: \.isWhitespace).map { normalized($0) }
+        let newWords = current.split(whereSeparator: \.isWhitespace)
+        let new = newWords.map { normalized($0) }
+        guard !old.isEmpty, !new.isEmpty else { return current }
+        // Longest suffix of `previous` that is a prefix of `current` (at least 2 words).
+        for length in stride(from: min(old.count, new.count), through: 2, by: -1)
+        where Array(old.suffix(length)) == Array(new.prefix(length)) {
+            return newWords.dropFirst(length).joined(separator: " ")
+        }
+        return current
+    }
+
+    private static func normalized(_ word: Substring) -> String {
+        word.lowercased().trimmingCharacters(in: .punctuationCharacters)
+    }
+}
+
 // MARK: - Stabilizer
 
 /// Turns a stream of raw OCR reads into stable text changes.

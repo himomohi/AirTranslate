@@ -9,9 +9,9 @@ private let screenTextLog = Logger(subsystem: "dev.appcaster.AirTranslate", cate
 /// so translation and synthesis are one round trip and playback starts while audio is
 /// still arriving. The session keeps earlier lines as context, so names stay consistent.
 ///
-/// A new turn would cut off a reply still being generated, so one line is in flight at a
-/// time and only the newest waiting line is kept. The audio output drops a backlog of more
-/// than a few seconds, which keeps speech close to what is on screen.
+/// A new turn would cut off a reply still being generated, so one turn is in flight at a
+/// time; lines arriving meanwhile are joined and sent together as the next turn, so fast
+/// subtitles are not skipped. Playback speeds up while lines wait.
 @MainActor
 final class GeminiLiveTextInterpreter {
     struct Configuration: Equatable {
@@ -78,10 +78,18 @@ final class GeminiLiveTextInterpreter {
         let line = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !line.isEmpty, line != lastQueued else { return }
         lastQueued = line
-        if waiting != nil { screenTextLog.notice("line replaced while waiting") }
-        waiting = line
+        waiting = Self.joined(waiting, line)
         sendNextIfPossible()
         updateRate()
+    }
+
+    /// Appends `line` to the waiting text, keeping only the most recent ~400 characters
+    /// so a long backlog cannot grow without bound.
+    nonisolated static func joined(_ waiting: String?, _ line: String) -> String {
+        guard let waiting, !waiting.isEmpty else { return line }
+        let text = waiting + " " + line
+        guard text.count > 400 else { return text }
+        return String(text.suffix(400)).drop { !$0.isWhitespace }.trimmingCharacters(in: .whitespaces)
     }
 
     /// Faster while a newer line waits behind the one being spoken, so speech catches up.

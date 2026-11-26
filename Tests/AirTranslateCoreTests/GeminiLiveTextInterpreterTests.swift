@@ -19,7 +19,7 @@ struct GeminiLiveTextInterpreterTests {
         for _ in 0..<200 where !condition() { try? await Task.sleep(for: .milliseconds(5)) }
     }
 
-    @Test func sendsOneLineAtATimeAndKeepsOnlyTheNewestWaiting() async {
+    @Test func sendsOneTurnAtATimeAndJoinsWaitingLines() async {
         let sent = Sent()
         let interpreter = makeInterpreter(sent)
         interpreter.enqueue("one")
@@ -30,7 +30,7 @@ struct GeminiLiveTextInterpreterTests {
         #expect(sent.lines == ["one"])
         interpreter.handleServerMessage(["serverContent": ["turnComplete": true]])
         await waitUntil { sent.lines.count == 2 }
-        #expect(sent.lines == ["one", "three"])
+        #expect(sent.lines == ["one", "two three"])
         interpreter.stop()
     }
 

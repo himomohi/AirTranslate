@@ -546,6 +546,7 @@ final class TranslationSessionStore {
     @ObservationIgnored private var screenTextRegionPicker: ScreenTextRegionPicker?
     @ObservationIgnored private var screenTextTranslationTask: Task<Void, Never>?
     @ObservationIgnored private var screenTextInterpreter: GeminiLiveTextInterpreter?
+    @ObservationIgnored private var lastScreenText = ""
     /// Read screen text through Gemini Live (translate and speak in one step) when a
     /// Gemini key is set; otherwise Apple Translation and the selected voice.
     var screenTextUsesGeminiLive = UserDefaults.standard.object(forKey: "screenTextUsesGeminiLive") as? Bool ?? true {
@@ -1846,6 +1847,7 @@ final class TranslationSessionStore {
         resetLiveSessionState(clearsVisibleLines: true)
         stopSpeaking()
         applyTranslatedVoiceVolume()
+        lastScreenText = ""
         screenTextReader = reader
         isReadingScreenText = true
         statusMessage = AppText.readingScreenText
@@ -1869,7 +1871,8 @@ final class TranslationSessionStore {
 
     private func showScreenTextTranslation(_ translation: String, for source: String) {
         guard isReadingScreenText,
-              let index = lines.lastIndex(where: { $0.sourceText == source }) else { return }
+              // A turn may join several lines; it ends with the newest of them.
+              let index = lines.lastIndex(where: { source.hasSuffix($0.sourceText) }) else { return }
         let line = lines[index]
         lines[index] = CaptionLine(
             id: line.id, sourceText: source, translatedText: translation, translatedSourceText: source,
@@ -1877,8 +1880,11 @@ final class TranslationSessionStore {
         )
     }
 
-    private func handleScreenText(_ text: String) {
-        guard isReadingScreenText, !text.isEmpty else { return }
+    private func handleScreenText(_ screenText: String) {
+        guard isReadingScreenText, !screenText.isEmpty else { return }
+        let text = ScreenTextDelta.newText(screenText, after: lastScreenText)
+        lastScreenText = screenText
+        guard !text.isEmpty else { return }
         let line = CaptionLine(sourceText: text, translatedText: "", createdAt: Date(), isFinal: true)
         lines.append(line)
         if lines.count > 200 { lines.removeFirst(lines.count - 200) }

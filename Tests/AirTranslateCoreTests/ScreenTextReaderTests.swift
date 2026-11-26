@@ -80,3 +80,25 @@ struct ScreenTextReaderPermissionTests {
         #expect(!ScreenTextReader.isPermissionDenial(ScreenTextReaderError.captureFailed))
     }
 }
+
+@Suite
+struct ScreenTextDeltaTests {
+    @Test func rollUpCaptionSpeaksOnlyNewWords() {
+        #expect(ScreenTextDelta.newText("going to the store. Then we left", after: "we were going to the store.")
+            == "Then we left")
+    }
+
+    @Test func unrelatedLineIsKeptWhole() {
+        #expect(ScreenTextDelta.newText("Where are you?", after: "I am here.") == "Where are you?")
+    }
+
+    @Test func singleWordOverlapIsNotTreatedAsRollUp() {
+        #expect(ScreenTextDelta.newText("here we go", after: "stay here") == "here we go")
+    }
+
+    @Test func waitingLinesAreJoinedNotDropped() {
+        #expect(GeminiLiveTextInterpreter.joined(nil, "one") == "one")
+        #expect(GeminiLiveTextInterpreter.joined("one", "two") == "one two")
+        #expect(GeminiLiveTextInterpreter.joined(String(repeating: "a ", count: 300), "end").count <= 400)
+    }
+}
