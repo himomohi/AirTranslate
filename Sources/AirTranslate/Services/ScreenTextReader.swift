@@ -1,5 +1,6 @@
 import AppKit
 import CoreGraphics
+import os
 import ScreenCaptureKit
 @preconcurrency import Vision
 
@@ -10,8 +11,15 @@ import ScreenCaptureKit
 /// turns those reads into new words and caption units (a finished line or a pause), so
 /// roll-up captions are neither repeated nor cut into small chunks. AirTranslate's own
 /// windows are left out of the capture, so captions may sit on top of the watched region.
+private let ocrLog = Logger(subsystem: "dev.appcaster.AirTranslate", category: "ScreenTextOCR")
+
 @MainActor
 final class ScreenTextReader {
+    /// Logs every OCR read and committed word to the unified log, for diagnosing misreads.
+    /// Off by default: it records whatever text is on screen. Turn on with
+    /// `defaults write dev.appcaster.AirTranslate ScreenTextDebugLog -bool YES`.
+    private let logsReads = UserDefaults.standard.bool(forKey: "ScreenTextDebugLog")
+    private var lastLoggedLines: [String] = []
     /// New words (possibly "") and whether they end a caption unit.
     var onText: ((String, Bool) -> Void)?
     /// Called once when capturing keeps failing (for example the display went away).
@@ -76,7 +84,14 @@ final class ScreenTextReader {
                 Self.recognizeLines(in: image, languages: languages)
             }.value
             guard !Task.isCancelled else { return }
+            if logsReads, lines != lastLoggedLines {
+                lastLoggedLines = lines
+                ocrLog.notice("read: \(lines.joined(separator: " | "), privacy: .public)")
+            }
             for (text, endsUnit) in tracker.ingest(lines, now: .now) {
+                if logsReads {
+                    ocrLog.notice("commit\(endsUnit ? " ⏎" : "", privacy: .public): \(text, privacy: .public)")
+                }
                 onText?(text, endsUnit)
             }
         } catch is CancellationError {
