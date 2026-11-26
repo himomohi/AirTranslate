@@ -162,3 +162,18 @@ struct ScreenTextAllCapsSubtitleTests {
         #expect(ScreenTextReader.captionLines(from: boxes) == ["I DON'T KNOW"])
     }
 }
+
+@Suite
+struct ScreenTextPopOnCaptionTests {
+    @Test func twoLinePopOnCaptionIsOneUnitAndSettlesQuickly() {
+        var tracker = ScreenTextTracker()
+        let start = ContinuousClock.now
+        let caption = ["That pattern runs through", "almost everything in Indochina,"]
+        let first = tracker.ingest(caption, now: start)
+        #expect(!first.contains { $0.1 })  // No unit ends between the two lines.
+        let settled = tracker.ingest(caption, now: start + .milliseconds(200))
+        let all = (first + settled).map(\.0).filter { !$0.isEmpty }.joined(separator: " ")
+        #expect(all == "That pattern runs through almost everything in Indochina,")
+        #expect(settled.last?.1 == true)
+    }
+}

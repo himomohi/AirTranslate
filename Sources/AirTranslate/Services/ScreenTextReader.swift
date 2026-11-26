@@ -173,10 +173,10 @@ final class ScreenTextReader {
         let ownApps = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
         let config = SCStreamConfiguration()
         config.sourceRect = Self.sourceRect(clipped, on: screen.frame)
-        // Small captions read more reliably at 2x.
-        let scale: CGFloat = clipped.height < 100 ? 2 : 1
-        config.width = Int(ceil(clipped.width * scale))
-        config.height = Int(ceil(clipped.height * scale))
+        // Point resolution: subtitle text reads as well as at 2x, with fewer misreads
+        // (SpeechDock measured "Donit" at 2x vs "Don't" at 1x).
+        config.width = Int(ceil(clipped.width))
+        config.height = Int(ceil(clipped.height))
         config.showsCursor = false
 
         filter = SCContentFilter(display: display, excludingApplications: ownApps, exceptingWindows: [])
@@ -309,14 +309,21 @@ enum ScreenTextReaderError: LocalizedError {
 /// Committed words form a rolling transcript. Each frame is aligned against its tail with
 /// fuzzy word matching (one misread word does not break the match), so roll-up captions
 /// only yield their new words. A word is committed as soon as another word follows it;
-/// the last word on screen waits until the frame has been stable for `settleDelay`.
-/// A unit ends when the bottom line moves up (a new line starts) or the text pauses.
+/// the last word on screen waits until the frame has settled: briefly for a caption that
+/// popped on whole, longer for a line still growing word by word (roll-up).
+/// A unit ends when the bottom line scrolls up (a new line starts) or the text pauses, so a
+/// two-line pop-on caption stays one unit.
 struct ScreenTextTracker {
+    /// Settle time for a line growing word by word (roll-up captions).
     static let settleDelay: Duration = .milliseconds(500)
+    /// Settle time for a caption that appeared whole: one confirming read.
+    static let popOnSettleDelay: Duration = .milliseconds(150)
     private static let transcriptLimit = 60
 
     private(set) var transcript: [String] = []
     private var lastFrame: [String] = []
+    private var lastRows: [String] = []
+    private var settle = ScreenTextTracker.settleDelay
     /// Words of the last frame not committed yet (the last word, until it settles).
     private var uncommitted: [String] = []
     private var lastChange = ContinuousClock.now
@@ -325,8 +332,18 @@ struct ScreenTextTracker {
     mutating func ingest(_ lines: [String], now: ContinuousClock.Instant) -> [(String, Bool)] {
         let rows = lines.map { $0.split(whereSeparator: \.isWhitespace).map(String.init) }.filter { !$0.isEmpty }
         let frame = rows.flatMap { $0 }
+        var scrolled = false
         if frame != lastFrame {
+            // A frame sharing words with the previous one is a growing or scrolling line;
+            // one with nothing in common popped on whole.
+            let continues = !lastFrame.isEmpty && Self.overlap(lastFrame, frame) > 0
+            settle = continues ? Self.settleDelay : Self.popOnSettleDelay
+            // The previous bottom line now sits above the bottom: it scrolled up.
+            if let previousBottom = lastRows.last.map(Self.normalizedLine), !previousBottom.isEmpty {
+                scrolled = lines.dropLast().contains { Self.normalizedLine($0).hasPrefix(previousBottom) }
+            }
             lastFrame = frame
+            lastRows = lines
             lastChange = now
             signaledPause = false
             if frame.isEmpty {
@@ -338,17 +355,17 @@ struct ScreenTextTracker {
         }
         guard !frame.isEmpty else { return [] }
 
-        let stable = now - lastChange >= Self.settleDelay
+        let stable = now - lastChange >= settle
         let known = Self.overlap(transcript, frame)
         let bottomStart = frame.count - (rows.last?.count ?? 0)
         let commitEnd = stable ? frame.count : frame.count - 1
         var out: [(String, Bool)] = []
 
         if known < bottomStart {
-            // Upper lines have scrolled up, so they are complete.
-            out.append((commit(Array(frame[known..<min(bottomStart, commitEnd)])), true))
-        } else if known == bottomStart, bottomStart > 0, commitEnd > bottomStart {
-            // A new bottom line started after complete lines.
+            // Upper lines are complete; they end a unit only if they scrolled up.
+            out.append((commit(Array(frame[known..<min(bottomStart, commitEnd)])), scrolled))
+        } else if scrolled, known == bottomStart, commitEnd > bottomStart {
+            // A new bottom line started after a line that scrolled up.
             out.append(("", true))
         }
         let start = max(known, bottomStart)
@@ -398,6 +415,10 @@ struct ScreenTextTracker {
         if a == b { return true }
         guard a.count >= 4, b.count >= 4, abs(a.count - b.count) <= 1 else { return false }
         return editDistance(Array(a), Array(b)) <= 1
+    }
+
+    private static func normalizedLine(_ line: String) -> String {
+        line.split(whereSeparator: \.isWhitespace).map { normalized(String($0)) }.joined(separator: " ")
     }
 
     private static func normalized(_ word: String) -> String {
