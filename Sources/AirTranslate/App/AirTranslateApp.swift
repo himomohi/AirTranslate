@@ -63,6 +63,23 @@ private struct CaptureCommands: Commands {
             }
             .keyboardShortcut(.space, modifiers: [.command, .shift])
             .disabled(!session.captureControlState.canTogglePause)
+
+            Divider()
+
+            Button(session.isReadingScreenText || session.isPickingScreenTextRegion
+                ? AppText.stopReadingScreenText : AppText.readScreenText) {
+                session.toggleScreenTextReading()
+            }
+            .keyboardShortcut("o", modifiers: [.command, .shift])
+            .disabled(!session.isReadingScreenText && (session.isRunning || session.isStarting))
+
+            Button(AppText.changeScreenTextRegion) {
+                session.changeScreenTextRegion()
+            }
+            .disabled(!session.canChangeScreenTextRegion)
+
+            Toggle(AppText.screenTextUsesGeminiLive, isOn: $session.screenTextUsesGeminiLive)
+                .disabled(session.isReadingScreenText || !session.hasGeminiAPIKey)
         }
     }
 }
@@ -76,6 +93,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+        ReadScreenShortcut.shared.start { [weak self] in
+            self?.session?.toggleScreenTextReading()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {

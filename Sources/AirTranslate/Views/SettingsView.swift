@@ -72,6 +72,7 @@ struct SettingsView: View {
         switch selectedCategory.wrappedValue {
         case .general:
             generalSettings
+            SettingsGroup(title: SettingsCopy.shortcuts) { ReadScreenShortcutRow() }
             if session.isUsingAppleTextTranslation {
                 AppleTranslationSettingsView(session: session)
             } else {
@@ -352,7 +353,7 @@ struct SettingsView: View {
                 .pickerStyle(.segmented)
                 .tint(AirTranslateDesign.Palette.accent)
                 .labelsHidden()
-                .frame(width: 190)
+                .fixedSize()
                 .allowsHitTesting(segmentedControlAllowsHitTesting())
                 .accessibilityRespondsToUserInteraction(segmentedControlAllowsHitTesting())
                 .opacity(isSessionConfigurationLocked ? 0.6 : 1)
@@ -412,7 +413,7 @@ struct SettingsView: View {
                     .pickerStyle(.segmented)
                     .tint(AirTranslateDesign.Palette.accent)
                     .labelsHidden()
-                    .frame(width: 170)
+                    .fixedSize()
                     .allowsHitTesting(
                         segmentedControlAllowsHitTesting(
                             isOtherwiseAvailable: !session.isUsingProviderRealtimeTranslation
@@ -467,7 +468,7 @@ struct SettingsView: View {
                     }
                     .pickerStyle(.menu)
                     .labelsHidden()
-                    .frame(minWidth: 220, idealWidth: 260, maxWidth: 300)
+                    .fixedSize()
                     .disabled(isSessionConfigurationLocked)
                     .accessibilityLabel(SettingsCopy.translatedSpeechModel)
                     .accessibilityValue(session.speechSynthesisModel.title)
@@ -535,6 +536,27 @@ struct SettingsView: View {
                 }
                 .disabled(isSessionConfigurationLocked || !session.isDubbingEnabled)
             }
+
+            SettingsControlRow(
+                title: SettingsCopy.speaker,
+                detail: SettingsCopy.speakerDetail,
+                systemImage: "hifispeaker"
+            ) {
+                Picker(SettingsCopy.speaker, selection: $session.speechOutputDeviceID) {
+                    ForEach(session.speechOutputDevices) { device in
+                        Text(device.isConnected ? device.name : SettingsCopy.speakerNotConnected(device.name))
+                            .tag(device.id)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .fixedSize()
+                .accessibilityLabel(SettingsCopy.speaker)
+            }
+
+            if session.selectedSpeechOutputDevice?.isConnected == false {
+                SettingsNoticeRow(text: SettingsCopy.speakerNotConnectedNote, systemImage: "info.circle")
+            }
         }
     }
 
@@ -581,7 +603,7 @@ struct SettingsView: View {
                 .pickerStyle(.segmented)
                 .tint(AirTranslateDesign.Palette.accent)
                 .labelsHidden()
-                .frame(width: 190)
+                .fixedSize()
                 .allowsHitTesting(segmentedControlAllowsHitTesting())
                 .accessibilityRespondsToUserInteraction(segmentedControlAllowsHitTesting())
                 .opacity(isSessionConfigurationLocked ? 0.6 : 1)
@@ -1244,6 +1266,39 @@ enum SettingsCopy {
     static let audio = AppText.localized(english: "Audio", korean: "오디오")
     static let assets = AppText.localized(english: "Assets", korean: "자산")
     static let info = AppText.localized(english: "Info", korean: "정보")
+    static let shortcuts = AppText.localized(english: "Shortcuts", korean: "단축키", japanese: "ショートカット", chineseSimplified: "快捷键")
+    static let readScreenShortcut = AppText.localized(
+        english: "Read Screen Shortcut", korean: "화면 읽기 단축키",
+        japanese: "画面読み上げショートカット", chineseSimplified: "朗读屏幕快捷键"
+    )
+    static let readScreenShortcutDetail = AppText.localized(
+        english: "Starts or stops Read Screen Text from any app. Needs ⌘, ⌥ or ⌃.",
+        korean: "어느 앱에서든 화면 텍스트 읽기를 시작하거나 중지합니다. ⌘, ⌥ 또는 ⌃가 필요합니다.",
+        japanese: "どのアプリからでも画面テキストの読み上げを開始/停止します。⌘、⌥、⌃のいずれかが必要です。",
+        chineseSimplified: "在任何应用中开始或停止朗读屏幕文字。需要包含 ⌘、⌥ 或 ⌃。"
+    )
+    static let typeShortcut = AppText.localized(
+        english: "Type shortcut", korean: "단축키 입력", japanese: "ショートカットを入力", chineseSimplified: "输入快捷键"
+    )
+    static let shortcutOff = AppText.localized(english: "Off", korean: "끔", japanese: "オフ", chineseSimplified: "关闭")
+    static let clearShortcut = AppText.localized(
+        english: "Disable shortcut", korean: "단축키 해제", japanese: "ショートカットを無効にする", chineseSimplified: "停用快捷键"
+    )
+    static let resetShortcut = AppText.localized(
+        english: "Reset to ⌥⌘O", korean: "⌥⌘O로 재설정", japanese: "⌥⌘Oに戻す", chineseSimplified: "重置为 ⌥⌘O"
+    )
+    static let shortcutUnavailable = AppText.localized(
+        english: "That shortcut is already in use. Try another.",
+        korean: "이미 사용 중인 단축키입니다. 다른 조합을 시도하세요.",
+        japanese: "そのショートカットは既に使用されています。別の組み合わせをお試しください。",
+        chineseSimplified: "该快捷键已被占用，请尝试其他组合。"
+    )
+    static let shortcutNeedsModifier = AppText.localized(
+        english: "Include ⌘, ⌥ or ⌃ in the shortcut.",
+        korean: "단축키에 ⌘, ⌥ 또는 ⌃를 포함하세요.",
+        japanese: "ショートカットに⌘、⌥、⌃のいずれかを含めてください。",
+        chineseSimplified: "快捷键需包含 ⌘、⌥ 或 ⌃。"
+    )
     static let generalDetail = AppText.localized(
         english: "Set the default translation mode and language behavior.",
         korean: "기본 번역 방식과 언어 동작을 설정합니다."
@@ -1492,6 +1547,29 @@ enum SettingsCopy {
     static let liveTranslationVolumeDetail = AppText.localized(
         english: "Controls the translated speech AirTranslate plays in live translation modes.",
         korean: "실시간 번역 모드에서 AirTranslate가 재생하는 번역 음성 크기를 조절합니다."
+    )
+    static let speaker = AppText.localized(
+        english: "Speaker", korean: "스피커", japanese: "スピーカー", chineseSimplified: "扬声器"
+    )
+    static let speakerDetail = AppText.localized(
+        english: "Choose where translated speech plays, including Read Screen Text. You can change it during capture.",
+        korean: "번역 음성(화면 텍스트 읽기 포함)이 재생될 스피커를 선택합니다. 캡처 중에도 바꿀 수 있습니다.",
+        japanese: "翻訳音声（画面のテキストの読み上げを含む）の再生先を選択します。キャプチャ中も変更できます。",
+        chineseSimplified: "选择译文语音（包括朗读屏幕文字）的播放设备，捕获过程中也可以更改。"
+    )
+    static func speakerNotConnected(_ name: String) -> String {
+        AppText.localized(
+            english: "\(name) (Not connected)",
+            korean: "\(name) (연결되지 않음)",
+            japanese: "\(name)（未接続）",
+            chineseSimplified: "\(name)（未连接）"
+        )
+    }
+    static let speakerNotConnectedNote = AppText.localized(
+        english: "This speaker is not connected. Speech plays on the system default for now and switches back when it reconnects.",
+        korean: "이 스피커가 연결되어 있지 않아 지금은 시스템 기본값으로 재생되며, 다시 연결되면 자동으로 전환됩니다.",
+        japanese: "このスピーカーは接続されていません。今はシステムのデフォルトで再生され、再接続すると自動的に切り替わります。",
+        chineseSimplified: "此扬声器未连接，目前使用系统默认设备播放，重新连接后会自动切换回来。"
     )
     static let voiceOutputDisabledReason = AppText.localized(
         english: "Turn on Voice Output to adjust translated speech volume.",

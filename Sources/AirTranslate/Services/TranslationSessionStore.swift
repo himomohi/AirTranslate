@@ -114,6 +114,8 @@ private enum SettingsKey {
     static let audioInputSource = "audioInputSource"
     static let selectedMicrophoneInputDeviceID = "selectedMicrophoneInputDeviceID"
     static let isAppleSourceAutoDetectionEnabled = "isAppleSourceAutoDetectionEnabled"
+    static let speechOutputDeviceID = "speechOutputDeviceID"
+    static let speechOutputDeviceName = "speechOutputDeviceName"
 }
 
 private struct TranslationRequest {
@@ -538,6 +540,32 @@ final class TranslationSessionStore {
     var isRunning = false
     var isStarting = false
     var isPaused = false
+    /// Whether a screen region is being read, translated and spoken.
+    private(set) var isReadingScreenText = false
+    /// Whether the user is dragging out the region to read.
+    private(set) var isPickingScreenTextRegion = false
+    @ObservationIgnored private var screenTextReader: ScreenTextReader?
+    @ObservationIgnored private var screenTextRegionPicker: ScreenTextRegionPicker?
+    @ObservationIgnored private var screenTextTranslationTask: Task<Void, Never>?
+    @ObservationIgnored private var screenTextInterpreter: GeminiLiveTextInterpreter?
+    /// Words waiting for the end of a caption unit (Apple Translation path).
+    @ObservationIgnored private var screenTextUnit = ""
+    @ObservationIgnored private var screenTextLineIDs: [Int: UUID] = [:]
+    /// Gemini Live speech for screen text. Held turns are released in bursts, so this keeps
+    /// a longer backlog than live interpretation does.
+    @ObservationIgnored private var createdScreenTextAudioOutput: OpenAIRealtimeAudioOutput?
+    private var screenTextAudioOutput: OpenAIRealtimeAudioOutput {
+        if let createdScreenTextAudioOutput { return createdScreenTextAudioOutput }
+        let output = OpenAIRealtimeAudioOutput(maximumBacklogSeconds: 30)
+        output.setOutputDevice(uid: selectedSpeechOutputDeviceUID)
+        createdScreenTextAudioOutput = output
+        return output
+    }
+    /// Read screen text through Gemini Live (translate and speak in one step) when a
+    /// Gemini key is set; otherwise Apple Translation and the selected voice.
+    var screenTextUsesGeminiLive = UserDefaults.standard.object(forKey: "screenTextUsesGeminiLive") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(screenTextUsesGeminiLive, forKey: "screenTextUsesGeminiLive") }
+    }
     var speechSynthesisModel = SpeechSynthesisModel.appleSystem {
         didSet {
             guard speechSynthesisModel != oldValue else { return }
@@ -1253,6 +1281,23 @@ final class TranslationSessionStore {
         didSet { persistSelectedSettings() }
     }
     var microphoneInputDevices = MicrophoneDeviceCatalog.availableInputDevices()
+    /// Speaker for translated speech. Changing it applies at once, even during capture.
+    var speechOutputDeviceID = SpeechOutputDevice.systemDefaultID {
+        didSet {
+            if let device = speechOutputDevices.first(where: { $0.id == speechOutputDeviceID }), device.isConnected {
+                speechOutputDeviceName = device.name
+            }
+            persistSelectedSettings()
+            refreshSpeechOutputDevices()
+        }
+    }
+    /// Name of the chosen speaker, kept to show it while it is disconnected.
+    private(set) var speechOutputDeviceName = ""
+    var speechOutputDevices: [SpeechOutputDevice] = []
+    var selectedSpeechOutputDevice: SpeechOutputDevice? {
+        speechOutputDevices.first { $0.id == speechOutputDeviceID }
+    }
+    @ObservationIgnored private var speechOutputDeviceListener: AudioObjectPropertyListenerBlock?
     var statusMessage = AppText.ready
     var captureStartFailureMessage: String?
     var captureStartRecoveryAction: CaptureStartRecoveryAction?
@@ -1573,6 +1618,8 @@ final class TranslationSessionStore {
             self?.statusMessage = error.localizedDescription
         }
         applyTranslatedVoiceVolume()
+        refreshSpeechOutputDevices()
+        observeSpeechOutputDeviceChanges()
         syncLiveOutputModeWithLanguagePair()
         systemAudioCapture.delegate = self
         microphoneAudioCapture.delegate = self
@@ -1626,6 +1673,7 @@ final class TranslationSessionStore {
     }
 
     func start() {
+        stopScreenTextReading()
         isPreviewingFloatingCaptions = false
         guard !isRunning, !isStarting, !capturePermissionSetup.isRequesting else { return }
         capturePermissionSetup.dismissPendingSetup()
@@ -1756,6 +1804,202 @@ final class TranslationSessionStore {
                     configuration: configuration
                 )
             }
+        }
+    }
+
+    // MARK: - Screen text
+
+    func toggleScreenTextReading() {
+        if isReadingScreenText || isPickingScreenTextRegion {
+            stopScreenTextReading()
+        } else {
+            startScreenTextReading()
+        }
+    }
+
+    /// Keeps reading the text of the last screen region (or one the user drags out when
+    /// there is none on a connected screen): each new line is translated into the target
+    /// language and spoken.
+    func startScreenTextReading() {
+        startScreenTextReading(picksRegion: false)
+    }
+
+    /// Whether "Change Region" can be used now.
+    var canChangeScreenTextRegion: Bool {
+        !isPickingScreenTextRegion && (isReadingScreenText || (!isRunning && !isStarting))
+    }
+
+    /// Lets the user drag out a new region: reading switches to it without stopping speech,
+    /// or starts on it when not reading.
+    func changeScreenTextRegion() {
+        guard canChangeScreenTextRegion else { return }
+        guard isReadingScreenText else { return startScreenTextReading(picksRegion: true) }
+        pickScreenTextRegion { [weak self] region in
+            ScreenTextRegion.save(region)
+            self?.screenTextReader?.setRegion(region)
+        }
+    }
+
+    private func startScreenTextReading(picksRegion: Bool) {
+        guard !isReadingScreenText, !isPickingScreenTextRegion, !isRunning, !isStarting else { return }
+        guard systemAudioCapture.screenRecordingAccessOutcome() == .allowed else {
+            presentCaptureStartFailure(
+                CaptureError.screenRecordingNotGranted.localizedDescription,
+                recoveryAction: .privacy(.screenRecording)
+            )
+            return
+        }
+        dismissCaptureStartFailure()
+        if !picksRegion, let region = ScreenTextRegion.saved(),
+           ScreenTextRegion.isOnScreen(region, screens: NSScreen.screens.map(\.frame)) {
+            beginScreenTextReading(in: region)
+        } else {
+            pickScreenTextRegion { [weak self] region in self?.beginScreenTextReading(in: region) }
+        }
+    }
+
+    private func pickScreenTextRegion(then onPicked: @escaping (CGRect) -> Void) {
+        isPickingScreenTextRegion = true
+        let picker = ScreenTextRegionPicker()
+        picker.onPicked = { [weak self] region in
+            self?.screenTextRegionPicker = nil
+            self?.isPickingScreenTextRegion = false
+            onPicked(region)
+        }
+        picker.onCancel = { [weak self] in
+            self?.screenTextRegionPicker = nil
+            self?.isPickingScreenTextRegion = false
+        }
+        screenTextRegionPicker = picker
+        picker.begin()
+    }
+
+    func stopScreenTextReading() {
+        if isPickingScreenTextRegion {
+            screenTextRegionPicker?.end()
+            screenTextRegionPicker = nil
+            isPickingScreenTextRegion = false
+        }
+        guard isReadingScreenText else { return }
+        screenTextReader?.stop()
+        screenTextReader = nil
+        screenTextTranslationTask?.cancel()
+        screenTextTranslationTask = nil
+        screenTextInterpreter?.stop()
+        screenTextInterpreter = nil
+        stopSpeaking()
+        isReadingScreenText = false
+        statusMessage = AppText.ready
+    }
+
+    private func beginScreenTextReading(in region: CGRect) {
+        guard !isRunning, !isStarting else { return }
+        ScreenTextRegion.save(region)
+        let reader = ScreenTextReader(region: region, language: sourceLanguage)
+        reader.onRegionChanged = { region in ScreenTextRegion.save(region) }
+        reader.onText = { [weak self] text, endsUnit in self?.handleScreenText(text, endsUnit: endsUnit) }
+        reader.onFailure = { [weak self] error in
+            self?.stopScreenTextReading()
+            if ScreenTextReader.isPermissionDenial(error) {
+                self?.presentCaptureStartFailure(
+                    CaptureError.screenRecordingNotGranted.localizedDescription,
+                    recoveryAction: .privacy(.screenRecording)
+                )
+            } else {
+                self?.presentCaptureStartFailure(error.localizedDescription, recoveryAction: .retry)
+            }
+        }
+        resetLiveSessionState(clearsVisibleLines: true)
+        stopSpeaking()
+        applyTranslatedVoiceVolume()
+        screenTextUnit = ""
+        screenTextLineIDs.removeAll()
+        screenTextReader = reader
+        isReadingScreenText = true
+        statusMessage = AppText.readingScreenText
+        if screenTextUsesGeminiLive, hasGeminiAPIKey {
+            let interpreter = GeminiLiveTextInterpreter(
+                configuration: .init(sourceLanguage: sourceLanguage.title, targetLanguage: targetLanguage.title),
+                audio: screenTextAudioOutput
+            )
+            screenTextAudioOutput.setVolume(translatedVoiceVolume)
+            interpreter.onTurnStarted = { [weak self] turn, text in
+                guard let self else { return }
+                screenTextLineIDs[turn] = appendScreenTextLine(text).id
+            }
+            interpreter.onTranscript = { [weak self] turn, translation in
+                guard let self, let id = screenTextLineIDs[turn] else { return }
+                showScreenTextTranslation(translation, lineID: id)
+            }
+            interpreter.onError = { [weak self] message in
+                guard let self, isReadingScreenText else { return }
+                statusMessage = message ?? AppText.readingScreenText
+            }
+            screenTextInterpreter = interpreter
+            interpreter.prepare()
+        }
+        reader.start()
+    }
+
+    private func appendScreenTextLine(_ text: String) -> CaptionLine {
+        let line = CaptionLine(sourceText: text, translatedText: "", createdAt: Date(), isFinal: true)
+        lines.append(line)
+        if lines.count > 200 { lines.removeFirst(lines.count - 200) }
+        return line
+    }
+
+    private func showScreenTextTranslation(_ translation: String, lineID: UUID) {
+        guard isReadingScreenText, let index = lines.lastIndex(where: { $0.id == lineID }) else { return }
+        let line = lines[index]
+        lines[index] = CaptionLine(
+            id: line.id, sourceText: line.sourceText, translatedText: translation,
+            translatedSourceText: line.sourceText, createdAt: line.createdAt, isFinal: true,
+            revision: line.revision + 1
+        )
+    }
+
+    private func handleScreenText(_ words: String, endsUnit: Bool) {
+        guard isReadingScreenText else { return }
+        if let screenTextInterpreter {
+            // One caption card per unit Gemini receives (see onTurnStarted).
+            screenTextInterpreter.enqueue(words, endsUnit: endsUnit)
+            return
+        }
+        if !words.isEmpty { screenTextUnit = GeminiLiveTextInterpreter.joined(screenTextUnit, words) }
+        let wordCount = screenTextUnit.split(whereSeparator: \.isWhitespace).count
+        guard !screenTextUnit.isEmpty,
+              endsUnit || wordCount >= GeminiLiveTextInterpreter.maxUnitWords else { return }
+        let text = screenTextUnit
+        screenTextUnit = ""
+        let line = appendScreenTextLine(text)
+
+        let source = sourceLanguage
+        let target = targetLanguage
+        let model: IntelligenceModel = selectedModel == .appleOnDevice ? .appleOnDevice : .appleSystem
+        let options = appleTranslationOptions
+        // Chain lines so translations land and are spoken in screen order.
+        let previous = screenTextTranslationTask
+        screenTextTranslationTask = Task { @MainActor [weak self] in
+            await previous?.value
+            guard let self, !Task.isCancelled, isReadingScreenText else { return }
+            let translated: String
+            if source.id == target.id {
+                translated = text
+            } else {
+                do {
+                    translated = try await translator.translate(
+                        text, source: source, target: target, model: model, options: options
+                    )
+                } catch {
+                    guard !Task.isCancelled, isReadingScreenText else { return }
+                    statusMessage = error.localizedDescription
+                    return
+                }
+            }
+            guard !Task.isCancelled, isReadingScreenText else { return }
+            showScreenTextTranslation(translated, lineID: line.id)
+            statusMessage = AppText.readingScreenText
+            speak(translated)
         }
     }
 
@@ -2373,6 +2617,7 @@ final class TranslationSessionStore {
     }
 
     func prepareForTermination() {
+        stopScreenTextReading()
         if isUsingHyMT, isRunning {
             freezeHyMTRecognition()
             flushPendingRecognizedCaption()
@@ -2454,6 +2699,39 @@ final class TranslationSessionStore {
     var selectedMicrophoneDevice: MicrophoneInputDevice {
         microphoneInputDevices.first { $0.id == selectedMicrophoneInputDeviceID }
             ?? .systemDefault
+    }
+
+    private var selectedSpeechOutputDeviceUID: String? {
+        speechOutputDeviceID == SpeechOutputDevice.systemDefaultID ? nil : speechOutputDeviceID
+    }
+
+    /// Re-reads the connected speakers and re-applies the chosen one to every output.
+    /// A disconnected choice stays selected; the outputs play on the system default
+    /// until it reconnects.
+    func refreshSpeechOutputDevices() {
+        let devices = SpeechOutputDeviceCatalog.availableOutputDevices(
+            selectedID: speechOutputDeviceID, selectedName: speechOutputDeviceName
+        )
+        if devices != speechOutputDevices { speechOutputDevices = devices }
+        let uid = selectedSpeechOutputDeviceUID
+        speechOutput.setOutputDevice(uid: uid)
+        geminiSpeechOutput.setOutputDevice(uid: uid)
+        maiSpeechOutput.setOutputDevice(uid: uid)
+        openAIRealtimeAudioOutput.setOutputDevice(uid: uid)
+        createdScreenTextAudioOutput?.setOutputDevice(uid: uid)
+    }
+
+    private func observeSpeechOutputDeviceChanges() {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            MainActor.assumeIsolated { self?.refreshSpeechOutputDevices() }
+        }
+        speechOutputDeviceListener = listener
+        AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, .main, listener)
     }
 
     func refreshMicrophoneInputDevices() {
@@ -4820,6 +5098,10 @@ final class TranslationSessionStore {
         isAppleSourceAutoDetectionEnabled = isAppleSourceAutoDetectionAvailable
             && defaults.bool(forKey: SettingsKey.isAppleSourceAutoDetectionEnabled)
         refreshMicrophoneInputDevices()
+        if let deviceID = defaults.string(forKey: SettingsKey.speechOutputDeviceID) {
+            speechOutputDeviceName = defaults.string(forKey: SettingsKey.speechOutputDeviceName) ?? ""
+            speechOutputDeviceID = deviceID
+        }
         azureSpeechEndpoint = defaults.string(forKey: "azureSpeechEndpoint") ?? ""
         azureTranscriptionModel = defaults.string(forKey: "azureTranscriptionModel").flatMap(AzureTranscriptionModel.init(rawValue:)) ?? .transcribe2
         maiStreamingEndpoint = defaults.string(forKey: "maiStreamingEndpoint") ?? ""
@@ -4977,6 +5259,8 @@ final class TranslationSessionStore {
         defaults.set(sessionDurationMode.id, forKey: SettingsKey.sessionDurationMode)
         defaults.set(audioInputSource.id, forKey: SettingsKey.audioInputSource)
         defaults.set(selectedMicrophoneInputDeviceID, forKey: SettingsKey.selectedMicrophoneInputDeviceID)
+        defaults.set(speechOutputDeviceID, forKey: SettingsKey.speechOutputDeviceID)
+        defaults.set(speechOutputDeviceName, forKey: SettingsKey.speechOutputDeviceName)
         defaults.set(isAppleSourceAutoDetectionEnabled, forKey: SettingsKey.isAppleSourceAutoDetectionEnabled)
     }
 

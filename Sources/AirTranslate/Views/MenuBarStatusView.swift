@@ -139,6 +139,8 @@ struct MenuBarStatusView: View {
                 .accessibilityValue(session.audioInputSource.title)
             }
 
+            readScreenButton
+
             if session.isRunning {
                 Button {
                     session.isPaused ? session.resume() : session.pause()
@@ -159,6 +161,45 @@ struct MenuBarStatusView: View {
                 .buttonStyle(AirTranslatePressButtonStyle())
                 .disabled(!session.captureControlState.canTogglePause)
             }
+        }
+    }
+
+    private var readScreenButton: some View {
+        let isActive = session.isReadingScreenText || session.isPickingScreenTextRegion
+        let title = isActive ? AppText.stopReadingScreenText : AppText.readScreenText
+        return Button {
+            session.toggleScreenTextReading()
+        } label: {
+            ControlTileLabel(
+                systemImage: isActive ? "stop.fill" : "text.viewfinder",
+                title: title,
+                subtitle: isActive ? AppText.readingScreenText : AppText.readScreenTextHelp,
+                tint: isActive ? AirTranslateDesign.Palette.danger : AirTranslateDesign.Palette.accent,
+                isSelected: isActive
+            )
+        }
+        .buttonStyle(AirTranslatePressButtonStyle())
+        .disabled(!isActive && (session.isRunning || session.isStarting))
+        .help(isActive ? title : AppText.readScreenTextHelp)
+        .accessibilityLabel(title)
+        .overlay(alignment: .bottomTrailing) {
+            Button {
+                session.changeScreenTextRegion()
+            } label: {
+                Image(systemName: "rectangle.dashed")
+                    .font(.system(size: 12, weight: .semibold))
+                    .frame(width: 26, height: 26)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .padding(6)
+            .disabled(!session.canChangeScreenTextRegion)
+            .help(AppText.changeScreenTextRegion)
+            .accessibilityLabel(AppText.changeScreenTextRegion)
+        }
+        .contextMenu {
+            Button(AppText.changeScreenTextRegion) { session.changeScreenTextRegion() }
+                .disabled(!session.canChangeScreenTextRegion)
         }
     }
 

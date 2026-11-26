@@ -88,6 +88,7 @@ final class MAIVoiceSpeechOutput: NSObject, AVAudioPlayerDelegate {
     private var player: AVAudioPlayer?
     private var playback: CheckedContinuation<Void, Error>?
     private var volume: Float = 1
+    private var outputDeviceUID: String?
     var onFailure: ((MAIVoiceError) -> Void)?
 
     init(configuration: URLSessionConfiguration = .ephemeral,
@@ -162,6 +163,9 @@ final class MAIVoiceSpeechOutput: NSObject, AVAudioPlayerDelegate {
     private func play(_ audio: Data) async throws {
         let next = try AVAudioPlayer(data: audio)
         next.volume = volume
+        if let uid = outputDeviceUID, SpeechOutputDeviceCatalog.deviceID(forUID: uid) != nil {
+            next.currentDevice = uid
+        }
         next.delegate = self
         guard next.prepareToPlay() else { throw MAIVoiceError.invalidAudio }
         player = next
@@ -249,5 +253,11 @@ enum MAIVoiceError: LocalizedError {
         case .textTooLong: AppText.localized(english: "MAI Voice text exceeds the request limit.", korean: "MAI Voice 요청의 텍스트 길이 제한을 초과했습니다.")
         default: AppText.localized(english: "MAI Voice audio generation or playback failed. Captions remain available.", korean: "MAI Voice 음성 생성 또는 재생에 실패했습니다. 자막은 계속 사용할 수 있습니다.")
         }
+    }
+}
+
+extension MAIVoiceSpeechOutput: @MainActor SpeechOutputRouting {
+    func setOutputDevice(uid: String?) {
+        outputDeviceUID = uid
     }
 }

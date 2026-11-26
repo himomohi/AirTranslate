@@ -208,6 +208,51 @@ enum AppText {
     static let cancel = localized(english: "Cancel", korean: "취소", japanese: "キャンセル", chineseSimplified: "取消")
     static let pause = localized(english: "Pause", korean: "일시정지", japanese: "一時停止", chineseSimplified: "暂停")
     static let resume = localized(english: "Resume", korean: "재개", japanese: "再開", chineseSimplified: "继续")
+    static let readScreenText = localized(
+        english: "Read Screen Text", korean: "화면 텍스트 읽기", japanese: "画面のテキストを読む", chineseSimplified: "朗读屏幕文字"
+    )
+    static let stopReadingScreenText = localized(
+        english: "Stop Reading Screen Text", korean: "화면 텍스트 읽기 중지", japanese: "画面のテキストの読み上げを停止", chineseSimplified: "停止朗读屏幕文字"
+    )
+    static let systemDefaultSpeaker = localized(
+        english: "System Default", korean: "시스템 기본값", japanese: "システムのデフォルト", chineseSimplified: "系统默认"
+    )
+    static let readScreenShort = localized(
+        english: "Read Screen", korean: "화면 읽기", japanese: "画面を読む", chineseSimplified: "读屏幕"
+    )
+    static let stopReadingScreenShort = localized(
+        english: "Stop Reading", korean: "읽기 중지", japanese: "読み取り停止", chineseSimplified: "停止读取"
+    )
+    static let readScreenTextHelp = localized(
+        english: "Pick a screen region, such as video subtitles. New text there is translated and read aloud.",
+        korean: "동영상 자막 같은 화면 영역을 선택하세요. 새로 나타나는 텍스트를 번역해 읽어 줍니다.",
+        japanese: "動画の字幕など、画面の領域を選びます。新しく表示されたテキストを翻訳して読み上げます。",
+        chineseSimplified: "选择屏幕区域（如视频字幕）。该区域出现的新文字会被翻译并朗读。"
+    )
+    static let readingScreenText = localized(
+        english: "Reading screen text…", korean: "화면 텍스트를 읽는 중…", japanese: "画面のテキストを読んでいます…", chineseSimplified: "正在读取屏幕文字…"
+    )
+    static let changeScreenTextRegion = localized(
+        english: "Change Region…", korean: "영역 변경…", japanese: "領域を変更…", chineseSimplified: "更改区域…"
+    )
+    static let screenTextPickRegionHint = localized(
+        english: "Drag over the text to read · Esc to cancel",
+        korean: "읽을 텍스트 위로 드래그하세요 · Esc로 취소",
+        japanese: "読み取るテキストをドラッグで囲みます · Esc でキャンセル",
+        chineseSimplified: "拖动框选要读取的文字 · 按 Esc 取消"
+    )
+    static let screenTextUsesGeminiLive = localized(
+        english: "Speak Screen Text with Gemini Live", korean: "Gemini Live로 화면 텍스트 말하기",
+        japanese: "Gemini Liveで画面のテキストを話す", chineseSimplified: "用 Gemini Live 朗读屏幕文字"
+    )
+    static let geminiLiveScreenTextTimedOut = localized(
+        english: "Gemini Live didn't answer in time; reconnecting.", korean: "Gemini Live 응답이 늦어 다시 연결합니다.",
+        japanese: "Gemini Live の応答が遅いため再接続します。", chineseSimplified: "Gemini Live 响应超时，正在重新连接。"
+    )
+    static let screenTextCaptureFailed = localized(
+        english: "Couldn't keep capturing the screen region.", korean: "화면 영역을 계속 캡처할 수 없습니다.",
+        japanese: "画面の領域をキャプチャし続けられませんでした。", chineseSimplified: "无法持续捕获屏幕区域。"
+    )
     static let languages = localized(english: "Languages", korean: "언어", japanese: "言語", chineseSimplified: "语言")
     static let from = localized(english: "From", korean: "원문", japanese: "原文", chineseSimplified: "原文")
     static let to = localized(english: "To", korean: "번역", japanese: "翻訳", chineseSimplified: "译文")

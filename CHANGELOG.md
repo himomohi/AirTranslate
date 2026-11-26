@@ -4,6 +4,19 @@ All notable changes to AirTranslate are documented in this file.
 
 Former README release highlights: [English](Release/README-HISTORY/README.md), [한국어](Release/README-HISTORY/README.ko.md), [日本語](Release/README-HISTORY/README.ja.md), [简体中文](Release/README-HISTORY/README.zh-CN.md).
 
+## Unreleased
+
+### Added
+
+- **Read Screen Text** lets you pick a region of the screen, such as video subtitles. AirTranslate reads new text in that region with macOS OCR and speaks it in the target language through Gemini Live. Without a Gemini key, it uses Apple Translation and the selected voice. Start it from the console button, **Capture > Read Screen Text** (⇧⌘O), or the menu bar panel tile.
+- Read Screen Text remembers its region and starts on it next time. **Change Region** picks a new one without stopping speech. While reading, drag the outline's handle to move it, or its edges to resize it.
+- A global shortcut starts and stops Read Screen Text from any app: ⌥⌘O by default. Change, clear or reset it in **Settings > General**. It needs no Accessibility permission.
+- **Settings > Output > Speaker** chooses where translated speech plays: System Default or any connected output device. The choice is remembered. If the speaker is disconnected, it stays selected and speech plays on the system default until it reconnects. You can change it during capture.
+
+### Fixed
+
+- Segmented controls in Settings (Output Mode, Session Length) no longer overflow outside their card at narrow Settings widths.
+
 ## 1.20.0 - 2026-11-22
 
 ### Added
