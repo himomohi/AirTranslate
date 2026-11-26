@@ -33,6 +33,17 @@ final class OpenAIRealtimeAudioOutput: @unchecked Sendable {
         }
     }
 
+    /// Seconds of audio scheduled but not yet played (at normal speed).
+    func backlogSeconds() -> Double {
+        queue.sync {
+            guard let format, player.isPlaying,
+                  let nodeTime = player.lastRenderTime,
+                  let playerTime = player.playerTime(forNodeTime: nodeTime),
+                  playerTime.isSampleTimeValid else { return 0 }
+            return max(0, Double(scheduledFrames - max(0, playerTime.sampleTime)) / format.sampleRate)
+        }
+    }
+
     func playPCM16Base64(_ audio: String, sampleRate: Double) {
         queue.async { [weak self, audio] in
             guard let data = Data(base64Encoded: audio), !data.isEmpty else { return }

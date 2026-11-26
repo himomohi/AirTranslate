@@ -9,17 +9,22 @@ protocol ScreenTextAudioSink: AnyObject {
     func setRate(_ rate: Float)
     func setVolume(_ volume: Double)
     func stop()
+    func backlogSeconds() -> Double
 }
 
 extension OpenAIRealtimeAudioOutput: ScreenTextAudioSink {}
 
 /// Speaks screen text in another language through Gemini Live.
 ///
-/// Text is grouped into phrases (a sentence end, a few words, or a short pause), and each
-/// phrase is one turn: it goes out as text and comes back as streamed speech in the target
-/// language. Gemini streams a reply at about real-time speed, so one session alone falls
-/// behind fast subtitles; turns are spread over two sessions so the next phrase is generated
-/// while the current one is still speaking. Audio is played strictly in turn order.
+/// Caption units (a finished caption line or a pause) are sent as turns, each with the
+/// preceding words as context, and come back as streamed speech in the target language.
+/// Gemini streams a reply at about real-time speed, so turns are spread over two sessions:
+/// the next unit is generated while the current one is speaking, and audio plays strictly
+/// in turn order.
+///
+/// Lag control: the estimated delay (unplayed audio, held audio, text not yet spoken) sets
+/// the playback rate, and past `condenseLag` the next turn asks Gemini to condense. Nothing
+/// is dropped; when far behind, everything waiting becomes one condensed turn.
 @MainActor
 final class GeminiLiveTextInterpreter {
     struct Configuration: Equatable {
@@ -30,12 +35,16 @@ final class GeminiLiveTextInterpreter {
     }
 
     static let laneCount = 2
-    static let normalRate: Float = 1.1
-    static let catchUpRate: Float = 1.3
-    /// A phrase is sent once it has this many words, ends a sentence, or waited `phraseDelay`.
-    nonisolated static let phraseWords = 6
-    static let phraseDelay: Duration = .milliseconds(800)
+    /// Waiting text is sent anyway once it has this many words or waited this long.
+    nonisolated static let maxUnitWords = 14
+    static let maxUnitWait: Duration = .milliseconds(2500)
+    /// Estimated speaking time per source character (measured: ~35 ms).
+    nonisolated static let secondsPerCharacter = 0.035
+    nonisolated static let condenseLag = 3.0
+    nonisolated static let farBehindLag = 6.0
+    private static let contextWords = 15
     private static let outputSampleRate = 24_000.0
+    private static let bytesPerSecond = 48_000.0  // 24 kHz, 16-bit mono
 
     let configuration: Configuration
     /// A turn was sent: (turn, source text).
@@ -50,9 +59,17 @@ final class GeminiLiveTextInterpreter {
     private var lanes: [GeminiLiveLane] = []
 
     private var pending = ""
+    private var pendingReady = false
     private var pendingSince: ContinuousClock.Instant?
     private var flushTask: Task<Void, Never>?
-    private var lastQueued = ""
+    private var rateTask: Task<Void, Never>?
+    /// Recent source words, sent as context with the next turn.
+    private var context: [String] = []
+    /// Estimated speech still to come for each sent turn, and whether its leading silence is trimmed.
+    private var expectedSeconds: [Int: Double] = [:]
+    private var receivedSeconds: [Int: Double] = [:]
+    private var speechStarted: Set<Int> = []
+    private(set) var lag: Double = 0
 
     // Turn order: audio of turn `playHead` goes straight to the player; later turns are held.
     private struct HeldTurn {
@@ -93,18 +110,24 @@ final class GeminiLiveTextInterpreter {
         for lane in lanes { lane.prepare() }
     }
 
-    func enqueue(_ text: String) {
-        let line = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !line.isEmpty, line != lastQueued else { return }
-        lastQueued = line
-        pending = Self.joined(pending, line)
-        if pendingSince == nil { pendingSince = .now }
+    /// Adds new caption words; `endsUnit` marks a finished caption line or a pause.
+    func enqueue(_ text: String, endsUnit: Bool) {
+        let words = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !words.isEmpty {
+            pending = Self.joined(pending, words)
+            if pendingSince == nil { pendingSince = .now }
+        }
+        if endsUnit, !pending.isEmpty { pendingReady = true }
+        startRateControl()
         dispatch()
     }
 
     func stop() {
         flushTask?.cancel()
+        rateTask?.cancel()
+        rateTask = nil
         pending = ""
+        pendingReady = false
         held.removeAll()
         for lane in lanes { lane.close() }
         audio.stop()
@@ -113,18 +136,16 @@ final class GeminiLiveTextInterpreter {
 
     // MARK: - Phrases and turns
 
-    /// Sends the pending text on a free session once it reads as a phrase.
+    /// Sends the pending text on a free session once it is a complete unit.
     private func dispatch(force: Bool = false) {
         flushTask?.cancel()
         flushTask = nil
-        guard !pending.isEmpty, let lane = lanes.first(where: { $0.turn == nil }) else {
-            updateRate()
-            return
-        }
+        guard !pending.isEmpty, let lane = lanes.first(where: { $0.turn == nil }) else { return }
         let waited = pendingSince.map { ContinuousClock.now - $0 } ?? .zero
-        guard force || Self.isPhrase(pending) || waited >= Self.phraseDelay else {
+        let wordCount = pending.split(whereSeparator: \.isWhitespace).count
+        guard force || pendingReady || wordCount >= Self.maxUnitWords || waited >= Self.maxUnitWait else {
             flushTask = Task { [weak self] in
-                try? await Task.sleep(for: Self.phraseDelay - waited)
+                try? await Task.sleep(for: Self.maxUnitWait - waited)
                 guard !Task.isCancelled else { return }
                 self?.dispatch(force: true)
             }
@@ -132,25 +153,46 @@ final class GeminiLiveTextInterpreter {
         }
         let text = pending
         pending = ""
+        pendingReady = false
         pendingSince = nil
         lastSentTurn += 1
         let turn = lastSentTurn
+        updateLag()
+        let message = Self.turnMessage(text, context: context.joined(separator: " "), lag: lag)
+        context = Array((context + text.split(whereSeparator: \.isWhitespace).map(String.init)).suffix(Self.contextWords))
+        expectedSeconds[turn] = Double(text.count) * Self.secondsPerCharacter
         onTurnStarted?(turn, text)
-        screenTextLog.notice("turn \(turn, privacy: .public) sent on lane \(lane.index, privacy: .public) (\(text.count, privacy: .public) chars)")
-        updateRate()
+        screenTextLog.notice("turn \(turn, privacy: .public) sent on lane \(lane.index, privacy: .public) (\(text.count, privacy: .public) chars, lag \(self.lag, format: .fixed(precision: 1), privacy: .public) s)")
         if let sendOverride {
             lane.turn = turn
             Task { [weak self] in
-                do { try await sendOverride(lane.index, text) } catch { self?.turnFinished(turn, lane: lane) }
+                do { try await sendOverride(lane.index, message) } catch { self?.turnFinished(turn, lane: lane) }
             }
         } else {
-            lane.send(text, turn: turn)
+            lane.send(message, turn: turn)
         }
     }
 
-    nonisolated static func isPhrase(_ text: String) -> Bool {
-        if let last = text.last, ".!?…。！？".contains(last) { return true }
-        return text.split(whereSeparator: \.isWhitespace).count >= phraseWords
+    /// The turn text: preceding words as context, the words to translate, and a word budget
+    /// when speech is behind.
+    nonisolated static func turnMessage(_ text: String, context: String, lag: Double) -> String {
+        var message = ""
+        if !context.isEmpty { message += "Context (do not translate): \(context)\n" }
+        message += "Translate: \(text)"
+        let words = text.split(whereSeparator: \.isWhitespace).count
+        if lag > farBehindLag {
+            message += "\n(Far behind the video: say it in at most \(max(4, words / 3)) words.)"
+        } else if lag > condenseLag {
+            message += "\n(Behind the video: condense to at most \(max(5, words / 2)) words.)"
+        }
+        return message
+    }
+
+    /// Playback speed for an estimated lag in seconds.
+    nonisolated static func rate(forLag lag: Double) -> Float {
+        if lag <= 1.5 { return 1.1 }
+        if lag >= 3 { return 1.5 }
+        return Float(1.1 + (lag - 1.5) / 1.5 * 0.4)
     }
 
     /// Appends `line`, keeping only the most recent ~400 characters.
@@ -164,6 +206,9 @@ final class GeminiLiveTextInterpreter {
     private func turnFinished(_ turn: Int, lane: GeminiLiveLane) {
         guard lane.turn == turn else { return }
         lane.finishTurn()
+        expectedSeconds[turn] = nil
+        receivedSeconds[turn] = nil
+        speechStarted.remove(turn)
         screenTextLog.notice("turn \(turn, privacy: .public) complete")
         if turn == playHead {
             advancePlayHead()
@@ -182,13 +227,47 @@ final class GeminiLiveTextInterpreter {
             guard turn.complete else { break }
             playHead += 1
         }
-        updateRate()
     }
 
-    /// Faster while more turns or text wait behind the one playing.
-    private func updateRate() {
-        let behind = lastSentTurn > playHead || !pending.isEmpty
-        audio.setRate(behind ? Self.catchUpRate : Self.normalRate)
+    // MARK: - Lag control
+
+    private func startRateControl() {
+        guard rateTask == nil else { return }
+        rateTask = Task { [weak self] in
+            while !Task.isCancelled {
+                self?.updateLag()
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+        }
+    }
+
+    /// Estimated seconds between what is on screen and what is being heard.
+    private func updateLag() {
+        let held = held.values.reduce(0.0) { total, turn in
+            total + turn.chunks.reduce(0.0) { $0 + Double($1.count) * 0.75 / Self.bytesPerSecond }
+        }
+        let coming = expectedSeconds.reduce(0.0) { total, entry in
+            total + max(0, entry.value - (receivedSeconds[entry.key] ?? 0))
+        }
+        lag = audio.backlogSeconds() + held + coming + Double(pending.count) * Self.secondsPerCharacter
+        audio.setRate(Self.rate(forLag: lag))
+    }
+
+    // MARK: - Leading silence
+
+    /// Drops near-silent samples before a turn's speech starts (base64 PCM16 little-endian).
+    nonisolated static func trimmingLeadingSilence(_ base64: String, threshold: Int16 = 500) -> String? {
+        guard let data = Data(base64Encoded: base64) else { return base64 }
+        let samples = data.count / 2
+        var first: Int?
+        data.withUnsafeBytes { raw in
+            for index in 0..<samples {
+                let sample = Int16(littleEndian: raw.loadUnaligned(fromByteOffset: index * 2, as: Int16.self))
+                if sample > threshold || sample < -threshold { first = index; break }
+            }
+        }
+        guard let first else { return nil }
+        return first == 0 ? base64 : data.dropFirst(first * 2).base64EncodedString()
     }
 
     // MARK: - Server messages
@@ -209,8 +288,14 @@ final class GeminiLiveTextInterpreter {
         if let parts = (content["modelTurn"] as? [String: Any])?["parts"] as? [[String: Any]] {
             for part in parts {
                 guard let inline = part["inlineData"] as? [String: Any],
-                      let base64 = inline["data"] as? String else { continue }
+                      var base64 = inline["data"] as? String else { continue }
                 onError?(nil)
+                receivedSeconds[turn, default: 0] += Double(base64.count) * 0.75 / Self.bytesPerSecond
+                if !speechStarted.contains(turn) {
+                    guard let trimmed = Self.trimmingLeadingSilence(base64) else { continue }
+                    speechStarted.insert(turn)
+                    base64 = trimmed
+                }
                 if turn == playHead {
                     audio.playPCM16Base64(base64, sampleRate: Self.outputSampleRate)
                 } else {
@@ -230,12 +315,13 @@ final class GeminiLiveTextInterpreter {
 
     nonisolated static func setupMessage(for configuration: Configuration) -> [String: Any] {
         let instruction = """
-            You are a live dubbing interpreter. Every user message is a phrase of on-screen text \
-            (usually video subtitles) in \(configuration.sourceLanguage); it may be part of a \
-            longer sentence. Respond only by speaking its translation in \
-            \(configuration.targetLanguage), concisely and at a brisk pace so it keeps up with the \
-            video, in the speaker's tone. Never add greetings, explanations, questions or anything \
-            that is not in the text.
+            You are a live dubbing interpreter for a video. Each user message gives the previous \
+            caption words as context and, after "Translate:", new caption words in \
+            \(configuration.sourceLanguage); they may continue a sentence. Respond only by \
+            speaking the translation of the new words in \(configuration.targetLanguage), \
+            concisely and at a brisk pace, in the speaker's tone. Never speak the context, and \
+            never add greetings, explanations, questions or anything that is not in the new \
+            words. If asked to condense, keep the meaning in fewer words.
             """
         return [
             "setup": [

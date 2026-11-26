@@ -546,7 +546,8 @@ final class TranslationSessionStore {
     @ObservationIgnored private var screenTextRegionPicker: ScreenTextRegionPicker?
     @ObservationIgnored private var screenTextTranslationTask: Task<Void, Never>?
     @ObservationIgnored private var screenTextInterpreter: GeminiLiveTextInterpreter?
-    @ObservationIgnored private var lastScreenText = ""
+    /// Words waiting for the end of a caption unit (Apple Translation path).
+    @ObservationIgnored private var screenTextUnit = ""
     @ObservationIgnored private var screenTextLineIDs: [Int: UUID] = [:]
     /// Gemini Live speech for screen text. Held turns are released in bursts, so this keeps
     /// a longer backlog than live interpretation does.
@@ -1836,7 +1837,7 @@ final class TranslationSessionStore {
     private func beginScreenTextReading(in region: CGRect) {
         guard !isRunning, !isStarting else { return }
         let reader = ScreenTextReader(region: region, language: sourceLanguage)
-        reader.onTextChanged = { [weak self] text in self?.handleScreenText(text) }
+        reader.onText = { [weak self] text, endsUnit in self?.handleScreenText(text, endsUnit: endsUnit) }
         reader.onFailure = { [weak self] error in
             self?.stopScreenTextReading()
             if ScreenTextReader.isPermissionDenial(error) {
@@ -1851,7 +1852,7 @@ final class TranslationSessionStore {
         resetLiveSessionState(clearsVisibleLines: true)
         stopSpeaking()
         applyTranslatedVoiceVolume()
-        lastScreenText = ""
+        screenTextUnit = ""
         screenTextLineIDs.removeAll()
         screenTextReader = reader
         isReadingScreenText = true
@@ -1897,16 +1898,19 @@ final class TranslationSessionStore {
         )
     }
 
-    private func handleScreenText(_ screenText: String) {
-        guard isReadingScreenText, !screenText.isEmpty else { return }
-        let text = ScreenTextDelta.newText(screenText, after: lastScreenText)
-        lastScreenText = screenText
-        guard !text.isEmpty else { return }
+    private func handleScreenText(_ words: String, endsUnit: Bool) {
+        guard isReadingScreenText else { return }
         if let screenTextInterpreter {
-            // One caption card per phrase Gemini receives (see onTurnStarted).
-            screenTextInterpreter.enqueue(text)
+            // One caption card per unit Gemini receives (see onTurnStarted).
+            screenTextInterpreter.enqueue(words, endsUnit: endsUnit)
             return
         }
+        if !words.isEmpty { screenTextUnit = GeminiLiveTextInterpreter.joined(screenTextUnit, words) }
+        let wordCount = screenTextUnit.split(whereSeparator: \.isWhitespace).count
+        guard !screenTextUnit.isEmpty,
+              endsUnit || wordCount >= GeminiLiveTextInterpreter.maxUnitWords else { return }
+        let text = screenTextUnit
+        screenTextUnit = ""
         let line = appendScreenTextLine(text)
 
         let source = sourceLanguage

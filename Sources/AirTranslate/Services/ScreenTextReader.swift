@@ -3,39 +3,31 @@ import CoreGraphics
 import ScreenCaptureKit
 @preconcurrency import Vision
 
-/// Watches one screen region (for example a video's subtitle strip) and reports
-/// its text each time it changes.
+/// Watches one screen region (for example a video's subtitle strip) and reports new
+/// caption words as they appear.
 ///
-/// The region is captured every `interval` and re-read only when its pixels change.
-/// A new text is reported only after two matching reads, so fade-in frames and OCR
-/// jitter don't flicker. AirTranslate's own windows are left out of the capture, so
-/// captions may sit on top of the watched region.
+/// The region is captured every `interval` and read line by line. `ScreenTextTracker`
+/// turns those reads into new words and caption units (a finished line or a pause), so
+/// roll-up captions are neither repeated nor cut into small chunks. AirTranslate's own
+/// windows are left out of the capture, so captions may sit on top of the watched region.
 @MainActor
 final class ScreenTextReader {
-    /// Called with each new stable text ("" once the region no longer shows text).
-    var onTextChanged: ((String) -> Void)?
+    /// New words (possibly "") and whether they end a caption unit.
+    var onText: ((String, Bool) -> Void)?
     /// Called once when capturing keeps failing (for example the display went away).
     var onFailure: ((Error) -> Void)?
 
     let region: CGRect
     private let interval: Duration
     private let recognitionLanguages: [String]
-    private var stabilizer = ScreenTextStabilizer()
+    private var tracker = ScreenTextTracker()
     private var loopTask: Task<Void, Never>?
     private var outline: ScreenTextRegionOutline?
     private var filter: SCContentFilter?
     private var configuration: SCStreamConfiguration?
-    private var lastFingerprint: [UInt8]?
-    private var lastRawText = ""
-    private var lastRecognition = ContinuousClock.now
     private var consecutiveFailures = 0
 
-    /// Gap before the confirming read of a new line, well under one interval.
-    private static let confirmDelay: Duration = .milliseconds(40)
-    /// Re-read at least this often even when the frame looks unchanged.
-    private static let maxSkip: Duration = .seconds(1)
-
-    init(region: CGRect, language: LanguageOption, interval: Duration = .milliseconds(150)) {
+    init(region: CGRect, language: LanguageOption, interval: Duration = .milliseconds(100)) {
         self.region = region.integral
         self.interval = interval
         recognitionLanguages = Self.visionLanguages(for: language)
@@ -50,8 +42,7 @@ final class ScreenTextReader {
                 let started = ContinuousClock.now
                 guard let self else { return }
                 await self.tick()
-                let delay = self.stabilizer.isConfirming ? Self.confirmDelay : self.interval
-                try? await Task.sleep(until: started + delay, clock: .continuous)
+                try? await Task.sleep(until: started + self.interval, clock: .continuous)
             }
         }
     }
@@ -79,21 +70,15 @@ final class ScreenTextReader {
             }
             let image = try await captureFrame()
             consecutiveFailures = 0
-            let fingerprint = Self.fingerprint(of: image)
-            if let lastFingerprint, let fingerprint, Self.isSameFrame(lastFingerprint, fingerprint),
-               ContinuousClock.now - lastRecognition < Self.maxSkip {
-                emit(stabilizer.ingest(lastRawText))
-                return
-            }
-            lastFingerprint = fingerprint
-            lastRecognition = .now
             let languages = recognitionLanguages
-            let text = await Task.detached(priority: .userInitiated) {
-                Self.recognizeText(in: image, languages: languages)
+            // Vision takes ~40 ms here, so every frame is read; no change detection to miss words.
+            let lines = await Task.detached(priority: .userInitiated) {
+                Self.recognizeLines(in: image, languages: languages)
             }.value
             guard !Task.isCancelled else { return }
-            lastRawText = text
-            emit(stabilizer.ingest(text))
+            for (text, endsUnit) in tracker.ingest(lines, now: .now) {
+                onText?(text, endsUnit)
+            }
         } catch is CancellationError {
             return
         } catch {
@@ -119,11 +104,6 @@ final class ScreenTextReader {
         return error.domain == SCStreamErrorDomain && error.code == SCStreamError.Code.userDeclined.rawValue
     }
 
-    private func emit(_ text: String?) {
-        guard let text, !Task.isCancelled else { return }
-        onTextChanged?(text)
-    }
-
     // MARK: - Capture
 
     private func captureFrame() async throws -> CGImage {
@@ -147,8 +127,10 @@ final class ScreenTextReader {
         let ownApps = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
         let config = SCStreamConfiguration()
         config.sourceRect = Self.sourceRect(clipped, on: screen.frame)
-        config.width = Int(ceil(clipped.width))
-        config.height = Int(ceil(clipped.height))
+        // Small captions read more reliably at 2x.
+        let scale: CGFloat = clipped.height < 100 ? 2 : 1
+        config.width = Int(ceil(clipped.width * scale))
+        config.height = Int(ceil(clipped.height * scale))
         config.showsCursor = false
 
         filter = SCContentFilter(display: display, excludingApplications: ownApps, exceptingWindows: [])
@@ -181,8 +163,14 @@ final class ScreenTextReader {
         return (try? request.supportedRecognitionLanguages()) ?? []
     }
 
-    /// Recognized lines top to bottom, joined with spaces: subtitle lines usually split one sentence.
-    nonisolated static func recognizeText(in image: CGImage, languages: [String]) -> String {
+    /// A recognized piece of text with its box in normalized image coordinates (origin bottom-left).
+    struct TextBox: Equatable {
+        var text: String
+        var box: CGRect
+    }
+
+    /// Caption lines top to bottom, without lines cut off at the region's edge.
+    nonisolated static func recognizeLines(in image: CGImage, languages: [String]) -> [String] {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = true
@@ -194,44 +182,35 @@ final class ScreenTextReader {
         do {
             try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
         } catch {
-            return ""
+            return []
         }
-        return (request.results ?? [])
-            .filter { $0.confidence >= 0.3 }
-            .sorted { $0.boundingBox.midY > $1.boundingBox.midY }
-            .compactMap { $0.topCandidates(1).first?.string }
-            .joined(separator: " ")
+        let boxes = (request.results ?? []).compactMap { observation -> TextBox? in
+            guard observation.confidence >= 0.3, let text = observation.topCandidates(1).first?.string else { return nil }
+            return TextBox(text: text, box: observation.boundingBox)
+        }
+        return captionLines(from: boxes)
     }
 
-    // MARK: - Change detection
-
-    private nonisolated static let fingerprintSize = (width: 128, height: 32)
-
-    /// A tiny grayscale thumbnail; comparing two is far cheaper than OCR.
-    nonisolated static func fingerprint(of image: CGImage) -> [UInt8]? {
-        let (width, height) = fingerprintSize
-        var pixels = [UInt8](repeating: 0, count: width * height)
-        let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
-            guard let context = CGContext(data: buffer.baseAddress, width: width, height: height,
-                                          bitsPerComponent: 8, bytesPerRow: width,
-                                          space: CGColorSpaceCreateDeviceGray(),
-                                          bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return false }
-            context.interpolationQuality = .low
-            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-            return true
+    /// Groups boxes into rows (top to bottom, left to right) and drops rows that touch the
+    /// top or bottom edge while being shorter than the tallest row: a line scrolled half out.
+    nonisolated static func captionLines(from boxes: [TextBox]) -> [String] {
+        var rows: [[TextBox]] = []
+        for box in boxes.sorted(by: { $0.box.midY > $1.box.midY }) {
+            if let last = rows.last?.last, abs(last.box.midY - box.box.midY) < last.box.height / 2 {
+                rows[rows.count - 1].append(box)
+            } else {
+                rows.append([box])
+            }
         }
-        return drawn ? pixels : nil
-    }
-
-    /// Unchanged unless more than a couple of pixels moved noticeably.
-    nonisolated static func isSameFrame(_ a: [UInt8], _ b: [UInt8]) -> Bool {
-        guard a.count == b.count, !a.isEmpty else { return false }
-        var changed = 0
-        for index in a.indices where abs(Int(a[index]) - Int(b[index])) > 24 {
-            changed += 1
-            if changed > 2 { return false }
+        let tallest = rows.map { $0.map(\.box.height).max() ?? 0 }.max() ?? 0
+        return rows.compactMap { row in
+            let minY = row.map(\.box.minY).min() ?? 0
+            let maxY = row.map(\.box.maxY).max() ?? 0
+            let height = row.map(\.box.height).max() ?? 0
+            let touchesEdge = minY < 0.02 || maxY > 0.98
+            if touchesEdge, height < tallest * 0.85 { return nil }
+            return row.sorted { $0.box.minX < $1.box.minX }.map(\.text).joined(separator: " ")
         }
-        return true
     }
 }
 
@@ -243,78 +222,106 @@ enum ScreenTextReaderError: LocalizedError {
     var errorDescription: String? { AppText.screenTextCaptureFailed }
 }
 
-// MARK: - Roll-up captions
+// MARK: - Caption tracking
 
-enum ScreenTextDelta {
-    /// The part of `current` not already shown in `previous`. Roll-up captions (YouTube
-    /// auto-captions, live TV) repeat the end of the last line and add a few words; only
-    /// those new words should be spoken. Returns `current` when nothing overlaps.
-    static func newText(_ current: String, after previous: String) -> String {
-        let old = previous.split(whereSeparator: \.isWhitespace).map { normalized($0) }
-        let newWords = current.split(whereSeparator: \.isWhitespace)
-        let new = newWords.map { normalized($0) }
-        guard !old.isEmpty, !new.isEmpty else { return current }
-        // Longest suffix of `previous` that is a prefix of `current` (at least 2 words).
-        for length in stride(from: min(old.count, new.count), through: 2, by: -1)
-        where Array(old.suffix(length)) == Array(new.prefix(length)) {
-            return newWords.dropFirst(length).joined(separator: " ")
-        }
-        return current
-    }
+/// Turns per-frame caption lines into newly appeared words and caption units.
+///
+/// Committed words form a rolling transcript. Each frame is aligned against its tail with
+/// fuzzy word matching (one misread word does not break the match), so roll-up captions
+/// only yield their new words. A word is committed as soon as another word follows it;
+/// the last word on screen waits until the frame has been stable for `settleDelay`.
+/// A unit ends when the bottom line moves up (a new line starts) or the text pauses.
+struct ScreenTextTracker {
+    static let settleDelay: Duration = .milliseconds(500)
+    private static let transcriptLimit = 60
 
-    private static func normalized(_ word: Substring) -> String {
-        word.lowercased().trimmingCharacters(in: .punctuationCharacters)
-    }
-}
+    private(set) var transcript: [String] = []
+    private var lastFrame: [String] = []
+    /// Words of the last frame not committed yet (the last word, until it settles).
+    private var uncommitted: [String] = []
+    private var lastChange = ContinuousClock.now
+    private var signaledPause = true
 
-// MARK: - Stabilizer
-
-/// Turns a stream of raw OCR reads into stable text changes.
-struct ScreenTextStabilizer {
-    var requiredReads = 2
-    var clearAfterEmptyReads = 3
-
-    private(set) var committed = ""
-    var isConfirming: Bool { candidateReads > 0 }
-    private var candidate = ""
-    private var candidateReads = 0
-    private var emptyReads = 0
-
-    /// Returns the new committed text when it changes, otherwise nil.
-    mutating func ingest(_ raw: String) -> String? {
-        let text = raw.split(whereSeparator: \.isWhitespace).joined(separator: " ")
-        guard !text.isEmpty else {
-            candidate = ""
-            candidateReads = 0
-            emptyReads += 1
-            if !committed.isEmpty, emptyReads >= clearAfterEmptyReads {
-                committed = ""
-                return ""
+    mutating func ingest(_ lines: [String], now: ContinuousClock.Instant) -> [(String, Bool)] {
+        let rows = lines.map { $0.split(whereSeparator: \.isWhitespace).map(String.init) }.filter { !$0.isEmpty }
+        let frame = rows.flatMap { $0 }
+        if frame != lastFrame {
+            lastFrame = frame
+            lastChange = now
+            signaledPause = false
+            if frame.isEmpty {
+                // The caption cleared: whatever was still pending is complete.
+                let rest = uncommitted
+                uncommitted = []
+                return [(commit(rest), true)]
             }
-            return nil
         }
-        emptyReads = 0
-        if Self.isSimilar(text, committed) {
-            candidate = ""
-            candidateReads = 0
-            return nil
+        guard !frame.isEmpty else { return [] }
+
+        let stable = now - lastChange >= Self.settleDelay
+        let known = Self.overlap(transcript, frame)
+        let bottomStart = frame.count - (rows.last?.count ?? 0)
+        let commitEnd = stable ? frame.count : frame.count - 1
+        var out: [(String, Bool)] = []
+
+        if known < bottomStart {
+            // Upper lines have scrolled up, so they are complete.
+            out.append((commit(Array(frame[known..<min(bottomStart, commitEnd)])), true))
+        } else if known == bottomStart, bottomStart > 0, commitEnd > bottomStart {
+            // A new bottom line started after complete lines.
+            out.append(("", true))
         }
-        candidateReads = Self.isSimilar(text, candidate) ? candidateReads + 1 : 1
-        candidate = text
-        guard candidateReads >= requiredReads else { return nil }
-        committed = candidate
-        candidate = ""
-        candidateReads = 0
-        return committed
+        let start = max(known, bottomStart)
+        if start < commitEnd {
+            out.append((commit(Array(frame[start..<commitEnd])), false))
+        }
+        uncommitted = Array(frame[max(commitEnd, known)...])
+        if stable, !signaledPause {
+            signaledPause = true
+            out.append(("", true))
+        }
+        return out.filter { !$0.0.isEmpty || $0.1 }
     }
 
-    /// The same subtitle read twice with a few characters of OCR noise counts as equal.
-    static func isSimilar(_ a: String, _ b: String) -> Bool {
+    private mutating func commit(_ words: [String]) -> String {
+        transcript.append(contentsOf: words)
+        if transcript.count > Self.transcriptLimit { transcript.removeFirst(transcript.count - Self.transcriptLimit) }
+        return words.joined(separator: " ")
+    }
+
+    /// How many leading words of `frame` are already in the transcript.
+    static func overlap(_ transcript: [String], _ frame: [String]) -> Int {
+        let tail = transcript.suffix(transcriptLimit).map(normalized)
+        let words = frame.map(normalized)
+        guard !tail.isEmpty, !words.isEmpty else { return 0 }
+        // The whole frame is old text (for example the bottom line briefly not read).
+        if words.count >= 2, tail.count >= words.count {
+            for end in stride(from: tail.count, through: words.count, by: -1)
+            where matches(Array(tail[(end - words.count)..<end]), words) {
+                return words.count
+            }
+        }
+        // A suffix of the transcript is a prefix of the frame (roll-up).
+        for length in stride(from: min(tail.count, words.count), through: 1, by: -1) {
+            guard length >= 2 || words.count == 1 else { break }
+            if matches(Array(tail.suffix(length)), Array(words.prefix(length))) { return length }
+        }
+        return 0
+    }
+
+    private static func matches(_ a: [String], _ b: [String]) -> Bool {
+        let misses = zip(a, b).filter { !similar($0, $1) }.count
+        return misses <= a.count / 4
+    }
+
+    private static func similar(_ a: String, _ b: String) -> Bool {
         if a == b { return true }
-        guard !a.isEmpty, !b.isEmpty else { return false }
-        let tolerance = max(1, max(a.count, b.count) / 12)
-        guard abs(a.count - b.count) <= tolerance else { return false }
-        return editDistance(Array(a.lowercased()), Array(b.lowercased())) <= tolerance
+        guard a.count >= 4, b.count >= 4, abs(a.count - b.count) <= 1 else { return false }
+        return editDistance(Array(a), Array(b)) <= 1
+    }
+
+    private static func normalized(_ word: String) -> String {
+        word.lowercased().trimmingCharacters(in: .punctuationCharacters)
     }
 
     private static func editDistance(_ a: [Character], _ b: [Character]) -> Int {

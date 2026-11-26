@@ -14,6 +14,7 @@ struct GeminiLiveTextInterpreterTests {
         func setRate(_ rate: Float) { self.rate = rate }
         func setVolume(_ volume: Double) {}
         func stop() {}
+        func backlogSeconds() -> Double { 0 }
     }
 
     private func makeInterpreter(_ sent: Sent, audio: FakeAudio = FakeAudio()) -> GeminiLiveTextInterpreter {
@@ -34,50 +35,68 @@ struct GeminiLiveTextInterpreterTests {
 
     private let complete: [String: Any] = ["serverContent": ["turnComplete": true]]
 
-    @Test func sendsPhrasesOnTwoSessionsAndJoinsTheRest() async {
+    private func translated(_ message: String) -> String {
+        message.components(separatedBy: "Translate: ").last?.components(separatedBy: "\n").first ?? message
+    }
+
+    @Test func sendsUnitsOnTwoSessionsAndJoinsTheRest() async {
         let sent = Sent()
         let interpreter = makeInterpreter(sent)
-        interpreter.enqueue("First sentence.")
-        interpreter.enqueue("Second sentence.")
-        interpreter.enqueue("Third")
-        interpreter.enqueue("and fourth.")
+        interpreter.enqueue("First line", endsUnit: true)
+        interpreter.enqueue("Second line", endsUnit: true)
+        interpreter.enqueue("Third", endsUnit: false)
+        interpreter.enqueue("and fourth", endsUnit: true)
         await waitUntil { sent.turns.count == 2 }
         #expect(sent.turns.map(\.lane) == [0, 1])
-        #expect(sent.turns.map(\.text) == ["First sentence.", "Second sentence."])
+        #expect(sent.turns.map { translated($0.text) } == ["First line", "Second line"])
         interpreter.handleServerMessage(complete, lane: 0)
         await waitUntil { sent.turns.count == 3 }
-        #expect(sent.turns.last?.text == "Third and fourth.")
-        #expect(sent.turns.last?.lane == 0)
+        #expect(translated(sent.turns[2].text) == "Third and fourth")
+        #expect(sent.turns[2].text.hasPrefix("Context (do not translate): First line Second line"))
         interpreter.stop()
     }
 
-    @Test func fragmentWaitsBrieflyForMoreWords() async {
+    @Test func wordsWaitForTheEndOfTheUnit() async {
         let sent = Sent()
         let interpreter = makeInterpreter(sent)
-        interpreter.enqueue("Um, it's")
-        try? await Task.sleep(for: .milliseconds(100))
+        interpreter.enqueue("Um, it's", endsUnit: false)
+        try? await Task.sleep(for: .milliseconds(150))
         #expect(sent.turns.isEmpty)
-        interpreter.enqueue("just going to be fine")
+        interpreter.enqueue("just going to be fine", endsUnit: true)
         await waitUntil { sent.turns.count == 1 }
-        #expect(sent.turns.first?.text == "Um, it's just going to be fine")
+        #expect(translated(sent.turns[0].text) == "Um, it's just going to be fine")
         interpreter.stop()
     }
 
-    @Test func fragmentIsSentAfterThePhraseDelay() async {
-        let sent = Sent()
-        let interpreter = makeInterpreter(sent)
-        interpreter.enqueue("architectures")
-        await waitUntil { sent.turns.count == 1 }
-        #expect(sent.turns.first?.text == "architectures")
-        interpreter.stop()
+    @Test func lagSetsRateAndCondenses() {
+        #expect(GeminiLiveTextInterpreter.rate(forLag: 0.5) == 1.1)
+        #expect(abs(GeminiLiveTextInterpreter.rate(forLag: 2.25) - 1.3) < 0.001)
+        #expect(GeminiLiveTextInterpreter.rate(forLag: 5) == 1.5)
+        let calm = GeminiLiveTextInterpreter.turnMessage("one two three", context: "", lag: 1)
+        #expect(calm == "Translate: one two three")
+        let behind = GeminiLiveTextInterpreter.turnMessage(
+            "a b c d e f g h i j k l", context: "ctx", lag: 4)
+        #expect(behind.contains("at most 6 words"))
+        let far = GeminiLiveTextInterpreter.turnMessage("a b c d e f g h i j k l", context: "", lag: 7)
+        #expect(far.contains("at most 4 words"))
+    }
+
+    @Test func leadingSilenceIsTrimmed() throws {
+        var samples: [Int16] = [0, 10, -20, 3000, 5]
+        let data = Data(bytes: &samples, count: samples.count * 2)
+        let trimmed = try #require(GeminiLiveTextInterpreter.trimmingLeadingSilence(data.base64EncodedString()))
+        #expect(Data(base64Encoded: trimmed)?.count == 4)
+        var silent: [Int16] = [0, 1, -2]
+        #expect(GeminiLiveTextInterpreter.trimmingLeadingSilence(
+            Data(bytes: &silent, count: 6).base64EncodedString()) == nil)
     }
 
     @Test func audioOfALaterTurnWaitsForTheEarlierTurn() async {
         let sent = Sent()
         let speaker = FakeAudio()
         let interpreter = makeInterpreter(sent, audio: speaker)
-        interpreter.enqueue("One.")
-        interpreter.enqueue("Two.")
+        interpreter.enqueue("One", endsUnit: true)
+        interpreter.enqueue("Two", endsUnit: true)
         await waitUntil { sent.turns.count == 2 }
         interpreter.handleServerMessage(audio("b1"), lane: 1)  // Turn 2 arrives first: held.
         interpreter.handleServerMessage(audio("a1"), lane: 0)
@@ -97,7 +116,7 @@ struct GeminiLiveTextInterpreterTests {
         var transcripts: [(Int, String)] = []
         interpreter.onTurnStarted = { started.append(($0, $1)) }
         interpreter.onTranscript = { transcripts.append(($0, $1)) }
-        interpreter.enqueue("Hello.")
+        interpreter.enqueue("Hello.", endsUnit: true)
         await waitUntil { sent.turns.count == 1 }
         interpreter.handleServerMessage(["serverContent": ["outputTranscription": ["text": "Xin "]]], lane: 0)
         interpreter.handleServerMessage(["serverContent": ["outputTranscription": ["text": "chào."]]], lane: 0)
@@ -106,12 +125,6 @@ struct GeminiLiveTextInterpreterTests {
         #expect(transcripts.last?.0 == 1)
         #expect(transcripts.last?.1 == "Xin chào.")
         interpreter.stop()
-    }
-
-    @Test func phraseRules() {
-        #expect(GeminiLiveTextInterpreter.isPhrase("Done."))
-        #expect(GeminiLiveTextInterpreter.isPhrase("one two three four five six"))
-        #expect(!GeminiLiveTextInterpreter.isPhrase("Um, it's"))
     }
 
     @Test func setupAsksForAudioInTheTargetLanguage() throws {
