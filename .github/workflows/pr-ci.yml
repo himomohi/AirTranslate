@@ -1,0 +1,43 @@
+name: Pull Request CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [master]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: airtranslate-pr-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Swift tests and packaging preflight
+    if: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master') }}
+    runs-on: xcode-27
+    timeout-minutes: 45
+    steps:
+      - name: Check out source
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Record toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Verify packaging permissions
+        run: ./script/verify_packaging_permissions.sh
+
+      - name: Test packaging scripts
+        run: python3 -m unittest discover -s script/tests -v
+
+      - name: Run Swift tests
+        run: swift test --no-parallel
+
+      - name: Build release configuration
+        run: swift build -c release
