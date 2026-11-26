@@ -1,9 +1,12 @@
 import Foundation
+import os
 import Security
 
 enum GeminiAPIKeyStore {
     private static let service = "AirTranslate.Gemini"
     private static let account = "GEMINI_API_KEY"
+
+    private static let cache = OSAllocatedUnfairLock<String?>(initialState: nil)
 
     static func hasAPIKey() -> Bool {
         var item: CFTypeRef?
@@ -11,7 +14,12 @@ enum GeminiAPIKeyStore {
         return status == errSecSuccess
     }
 
+    /// Returns the cached key after the first successful read so repeated
+    /// connections do not re-trigger macOS Keychain access prompts.
     static func readAPIKey() throws -> String? {
+        if let cached = cache.withLock({ $0 }) {
+            return cached
+        }
         var query = baseQuery()
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -28,6 +36,7 @@ enum GeminiAPIKeyStore {
               let key = String(data: data, encoding: .utf8) else {
             throw GeminiAPIKeyStoreError.invalidStoredKey
         }
+        cache.withLock { $0 = key }
         return key
     }
 
@@ -40,6 +49,7 @@ enum GeminiAPIKeyStore {
             throw GeminiAPIKeyStoreError.invalidStoredKey
         }
 
+        cache.withLock { $0 = nil }
         SecItemDelete(baseQuery() as CFDictionary)
 
         var query = baseQuery()
@@ -50,9 +60,11 @@ enum GeminiAPIKeyStore {
         guard status == errSecSuccess else {
             throw GeminiAPIKeyStoreError.keychainStatus(status)
         }
+        cache.withLock { $0 = trimmedKey }
     }
 
     static func deleteAPIKey() throws {
+        cache.withLock { $0 = nil }
         let status = SecItemDelete(baseQuery() as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw GeminiAPIKeyStoreError.keychainStatus(status)

@@ -114,6 +114,8 @@ private enum SettingsKey {
     static let audioInputSource = "audioInputSource"
     static let selectedMicrophoneInputDeviceID = "selectedMicrophoneInputDeviceID"
     static let isAppleSourceAutoDetectionEnabled = "isAppleSourceAutoDetectionEnabled"
+    static let speechOutputDeviceID = "speechOutputDeviceID"
+    static let speechOutputDeviceName = "speechOutputDeviceName"
 }
 
 private struct TranslationRequest {
@@ -551,7 +553,14 @@ final class TranslationSessionStore {
     @ObservationIgnored private var screenTextLineIDs: [Int: UUID] = [:]
     /// Gemini Live speech for screen text. Held turns are released in bursts, so this keeps
     /// a longer backlog than live interpretation does.
-    @ObservationIgnored private lazy var screenTextAudioOutput = OpenAIRealtimeAudioOutput(maximumBacklogSeconds: 30)
+    @ObservationIgnored private var createdScreenTextAudioOutput: OpenAIRealtimeAudioOutput?
+    private var screenTextAudioOutput: OpenAIRealtimeAudioOutput {
+        if let createdScreenTextAudioOutput { return createdScreenTextAudioOutput }
+        let output = OpenAIRealtimeAudioOutput(maximumBacklogSeconds: 30)
+        output.setOutputDevice(uid: selectedSpeechOutputDeviceUID)
+        createdScreenTextAudioOutput = output
+        return output
+    }
     /// Read screen text through Gemini Live (translate and speak in one step) when a
     /// Gemini key is set; otherwise Apple Translation and the selected voice.
     var screenTextUsesGeminiLive = UserDefaults.standard.object(forKey: "screenTextUsesGeminiLive") as? Bool ?? true {
@@ -1272,6 +1281,23 @@ final class TranslationSessionStore {
         didSet { persistSelectedSettings() }
     }
     var microphoneInputDevices = MicrophoneDeviceCatalog.availableInputDevices()
+    /// Speaker for translated speech. Changing it applies at once, even during capture.
+    var speechOutputDeviceID = SpeechOutputDevice.systemDefaultID {
+        didSet {
+            if let device = speechOutputDevices.first(where: { $0.id == speechOutputDeviceID }), device.isConnected {
+                speechOutputDeviceName = device.name
+            }
+            persistSelectedSettings()
+            refreshSpeechOutputDevices()
+        }
+    }
+    /// Name of the chosen speaker, kept to show it while it is disconnected.
+    private(set) var speechOutputDeviceName = ""
+    var speechOutputDevices: [SpeechOutputDevice] = []
+    var selectedSpeechOutputDevice: SpeechOutputDevice? {
+        speechOutputDevices.first { $0.id == speechOutputDeviceID }
+    }
+    @ObservationIgnored private var speechOutputDeviceListener: AudioObjectPropertyListenerBlock?
     var statusMessage = AppText.ready
     var captureStartFailureMessage: String?
     var captureStartRecoveryAction: CaptureStartRecoveryAction?
@@ -1592,6 +1618,8 @@ final class TranslationSessionStore {
             self?.statusMessage = error.localizedDescription
         }
         applyTranslatedVoiceVolume()
+        refreshSpeechOutputDevices()
+        observeSpeechOutputDeviceChanges()
         syncLiveOutputModeWithLanguagePair()
         systemAudioCapture.delegate = self
         microphoneAudioCapture.delegate = self
@@ -2639,6 +2667,39 @@ final class TranslationSessionStore {
     var selectedMicrophoneDevice: MicrophoneInputDevice {
         microphoneInputDevices.first { $0.id == selectedMicrophoneInputDeviceID }
             ?? .systemDefault
+    }
+
+    private var selectedSpeechOutputDeviceUID: String? {
+        speechOutputDeviceID == SpeechOutputDevice.systemDefaultID ? nil : speechOutputDeviceID
+    }
+
+    /// Re-reads the connected speakers and re-applies the chosen one to every output.
+    /// A disconnected choice stays selected; the outputs play on the system default
+    /// until it reconnects.
+    func refreshSpeechOutputDevices() {
+        let devices = SpeechOutputDeviceCatalog.availableOutputDevices(
+            selectedID: speechOutputDeviceID, selectedName: speechOutputDeviceName
+        )
+        if devices != speechOutputDevices { speechOutputDevices = devices }
+        let uid = selectedSpeechOutputDeviceUID
+        speechOutput.setOutputDevice(uid: uid)
+        geminiSpeechOutput.setOutputDevice(uid: uid)
+        maiSpeechOutput.setOutputDevice(uid: uid)
+        openAIRealtimeAudioOutput.setOutputDevice(uid: uid)
+        createdScreenTextAudioOutput?.setOutputDevice(uid: uid)
+    }
+
+    private func observeSpeechOutputDeviceChanges() {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            MainActor.assumeIsolated { self?.refreshSpeechOutputDevices() }
+        }
+        speechOutputDeviceListener = listener
+        AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, .main, listener)
     }
 
     func refreshMicrophoneInputDevices() {
@@ -5005,6 +5066,10 @@ final class TranslationSessionStore {
         isAppleSourceAutoDetectionEnabled = isAppleSourceAutoDetectionAvailable
             && defaults.bool(forKey: SettingsKey.isAppleSourceAutoDetectionEnabled)
         refreshMicrophoneInputDevices()
+        if let deviceID = defaults.string(forKey: SettingsKey.speechOutputDeviceID) {
+            speechOutputDeviceName = defaults.string(forKey: SettingsKey.speechOutputDeviceName) ?? ""
+            speechOutputDeviceID = deviceID
+        }
         azureSpeechEndpoint = defaults.string(forKey: "azureSpeechEndpoint") ?? ""
         azureTranscriptionModel = defaults.string(forKey: "azureTranscriptionModel").flatMap(AzureTranscriptionModel.init(rawValue:)) ?? .transcribe2
         maiStreamingEndpoint = defaults.string(forKey: "maiStreamingEndpoint") ?? ""
@@ -5162,6 +5227,8 @@ final class TranslationSessionStore {
         defaults.set(sessionDurationMode.id, forKey: SettingsKey.sessionDurationMode)
         defaults.set(audioInputSource.id, forKey: SettingsKey.audioInputSource)
         defaults.set(selectedMicrophoneInputDeviceID, forKey: SettingsKey.selectedMicrophoneInputDeviceID)
+        defaults.set(speechOutputDeviceID, forKey: SettingsKey.speechOutputDeviceID)
+        defaults.set(speechOutputDeviceName, forKey: SettingsKey.speechOutputDeviceName)
         defaults.set(isAppleSourceAutoDetectionEnabled, forKey: SettingsKey.isAppleSourceAutoDetectionEnabled)
     }
 

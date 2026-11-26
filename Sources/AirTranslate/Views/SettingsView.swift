@@ -352,7 +352,7 @@ struct SettingsView: View {
                 .pickerStyle(.segmented)
                 .tint(AirTranslateDesign.Palette.accent)
                 .labelsHidden()
-                .frame(width: 190)
+                .fixedSize()
                 .allowsHitTesting(segmentedControlAllowsHitTesting())
                 .accessibilityRespondsToUserInteraction(segmentedControlAllowsHitTesting())
                 .opacity(isSessionConfigurationLocked ? 0.6 : 1)
@@ -412,7 +412,7 @@ struct SettingsView: View {
                     .pickerStyle(.segmented)
                     .tint(AirTranslateDesign.Palette.accent)
                     .labelsHidden()
-                    .frame(width: 170)
+                    .fixedSize()
                     .allowsHitTesting(
                         segmentedControlAllowsHitTesting(
                             isOtherwiseAvailable: !session.isUsingProviderRealtimeTranslation
@@ -467,7 +467,7 @@ struct SettingsView: View {
                     }
                     .pickerStyle(.menu)
                     .labelsHidden()
-                    .frame(minWidth: 220, idealWidth: 260, maxWidth: 300)
+                    .fixedSize()
                     .disabled(isSessionConfigurationLocked)
                     .accessibilityLabel(SettingsCopy.translatedSpeechModel)
                     .accessibilityValue(session.speechSynthesisModel.title)
@@ -535,6 +535,27 @@ struct SettingsView: View {
                 }
                 .disabled(isSessionConfigurationLocked || !session.isDubbingEnabled)
             }
+
+            SettingsControlRow(
+                title: SettingsCopy.speaker,
+                detail: SettingsCopy.speakerDetail,
+                systemImage: "hifispeaker"
+            ) {
+                Picker(SettingsCopy.speaker, selection: $session.speechOutputDeviceID) {
+                    ForEach(session.speechOutputDevices) { device in
+                        Text(device.isConnected ? device.name : SettingsCopy.speakerNotConnected(device.name))
+                            .tag(device.id)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .fixedSize()
+                .accessibilityLabel(SettingsCopy.speaker)
+            }
+
+            if session.selectedSpeechOutputDevice?.isConnected == false {
+                SettingsNoticeRow(text: SettingsCopy.speakerNotConnectedNote, systemImage: "info.circle")
+            }
         }
     }
 
@@ -581,7 +602,7 @@ struct SettingsView: View {
                 .pickerStyle(.segmented)
                 .tint(AirTranslateDesign.Palette.accent)
                 .labelsHidden()
-                .frame(width: 190)
+                .fixedSize()
                 .allowsHitTesting(segmentedControlAllowsHitTesting())
                 .accessibilityRespondsToUserInteraction(segmentedControlAllowsHitTesting())
                 .opacity(isSessionConfigurationLocked ? 0.6 : 1)
@@ -1492,6 +1513,29 @@ enum SettingsCopy {
     static let liveTranslationVolumeDetail = AppText.localized(
         english: "Controls the translated speech AirTranslate plays in live translation modes.",
         korean: "실시간 번역 모드에서 AirTranslate가 재생하는 번역 음성 크기를 조절합니다."
+    )
+    static let speaker = AppText.localized(
+        english: "Speaker", korean: "스피커", japanese: "スピーカー", chineseSimplified: "扬声器"
+    )
+    static let speakerDetail = AppText.localized(
+        english: "Choose where translated speech plays, including Read Screen Text. You can change it during capture.",
+        korean: "번역 음성(화면 텍스트 읽기 포함)이 재생될 스피커를 선택합니다. 캡처 중에도 바꿀 수 있습니다.",
+        japanese: "翻訳音声（画面のテキストの読み上げを含む）の再生先を選択します。キャプチャ中も変更できます。",
+        chineseSimplified: "选择译文语音（包括朗读屏幕文字）的播放设备，捕获过程中也可以更改。"
+    )
+    static func speakerNotConnected(_ name: String) -> String {
+        AppText.localized(
+            english: "\(name) (Not connected)",
+            korean: "\(name) (연결되지 않음)",
+            japanese: "\(name)（未接続）",
+            chineseSimplified: "\(name)（未连接）"
+        )
+    }
+    static let speakerNotConnectedNote = AppText.localized(
+        english: "This speaker is not connected. Speech plays on the system default for now and switches back when it reconnects.",
+        korean: "이 스피커가 연결되어 있지 않아 지금은 시스템 기본값으로 재생되며, 다시 연결되면 자동으로 전환됩니다.",
+        japanese: "このスピーカーは接続されていません。今はシステムのデフォルトで再生され、再接続すると自動的に切り替わります。",
+        chineseSimplified: "此扬声器未连接，目前使用系统默认设备播放，重新连接后会自动切换回来。"
     )
     static let voiceOutputDisabledReason = AppText.localized(
         english: "Turn on Voice Output to adjust translated speech volume.",
