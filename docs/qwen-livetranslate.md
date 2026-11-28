@@ -8,7 +8,7 @@ AirTranslate 1.12.0 supports two realtime models in Qwen LiveTranslate and an as
 2. In AirTranslate, open **Settings → API Keys → Alibaba Cloud · Qwen** and enter the key. Enter the workspace ID itself, not a URL, if you use Qwen3.8 LiveTranslate.
 3. The API key is stored in the dedicated macOS Keychain item `AirTranslate.Qwen`. The workspace ID and selected realtime model are local app preferences. A saved key only means local configuration is present; it does not confirm account authorization, quota, or paid access.
 
-The app currently offers English, Korean, Japanese, Chinese, Spanish, French, and German as target languages. It does not add the provider's full language selector, image input, or voice cloning.
+The app currently offers English, Korean, Japanese, Chinese, Spanish, French, German, and Vietnamese as target languages. It does not add the provider's full language selector, image input, or voice cloning.
 
 ## Realtime translation
 

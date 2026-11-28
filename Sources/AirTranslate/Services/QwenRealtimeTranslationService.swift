@@ -488,7 +488,7 @@ final class QwenRealtimeTranslationService: @unchecked Sendable {
 
     static func languageCode(_ language: LanguageOption) throws -> String {
         guard let code = language.id.lowercased().split(separator: "-").first.map(String.init),
-              ["en", "ko", "ja", "zh", "es", "fr", "de"].contains(code) else { throw QwenTranslationError.configuration }
+              ["en", "ko", "ja", "zh", "es", "fr", "de", "vi"].contains(code) else { throw QwenTranslationError.configuration }
         return code
     }
 
@@ -534,6 +534,7 @@ final class QwenRealtimeTranslationService: @unchecked Sendable {
         case "es": "Spanish"
         case "fr": "French"
         case "de": "German"
+        case "vi": "Vietnamese"
         default: code
         }
     }
