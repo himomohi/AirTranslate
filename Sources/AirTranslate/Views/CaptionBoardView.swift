@@ -42,6 +42,10 @@ private struct CaptionTranscriptFeed: View {
         session.lines.last.map { LatestLineKey(id: $0.id, revision: $0.revision) }
     }
 
+    private var tracksLineFrames: Bool {
+        !viewportState.followState.isFollowingLatest || restorationAnchor != nil
+    }
+
     var body: some View {
         if !session.hasTranscriptContent && !session.isRunning {
             StageEmptyStateView(session: session, description: emptyStateDescription)
@@ -90,11 +94,7 @@ private struct CaptionTranscriptFeed: View {
                         }
 
                         if session.shouldShowTranscript && session.lines.isEmpty {
-                            Text(session.waitingForTranscriptMessage)
-                                .font(AirTranslateDesign.Typography.label)
-                                .foregroundStyle(AirTranslateDesign.Palette.textSecondary)
-                                .multilineTextAlignment(.center)
-                                .frame(maxWidth: .infinity, minHeight: 96)
+                            WaitingForTranscriptBanner(session: session)
                         }
 
                         ForEach(session.lines.suffix(Self.stageVisibleLineLimit)) { line in
@@ -108,11 +108,13 @@ private struct CaptionTranscriptFeed: View {
                             .equatable()
                             .id(line.id)
                             .background {
-                                GeometryReader { lineGeometry in
-                                    Color.clear.preference(
-                                        key: CaptionFeedLineFramesKey.self,
-                                        value: [line.id: lineGeometry.frame(in: .named("captionFeedContent"))]
-                                    )
+                                if tracksLineFrames {
+                                    GeometryReader { lineGeometry in
+                                        Color.clear.preference(
+                                            key: CaptionFeedLineFramesKey.self,
+                                            value: [line.id: lineGeometry.frame(in: .named("captionFeedContent"))]
+                                        )
+                                    }
                                 }
                             }
                             .transition(.opacity)
@@ -125,9 +127,14 @@ private struct CaptionTranscriptFeed: View {
                 .defaultScrollAnchor(initialScrollAnchor)
                 .scrollPosition($scrollPosition)
                 .onPreferenceChange(CaptionFeedLineFramesKey.self) { frames in
-                    guard !frames.isEmpty else { return }
+                    guard tracksLineFrames, !frames.isEmpty else { return }
                     lineFrames = frames
                     restoreOrRecordReadingPosition()
+                }
+                .onChange(of: tracksLineFrames) { _, isTracking in
+                    if !isTracking, !lineFrames.isEmpty {
+                        lineFrames = [:]
+                    }
                 }
                 .onScrollGeometryChange(for: CaptionFeedScrollMetrics.self) { geometry in
                     CaptionFeedScrollMetrics(
@@ -218,14 +225,27 @@ private struct CaptionTranscriptFeed: View {
             scrollPosition.scrollTo(edge: .bottom)
             return
         }
+        guard longSessionAutoScrollTask == nil else { return }
 
-        longSessionAutoScrollTask?.cancel()
         longSessionAutoScrollTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(250))
-            guard !Task.isCancelled, viewportState.followState.shouldFollowUpdates else { return }
-            scrollPosition.scrollTo(edge: .bottom)
+            guard !Task.isCancelled else { return }
             longSessionAutoScrollTask = nil
+            guard viewportState.followState.shouldFollowUpdates else { return }
+            scrollPosition.scrollTo(edge: .bottom)
         }
+    }
+}
+
+private struct WaitingForTranscriptBanner: View {
+    let session: TranslationSessionStore
+
+    var body: some View {
+        Text(session.waitingForTranscriptMessage)
+            .font(AirTranslateDesign.Typography.label)
+            .foregroundStyle(AirTranslateDesign.Palette.textSecondary)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity, minHeight: 96)
     }
 }
 
@@ -584,7 +604,7 @@ private struct TurnTranscriptText: View {
 
     var body: some View {
         Group {
-            if text.utf8.count > 4_000 && text.count > 4_000 {
+            if text.utf8.count > 4_000 {
                 ScrollableTranscriptText(
                     text: visibleDisplayText,
                     weight: .medium,
@@ -1085,15 +1105,7 @@ private struct HeaderAudioLevelStrip: View {
                     .lineLimit(1)
 
                 if !isPaused {
-                    AudioLevelWaveform(
-                        level: session.latestAudioLevel,
-                        date: Date(),
-                        barCount: 8,
-                        width: 62,
-                        height: 20,
-                        barWidth: 3.2,
-                        barSpacing: 2.4
-                    )
+                    HeaderAudioLevelWaveform(session: session)
                 }
             }
             .padding(.horizontal, 10)
@@ -1108,6 +1120,22 @@ private struct HeaderAudioLevelStrip: View {
         )
     }
 
+}
+
+private struct HeaderAudioLevelWaveform: View {
+    let session: TranslationSessionStore
+
+    var body: some View {
+        AudioLevelWaveform(
+            level: session.latestAudioLevel,
+            date: Date(),
+            barCount: 8,
+            width: 62,
+            height: 20,
+            barWidth: 3.2,
+            barSpacing: 2.4
+        )
+    }
 }
 
 struct AudioLevelWaveform: View {

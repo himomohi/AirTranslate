@@ -83,11 +83,49 @@ extension String {
     }
 
     private func floatingCaptionSentenceBreaks() -> String {
-        replacingOccurrences(
-            of: #"(?<!\d)([.!?。！？])\s+(?=\S)"#,
-            with: "$1\n",
-            options: .regularExpression
-        )
+        let scalars = unicodeScalars
+        var result: String?
+        var copyStart = scalars.startIndex
+        var previousScalar: Unicode.Scalar?
+        var index = scalars.startIndex
+
+        while index < scalars.endIndex {
+            let scalar = scalars[index]
+            let nextIndex = scalars.index(after: index)
+            let isSentencePunctuation = scalar == "." || scalar == "!" || scalar == "?"
+                || scalar == "。" || scalar == "！" || scalar == "？"
+            let precededByDecimalDigit = previousScalar?.properties.numericType == .decimal
+
+            if isSentencePunctuation, !precededByDecimalDigit,
+               nextIndex < scalars.endIndex, scalars[nextIndex].properties.isWhitespace
+            {
+                var wsEnd = scalars.index(after: nextIndex)
+                while wsEnd < scalars.endIndex, scalars[wsEnd].properties.isWhitespace {
+                    wsEnd = scalars.index(after: wsEnd)
+                }
+                if wsEnd < scalars.endIndex {
+                    if result == nil {
+                        result = String()
+                        result?.reserveCapacity(utf8.count)
+                    }
+                    result?.append(contentsOf: self[copyStart..<nextIndex])
+                    result?.append("\n")
+                    copyStart = wsEnd
+                    previousScalar = scalars[scalars.index(before: wsEnd)]
+                    index = wsEnd
+                    continue
+                }
+            }
+
+            previousScalar = scalar
+            index = nextIndex
+        }
+
+        guard var result else { return self }
+        if copyStart < scalars.endIndex {
+            result.append(contentsOf: self[copyStart..<scalars.endIndex])
+        }
+        return result
     }
 
     private func floatingCaptionWrappedLines(maxLineWidth: Double) -> [String] {

@@ -69,6 +69,18 @@ struct FloatingCaptionTextFormatterTests {
         Third idea lands!
         """)
     }
+
+    @Test
+    func floatingCaptionTailPreservesDecimalNumbersAndNormalizesWhitespaceBetweenSentences() {
+        let text = "Pi is 3.14 today.   Next sentence!\t\n中文句子。？  끝입니다."
+
+        let caption = text.floatingCaptionTail(maxLines: 6, lineWidthUnits: 60)
+
+        #expect(caption.contains("Pi is 3.14 today."))
+        #expect(caption.contains("Next sentence!"))
+        #expect(caption.contains("끝입니다."))
+        #expect(!caption.contains("3.\n14"))
+    }
 }
 
 private extension Substring {

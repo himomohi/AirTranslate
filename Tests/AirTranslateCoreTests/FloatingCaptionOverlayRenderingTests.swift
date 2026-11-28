@@ -46,6 +46,40 @@ struct FloatingCaptionOverlayRenderingTests {
         }
     }
 
+    @Test func historyAndCurrentCaptionsRenderInsideTransparentPerimeter() async throws {
+        let name = "FloatingCaptionOverlayRenderingTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: name)!
+        defer { defaults.removePersistentDomain(forName: name) }
+        let session = TranslationSessionStore(modelAvailabilityProvider: { _, _ in [:] }, settingsDefaults: defaults)
+        session.floatingCaptionDisplayMode = .originalAndTranslation
+        session.setFloatingCaptionPresentationActive(true)
+        defer { session.setFloatingCaptionPresentationActive(false) }
+
+        let first = FloatingCaptionIdentity.line(UUID())
+        let second = FloatingCaptionIdentity.line(UUID())
+        session.presentFloatingSourceText("First caption.", identity: first)
+        session.updateFloatingTranslationPresentation("첫 번째 자막.", sourceText: "First caption.", identity: first)
+        session.presentFloatingSourceText("Second caption.", identity: second)
+        session.updateFloatingTranslationPresentation("두 번째 자막.", sourceText: "Second caption.", identity: second)
+
+        let view = hostingView(session)
+        var bitmap = try render(view)
+        for _ in 0..<10 {
+            if hasVisiblePixel(bitmap) { break }
+            try await Task.sleep(for: .milliseconds(50))
+            bitmap = try render(view)
+        }
+        #expect(hasVisiblePixel(bitmap), "이전 자막과 현재 자막이 렌더링되어야 함")
+        for x in 0..<bitmap.pixelsWide {
+            #expect(alpha(bitmap, x: x, y: 0) == 0)
+            #expect(alpha(bitmap, x: x, y: bitmap.pixelsHigh - 1) == 0)
+        }
+        for y in 0..<bitmap.pixelsHigh {
+            #expect(alpha(bitmap, x: 0, y: y) == 0)
+            #expect(alpha(bitmap, x: bitmap.pixelsWide - 1, y: y) == 0)
+        }
+    }
+
     @Test func frostedBackdropRendersInsideTransparentPerimeter() async throws {
         let name = "FloatingCaptionOverlayRenderingTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: name)!

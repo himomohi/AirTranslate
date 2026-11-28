@@ -7,8 +7,13 @@ final class FloatingCaptionLayoutCache {
     static let maximumEntryCount = 2
     static let maximumCachedInputUTF8Bytes = 64 * 1_024
 
+    let maximumEntryCount: Int
     private(set) var didReuseLastResult = false
     var entryCount: Int { entries.count }
+
+    init(maximumEntryCount: Int = FloatingCaptionLayoutCache.maximumEntryCount) {
+        self.maximumEntryCount = max(1, maximumEntryCount)
+    }
 
     private struct Entry {
         let text: String
@@ -66,7 +71,7 @@ final class FloatingCaptionLayoutCache {
         let result = formatted(text, maxLines: maxLines, availableWidth: availableWidth,
                                font: font, fallbackWidthUnits: fallbackWidthUnits)
         guard result.utf8.count <= Self.maximumCachedInputUTF8Bytes else { return result }
-        if entries.count == Self.maximumEntryCount { entries.removeFirst() }
+        if entries.count >= maximumEntryCount { entries.removeFirst() }
         entries.append(Entry(text: text, maxLines: maxLines, widthBits: widthBits,
                              font: font, fontAttributes: fontAttributes,
                              fallbackWidthBits: fallbackWidthBits, result: result))

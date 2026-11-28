@@ -2,8 +2,6 @@ import SwiftUI
 
 struct ContentView: View {
     @Bindable var session: TranslationSessionStore
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
     @State private var isLibraryPresented = false
     @State private var isFloatingCaptionVisible = FloatingCaptionWindowController.isOpen
@@ -22,24 +20,7 @@ struct ContentView: View {
                         CaptionBoardView(session: session, viewportState: $captionViewport)
                     }
 
-                    VStack(spacing: AirTranslateDesign.Spacing.xs) {
-                        if let failureMessage = session.captureStartFailureMessage {
-                            CaptureStartFailureView(
-                                message: failureMessage,
-                                recoveryAction: session.captureStartRecoveryAction,
-                                recover: recoverFromCaptureStartFailure,
-                                dismiss: session.dismissCaptureStartFailure
-                            )
-                            .transition(.move(edge: .top).combined(with: .opacity))
-                        }
-
-                        if let toastMessage = session.toastMessage {
-                            ToastMessageView(message: toastMessage)
-                                .transition(.move(edge: .top).combined(with: .opacity))
-                        }
-                    }
-                    .padding(.top, AirTranslateDesign.Spacing.sm)
-                    .padding(.horizontal, AirTranslateDesign.Spacing.lg)
+                    ContentStatusOverlaysView(session: session)
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -58,6 +39,7 @@ struct ContentView: View {
             MainCaptionWindowObserver(isCaptionVisible: $isMainCaptionVisible)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
+            ContentSessionEffectsView(session: session, isMainCaptionVisible: isMainCaptionVisible)
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
@@ -105,37 +87,44 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: FloatingCaptionWindowController.visibilityDidChangeNotification)) { _ in
             syncFloatingCaptionVisibility()
         }
-        .animation(reduceMotion ? nil : AirTranslateDesign.Motion.state, value: session.toastSequence)
-        .animation(reduceMotion ? nil : AirTranslateDesign.Motion.enter, value: session.toastMessage)
-        .onChange(of: session.captureControlState.phase) { oldPhase, newPhase in
-            // 시작 실패 배너의 알림과 중복하지 않고 준비·전환의 진입/완료만 알린다.
-            guard isMainCaptionVisible, session.captureStartFailureMessage == nil,
-                  oldPhase.showsProgress || newPhase.showsProgress else { return }
-            AccessibilityNotification.Announcement(session.statusMessage).post()
-        }
-        .confirmationDialog(
-            AppText.autoDetectionLanguageChangeTitle,
-            isPresented: autoDetectionLanguageChangeBinding,
-            titleVisibility: .visible
-        ) {
-            Button(AppText.startNewAutoDetectionSession) {
-                session.confirmAutoDetectionLanguageChange()
+    }
+
+    private func toggleFloatingCaptions() {
+        CaptionControlActions.toggleVisibility(session: session, using: openWindow)
+        syncFloatingCaptionVisibility()
+    }
+
+    private func syncFloatingCaptionVisibility() {
+        isFloatingCaptionVisible = FloatingCaptionWindowController.isOpen
+    }
+}
+
+private struct ContentStatusOverlaysView: View {
+    let session: TranslationSessionStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.openSettings) private var openSettings
+
+    var body: some View {
+        VStack(spacing: AirTranslateDesign.Spacing.xs) {
+            if let failureMessage = session.captureStartFailureMessage {
+                CaptureStartFailureView(
+                    message: failureMessage,
+                    recoveryAction: session.captureStartRecoveryAction,
+                    recover: recoverFromCaptureStartFailure,
+                    dismiss: session.dismissCaptureStartFailure
+                )
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
 
-            Button(AppText.keepCurrentAutoDetectionLanguage, role: .cancel) {
-                session.keepCurrentAutoDetectionLanguage()
-            }
-        } message: {
-            if let languageChange = session.pendingAutoDetectionLanguageChange {
-                Text(
-                    AppText.autoDetectionLanguageChangeMessage(
-                        current: languageChange.currentLanguage.localizedTitle,
-                        detected: languageChange.detectedLanguage.localizedTitle,
-                        target: languageChange.targetLanguage.localizedTitle
-                    )
-                )
+            if let toastMessage = session.toastMessage {
+                ToastMessageView(message: toastMessage)
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
+        .padding(.top, AirTranslateDesign.Spacing.sm)
+        .padding(.horizontal, AirTranslateDesign.Spacing.lg)
+        .animation(reduceMotion ? nil : AirTranslateDesign.Motion.state, value: session.toastSequence)
+        .animation(reduceMotion ? nil : AirTranslateDesign.Motion.enter, value: session.toastMessage)
     }
 
     private func recoverFromCaptureStartFailure(_ action: CaptureStartRecoveryAction) {
@@ -154,14 +143,45 @@ struct ContentView: View {
             session.start()
         }
     }
+}
 
-    private func toggleFloatingCaptions() {
-        CaptionControlActions.toggleVisibility(session: session, using: openWindow)
-        syncFloatingCaptionVisibility()
-    }
+private struct ContentSessionEffectsView: View {
+    let session: TranslationSessionStore
+    let isMainCaptionVisible: Bool
 
-    private func syncFloatingCaptionVisibility() {
-        isFloatingCaptionVisible = FloatingCaptionWindowController.isOpen
+    var body: some View {
+        Color.clear
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .onChange(of: session.captureControlState.phase) { oldPhase, newPhase in
+                // 시작 실패 배너의 알림과 중복하지 않고 준비·전환의 진입/완료만 알린다.
+                guard isMainCaptionVisible, session.captureStartFailureMessage == nil,
+                      oldPhase.showsProgress || newPhase.showsProgress else { return }
+                AccessibilityNotification.Announcement(session.statusMessage).post()
+            }
+            .confirmationDialog(
+                AppText.autoDetectionLanguageChangeTitle,
+                isPresented: autoDetectionLanguageChangeBinding,
+                titleVisibility: .visible
+            ) {
+                Button(AppText.startNewAutoDetectionSession) {
+                    session.confirmAutoDetectionLanguageChange()
+                }
+
+                Button(AppText.keepCurrentAutoDetectionLanguage, role: .cancel) {
+                    session.keepCurrentAutoDetectionLanguage()
+                }
+            } message: {
+                if let languageChange = session.pendingAutoDetectionLanguageChange {
+                    Text(
+                        AppText.autoDetectionLanguageChangeMessage(
+                            current: languageChange.currentLanguage.localizedTitle,
+                            detected: languageChange.detectedLanguage.localizedTitle,
+                            target: languageChange.targetLanguage.localizedTitle
+                        )
+                    )
+                }
+            }
     }
 
     private var autoDetectionLanguageChangeBinding: Binding<Bool> {

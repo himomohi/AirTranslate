@@ -153,6 +153,18 @@ struct FloatingCaptionLayoutCacheTests {
         }
     }
 
+    @Test
+    func customCapacityAllowsConfiguredEntryCount() {
+        let cache = FloatingCaptionLayoutCache(maximumEntryCount: 4)
+        let font = NSFont.systemFont(ofSize: 24)
+        for sampleText in ["one", "two", "three", "four"] {
+            _ = cache.text(sampleText, maxLines: 2, availableWidth: 320, font: font, fallbackWidthUnits: 32)
+        }
+        #expect(cache.entryCount == 4)
+        _ = cache.text("one", maxLines: 2, availableWidth: 320, font: font, fallbackWidthUnits: 32)
+        #expect(cache.didReuseLastResult)
+    }
+
     private func reference(_ text: String, lines: Int, width: CGFloat, font: NSFont, fallback: Double) -> String {
         if width > 0 {
             return text.floatingCaptionTail(maxLines: lines, availableWidth: width, font: font)

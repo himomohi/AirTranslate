@@ -300,12 +300,10 @@ struct ConsoleBarView: View {
     let isCompact: Bool
     @Environment(\.openSettings) private var openSettings
     @State private var showsVolume = false
-    @FocusState private var isCaptureFocused: Bool
 
     var body: some View {
         HStack(spacing: AirTranslateDesign.Spacing.sm) {
-            captureButton
-            pauseButton
+            ConsoleCaptureControls(session: session)
 
             consoleDivider
             if !isConfigurationAvailable {
@@ -343,51 +341,6 @@ struct ConsoleBarView: View {
         .popover(isPresented: $showsVolume, arrowEdge: .bottom) {
             volumePopover
         }
-    }
-
-    private var captureButton: some View {
-        Button {
-            if session.isRunning || session.isStarting {
-                session.stop()
-            } else {
-                session.start()
-            }
-        } label: {
-            HStack(spacing: AirTranslateDesign.Spacing.xs) {
-                if session.captureControlState.phase.showsProgress {
-                    ProgressView()
-                        .controlSize(.small)
-                } else {
-                    Image(systemName: session.captureControlState.phase.actionSystemImage)
-                }
-
-                Text(captureTitle)
-                    .lineLimit(1)
-
-                if session.captureControlState.phase == .running {
-                    SessionAudioWaveform(session: session)
-                }
-            }
-        }
-        .buttonStyle(AirPillButtonStyle(kind: captureButtonKind))
-        .disabled(!session.captureControlState.canToggleCapture)
-        .airFocusRing(cornerRadius: 20, focus: $isCaptureFocused)
-        .help(captureTitle)
-        .accessibilityLabel(captureTitle)
-        .accessibilityValue(captureStateDescription)
-    }
-
-    private var pauseButton: some View {
-        Button {
-            session.isPaused ? session.resume() : session.pause()
-        } label: {
-            Image(systemName: session.isPaused ? "play.fill" : "pause.fill")
-        }
-        .buttonStyle(AirIconButton())
-        .airFocusRing(cornerRadius: 18)
-        .disabled(!session.captureControlState.canTogglePause)
-        .help(session.isPaused ? AppText.resume : AppText.pause)
-        .accessibilityLabel(session.isPaused ? AppText.resume : AppText.pause)
     }
 
     @ViewBuilder
@@ -756,20 +709,6 @@ struct ConsoleBarView: View {
         )
     }
 
-    private var captureTitle: String {
-        session.captureControlState.phase.actionTitle
-    }
-
-    private var captureStateDescription: String {
-        session.captureControlState.statusTitle(statusMessage: session.statusMessage)
-    }
-
-    private var captureButtonKind: AirPillButtonKind {
-        if session.captureControlState.phase == .paused { return .paused }
-        if session.isRunning || session.isStarting { return .stop }
-        return .start
-    }
-
     private var audioInputSourceBinding: Binding<AudioInputSource> {
         guardedBinding($session.audioInputSource)
     }
@@ -933,8 +872,70 @@ struct PermissionActionButton: View {
     }
 }
 
+private struct ConsoleCaptureControls: View {
+    let session: TranslationSessionStore
+    @FocusState private var isCaptureFocused: Bool
+
+    var body: some View {
+        Button {
+            if session.isRunning || session.isStarting {
+                session.stop()
+            } else {
+                session.start()
+            }
+        } label: {
+            HStack(spacing: AirTranslateDesign.Spacing.xs) {
+                if session.captureControlState.phase.showsProgress {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: session.captureControlState.phase.actionSystemImage)
+                }
+
+                Text(captureTitle)
+                    .lineLimit(1)
+
+                if session.captureControlState.phase == .running {
+                    SessionAudioWaveform(session: session)
+                }
+            }
+        }
+        .buttonStyle(AirPillButtonStyle(kind: captureButtonKind))
+        .disabled(!session.captureControlState.canToggleCapture)
+        .airFocusRing(cornerRadius: 20, focus: $isCaptureFocused)
+        .help(captureTitle)
+        .accessibilityLabel(captureTitle)
+        .accessibilityValue(captureStateDescription)
+
+        Button {
+            session.isPaused ? session.resume() : session.pause()
+        } label: {
+            Image(systemName: session.isPaused ? "play.fill" : "pause.fill")
+        }
+        .buttonStyle(AirIconButton())
+        .airFocusRing(cornerRadius: 18)
+        .disabled(!session.captureControlState.canTogglePause)
+        .help(session.isPaused ? AppText.resume : AppText.pause)
+        .accessibilityLabel(session.isPaused ? AppText.resume : AppText.pause)
+    }
+
+    private var captureTitle: String {
+        session.captureControlState.phase.actionTitle
+    }
+
+    private var captureStateDescription: String {
+        session.captureControlState.statusTitle(statusMessage: session.statusMessage)
+    }
+
+    private var captureButtonKind: AirPillButtonKind {
+        if session.captureControlState.phase == .paused { return .paused }
+        if session.isRunning || session.isStarting { return .stop }
+        return .start
+    }
+}
+
 private struct SessionAudioWaveform: View {
-    @Bindable var session: TranslationSessionStore
+    let session: TranslationSessionStore
 
     var body: some View {
         AudioLevelWaveform(
