@@ -25,12 +25,12 @@ AirTranslate 会捕获 Mac 正在播放的音频，实时转写；当你选择�
 
 ## 下载
 
-当前公开最新版：**v1.20.0**。
+当前公开最新版：**v1.21.0**。
 
 - [下载 AirTranslate.dmg](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [下载 AirTranslate-1.20.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.20.0/AirTranslate-1.20.0.zip)
+- [下载 AirTranslate-1.21.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.21.0/AirTranslate-1.21.0.zip)
 - [下载 AirTranslate.dmg.sha256](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
-- [AirTranslate 1.20.0 发布说明](https://github.com/himomohi/AirTranslate/releases/tag/v1.20.0)
+- [AirTranslate 1.21.0 发布说明](https://github.com/himomohi/AirTranslate/releases/tag/v1.21.0)
 - [查看版本历史](Release/VERSION-HISTORY.md)
 
 开源 DMG 和 ZIP 使用 ad-hoc 签名，尚未经过 Apple 公证。若首次启动被阻止，请参阅[安装指南](docs/GETTING-STARTED.md)。可用以下命令检查 DMG 哈希：
@@ -63,10 +63,11 @@ API 驱动的引擎在 **Settings > API Keys** 中配置密钥后即可使用。
 ## 核心功能
 
 - 通过 ScreenCaptureKit 捕获系统音频，并支持内置、Bluetooth、AirPods 麦克风输入。
-- 以 Apple Speech 转写和 Apple Translation 翻译作为默认本地优先路径。
+- 以 Apple Speech 转写和 Apple Translation 翻译作为默认本地优先路径，并在 Apple Mode 中支持**质量优先 / 快速字幕**切换。
+- 可选本地 **Hy-MT2 1.8B** 翻译（在设置 > 通用中下载模型），无需 API 密钥即可通过内置 `llama.cpp` 运行时在本地翻译 Apple Speech 字幕。
 - 无需翻译时可使用只显示原文字幕的转写模式。
 - 悬浮字幕、已保存记录库、可选译文朗读和一键切换语言方向。
-- 只显示文字的悬浮字幕，以及设置中的五种样式、字体、颜色、宽度、行距、顺序、预览、保存和重置。
+- 支持三种背景（`磨砂深色`、`影院深色`、`透明`）、悬停迷你控制栏，以及设置中的五种样式、字体、颜色、宽度、行距、顺序、预览、保存和重置的悬浮字幕。
 - 记录文件保存默认关闭。需要在 Application Support 中保存普通 `.txt` 文件时，请开启 **Save Transcript Files**。
 - 英语、韩语、日语和简体中文应用语言。
 
@@ -74,7 +75,8 @@ API 驱动的引擎在 **Settings > API Keys** 中配置密钥后即可使用。
 
 | 引擎 | 作用 | 需要 |
 | --- | --- | --- |
-| Apple Mode | 默认本地优先转写与翻译。 | 无 |
+| Apple Mode | 默认本地优先转写与翻译（支持**质量优先 / 快速字幕**切换）。 | 无 |
+| Hy-MT2（本地） | 通过内置 `llama.cpp` 运行时在本地翻译 Apple Speech 字幕。 | 在设置 > 通用中下载模型（无需 API 密钥） |
 | OpenAI 语音 | 在同一提供方内选择翻译或原文转写。通过输出图标切换 `gpt-realtime-translate` 与 `gpt-live-transcribe`，并在提示中查看模型和费用。 | OpenAI |
 | Gemini Live | 按文档区分的实时翻译模型，或支持自动语音语言检测的原文转写模型。 | Gemini |
 | Meta Scribe | 在 AirTranslate 翻译前生成带说话人标签的多语言转写。 | Meta |
@@ -95,9 +97,9 @@ Nari 支持手动选择输入语言及自动检测语音语言，包括韩语。
 
 ## 悬浮字幕
 
-悬浮字幕仅在画面上显示原文或译文文字。窗口背景、边框、工具栏、状态文字和缩放标记均不显示，悬停时也不会出现。没有字幕时不显示任何内容。请在设置、主界面或菜单栏中操作，使用 ⌘⇧C 显示或隐藏字幕。
+悬浮字幕会在画面上显示原文和译文，并可选择**磨砂深色**（默认）、**影院深色**或**透明**背景样式。没有字幕时不显示任何内容；将指针悬停在可见字幕上时，会显示迷你悬浮控制栏，可进行暂停/继续、复制最新字幕、切换显示模式、`A-`/`A+` 调整字号、切换背景和关闭操作。也可在设置、主界面或菜单栏中控制，使用 ⌘⇧C 显示或隐藏字幕。
 
-提供日常、影院、讲座、高对比度和明亮画面五种文字样式，以及四种字体、字重、行距、阴影/描边、文字颜色、对齐、行数和译文置顶选项。预览可在明暗示例画面中显示实际18–72pt字号，也可在不录音的情况下显示示例字幕。在设置中调整宽度和置顶状态。已有外观偏好仍会恢复，但旧背景设置不会显示为窗口背景。
+提供日常、影院、讲座、高对比度和明亮画面五种文字样式，以及四种字体、字重、行距、阴影/描边、文字颜色、对齐、行数和译文置顶选项。预览可在明暗示例画面中显示实际18–72pt字号，也可在不录音的情况下显示示例字幕。在设置中调整宽度、置顶状态与背景样式，并保留既有外观偏好。
 
 ## Microsoft MAI 音频
 

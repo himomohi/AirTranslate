@@ -29,12 +29,12 @@ AirTranslate captures audio playing on your Mac, transcribes it live, translates
 
 ## Download
 
-Latest public release: **v1.20.0**.
+Latest public release: **v1.21.0**.
 
 - [Download AirTranslate.dmg](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [Download AirTranslate-1.20.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.20.0/AirTranslate-1.20.0.zip)
+- [Download AirTranslate-1.21.0.zip](https://github.com/himomohi/AirTranslate/releases/download/v1.21.0/AirTranslate-1.21.0.zip)
 - [Download AirTranslate.dmg.sha256](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
-- [AirTranslate 1.20.0 release notes](https://github.com/himomohi/AirTranslate/releases/tag/v1.20.0)
+- [AirTranslate 1.21.0 release notes](https://github.com/himomohi/AirTranslate/releases/tag/v1.21.0)
 - [View release history](Release/VERSION-HISTORY.md)
 
 The open-source DMG and ZIP are ad-hoc signed and not Apple-notarized. If macOS blocks the first launch, follow the [installation guide](docs/GETTING-STARTED.md). Check the DMG hash with:
@@ -67,10 +67,11 @@ API-backed engines become available after you configure their keys in **Settings
 ## Core Features
 
 - System-audio capture through ScreenCaptureKit, plus built-in, Bluetooth, and AirPods microphone input.
-- Apple Speech transcription and Apple Translation output as the default local-first path.
+- Apple Speech transcription and Apple Translation output as the default local-first path, with **Quality First / Fast Captions** switching in Apple Mode.
+- Optional local **Hy-MT2 1.8B** translation (`Settings > General` model download) using Apple Speech and the bundled `llama.cpp` runtime with no API key.
 - Original-only transcription for source captions without translation.
 - Floating captions, saved transcript library, optional translated speech, and one-click language swap.
-- Text-only floating captions with five styles, font and color options, width, line spacing, ordering, previews, persistence, and reset in Settings.
+- Adaptive floating captions with three backdrops (`Frosted Glass`, `Cinema Dark`, and `Transparent`), a hover mini-HUD, five text styles, font and color options, width, line spacing, ordering, previews, persistence, and reset in Settings.
 - Transcript file saving is off by default; enable **Save Transcript Files** when you want plain `.txt` files in Application Support.
 - Four app languages: English, Korean, Japanese, and Simplified Chinese.
 
@@ -78,7 +79,8 @@ API-backed engines become available after you configure their keys in **Settings
 
 | Engine | Role | Requires |
 | --- | --- | --- |
-| Apple Mode | Default local-first transcription and translation. Apple basic-mode source-language auto-detect remains disabled while language-switch handling is improved. | None |
+| Apple Mode | Default local-first transcription and translation, with **Quality First** and **Fast Captions** modes. Apple basic-mode source-language auto-detect remains disabled while language-switch handling is improved. | None |
+| Hy-MT2 (Local) | Local on-device translation for Apple Speech captions via the bundled `llama.cpp` runtime. | Opt-in model download in Settings > General (no API key) |
 | OpenAI Audio | Choose translation or source transcription within one provider. The output icons select `gpt-realtime-translate` or `gpt-live-transcribe`; tooltips show the active model and rate. | OpenAI |
 | Gemini Live | Select the documented realtime translation model or the separate source-only transcription model with automatic spoken-language detection. | Gemini |
 | Meta Scribe | Speaker-labeled multilingual transcription before AirTranslate translation. | Meta |
@@ -99,9 +101,9 @@ New Nari selections use the GA Fast model and require Nari credits. Saved Free P
 
 ## Floating Captions
 
-Floating captions show only the original and/or translated text over your content. There is no window background, border, toolbar, status label, or resize grip, including on hover. When there is no caption text, the overlay stays invisible. Caption controls remain in Settings, the main window, and the menu bar; ⌘⇧C shows or hides captions.
+Floating captions display the original and/or translated text over your content with selectable **Frosted Glass** (default), **Cinema Dark**, or **Transparent** backdrops, and keep the overlay invisible when no caption text is present. Hovering over visible captions reveals a compact mini-HUD for pause/resume, copying the latest caption, cycling display mode, `A-`/`A+` text sizing, switching backdrop, and closing. Caption controls remain in Settings, the main window, and the menu bar; ⌘⇧C shows or hides captions.
 
-Choose from five text styles (Everyday, Cinema, Lecture, High contrast, and Light scene), four font families, weight, line spacing, shadow or outline, text color, alignment, line count, and translation-first ordering. The preview uses the actual 18–72 pt text size over a light or dark sample scene. Preview sample captions without recording, and adjust their width and always-on-top behavior in Settings. Existing appearance preferences still load; legacy background settings do not create a visible window.
+Choose from five text styles (Everyday, Cinema, Lecture, High contrast, and Light scene), four font families, weight, line spacing, shadow or outline, text color, alignment, line count, and translation-first ordering. The preview uses the actual 18–72 pt text size over a light or dark sample scene. Preview sample captions without recording, and adjust their width and always-on-top behavior in Settings. Existing appearance preferences still load and preserve your chosen style and backdrop.
 
 ## Microsoft MAI audio
 

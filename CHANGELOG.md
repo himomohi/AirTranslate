@@ -4,6 +4,28 @@ All notable changes to AirTranslate are documented in this file.
 
 Former README release highlights: [English](Release/README-HISTORY/README.md), [한국어](Release/README-HISTORY/README.ko.md), [日本語](Release/README-HISTORY/README.ja.md), [简体中文](Release/README-HISTORY/README.zh-CN.md).
 
+## 1.21.0 - 2026-11-28
+
+### Added
+
+- Local latency trace diagnostics (`AIRTRANSLATE_LATENCY_TRACE=1`) emit opaque `session_id` and `line_id` UUIDs across caption presentation and translation stages on a serial `.utility` write queue without recording transcript text, and `script/summarize_latency_trace.py` computes `first_source_to_translation_ms` for matched `(session_id, line_id)` pairs.
+- Added generation-guarded next-utterance audio prefetching for Gemini TTS and MAI Voice speech synthesis.
+
+### Changed
+
+- Overlapped session warmup, speech recognizer startup, and audio capture startup when starting capture. `AppleTranslationService` caches ready session keys per language pair and quality strategy and runs its one-time warmup translation for ready pairs in both Quality First and Fast Captions modes; Hy-MT2 preloads its local model during session warmup; and Apple Speech installed-locale checks run concurrently.
+- Tightened Fast Captions recognition cadence (`0.16s`) and initial short-phrase quiet fallback (`0.15s`), bypassed idle and finalized-request translation debounce delays, cancelled superseded active partial translations when newer utterances arrive, and reused matching completed translations on finalization without re-translating.
+- Replaced `TranslationSegmentCache` with an O(1) LRU cache retained across capture start/stop until language, engine, or protected-term settings change (excluding Hy-MT2), added O(1) caption line ID lookup, avoided off-main-actor hops for short transcript preparation while coalescing larger payloads, and precompiled hot-path normalization and lint patterns.
+- Improved local Hy-MT2 translation by moving model loading, prefill, and token decode onto a dedicated serial queue with cooperative cancellation, FIFO waiter scheduling, KV-cache prefix reuse across consecutive prompts, and coalesced main-actor progress updates.
+- Cached macOS Keychain API-key state in memory across all nine provider key stores, switched OpenAI/Gemini/Meta saves to `SecItemUpdate` + `SecItemAdd`, and unified non-interactive `LAContext` reads.
+- Reduced audio and realtime transport overhead by computing input audio levels with Accelerate/`vDSP` without per-callback heap allocations, moving ScreenCaptureKit `.screen` callbacks to a dedicated utility queue, throttling UI audio-meter updates (`>= 1 dB` deadband / `<= 15 Hz` while keeping threshold crossings and `>= 6 dB` jumps immediate), replacing polling loops in realtime engines with condition waiters, enforcing monotonic audio pacing in Qwen and Grok realtime sessions, and bounding chunked HTTP reads in MAI Voice output.
+- Split caption board, floating caption window, and console audio-meter views to isolate frequent audio-level and status updates, added a bounded history layout cache for previous floating captions, and skipped feed line-frame measurement when following the latest captions.
+
+### Fixed
+
+- Fixed a startup handshake send-queue race in Gemini Live and Meta Voice realtime sessions so pre-setup audio respects handshake ordering.
+- Hardened OpenAI translation, Jev transcript selection, and realtime WebSocket `URLSession` instances with ephemeral configurations and HTTP redirect rejection, synchronized `TranslatedSpeechOutput` utterance state with locking, guarded `GeminiSpeechOutput` active-player callbacks, and bounded `OpenAIRealtimeTranscriber.stop()` waits.
+
 ## 1.20.0 - 2026-11-22
 
 ### Added

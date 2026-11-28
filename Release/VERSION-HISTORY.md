@@ -1,5 +1,31 @@
 # AirTranslate Version History
 
+## 1.21.0 - 2026-11-28
+
+### Added
+
+- Local latency trace diagnostics (`AIRTRANSLATE_LATENCY_TRACE=1`) emit opaque `session_id` and `line_id` UUIDs asynchronously without transcript text, and `script/summarize_latency_trace.py` summarizes `first_source_to_translation_ms` for matched `(session_id, line_id)` pairs.
+- Added generation-guarded next-utterance audio prefetching in Gemini TTS and MAI Voice speech synthesis.
+
+### Changed
+
+- Overlapped session warmup, speech recognizer startup, and audio capture startup; cached ready Apple Translation sessions per language pair/quality with one-time warmup in both Quality First and Fast Captions modes; preloaded Hy-MT2 during session warmup; and checked Apple Speech installed locales concurrently.
+- Tightened Fast Captions recognition cadence and initial short-phrase quiet fallback, skipped idle and finalized-request translation debounce delays, cancelled superseded partial translations when newer utterances arrive, and reused matching completed translations on finalization.
+- Replaced `TranslationSegmentCache` with an O(1) LRU cache retained across start/stop (excluding Hy-MT2), added O(1) line ID lookup, coalesced large-transcript preparation off the main actor, and precompiled hot-path text normalization and lint patterns.
+- Moved Hy-MT2 model loading, prefill, and token decode onto a dedicated serial queue with cooperative cancellation, FIFO waiters, KV-cache prefix reuse, and coalesced main-actor progress updates.
+- Cached Keychain API-key state in memory across all provider stores with atomic `SecItemUpdate` / `SecItemAdd` writes and non-interactive `LAContext` reads.
+- Computed input audio levels with Accelerate/`vDSP` without per-callback heap allocations, isolated ScreenCaptureKit `.screen` callbacks, throttled UI audio-meter updates, replaced realtime polling loops with condition waiters, enforced monotonic Qwen/Grok audio pacing, bounded chunked MAI Voice HTTP reads, and split caption board/floating window/audio-meter views to isolate frequent UI invalidations.
+
+### Fixed
+
+- Fixed a startup handshake send-queue race in Gemini Live and Meta Voice realtime sessions.
+- Hardened OpenAI translation, Jev transcript selection, and realtime WebSocket sessions with ephemeral `URLSession` configurations and HTTP redirect rejection, synchronized `TranslatedSpeechOutput` utterance state, guarded `GeminiSpeechOutput` player callbacks, and bounded `OpenAIRealtimeTranscriber.stop()` waits.
+
+### Availability
+
+- Requires macOS 26 or later (optional EmbeddingGemma 2 file transcription still requires Apple Silicon and macOS 27 or later).
+- DMG and ZIP packages remain ad-hoc signed and unnotarized.
+
 ## 1.20.0 - 2026-11-22
 
 ### Added

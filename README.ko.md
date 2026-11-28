@@ -25,12 +25,12 @@ AirTranslate는 Mac에서 재생되는 소리를 캡처해 실시간으로 전�
 
 ## 다운로드
 
-현재 공개 최신 릴리즈: **v1.20.0**.
+현재 공개 최신 릴리즈: **v1.21.0**.
 
 - [AirTranslate.dmg 다운로드](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [AirTranslate-1.20.0.zip 다운로드](https://github.com/himomohi/AirTranslate/releases/download/v1.20.0/AirTranslate-1.20.0.zip)
+- [AirTranslate-1.21.0.zip 다운로드](https://github.com/himomohi/AirTranslate/releases/download/v1.21.0/AirTranslate-1.21.0.zip)
 - [AirTranslate.dmg.sha256 다운로드](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
-- [AirTranslate 1.20.0 릴리스 노트](https://github.com/himomohi/AirTranslate/releases/tag/v1.20.0)
+- [AirTranslate 1.21.0 릴리스 노트](https://github.com/himomohi/AirTranslate/releases/tag/v1.21.0)
 - [버전 이력 보기](Release/VERSION-HISTORY.md)
 
 오픈소스 DMG와 ZIP은 ad-hoc 서명 빌드이며 Apple 공증을 받지 않았습니다. 첫 실행이 차단되면 [설치 안내](docs/GETTING-STARTED.md)를 확인하세요. DMG 해시는 다음처럼 확인합니다.
@@ -63,10 +63,11 @@ API 기반 엔진은 **설정 > API 키**에서 키를 설정한 뒤 사용할 �
 ## 핵심 기능
 
 - ScreenCaptureKit 기반 시스템 오디오 캡처와 내장, Bluetooth, AirPods 마이크 입력.
-- 기본 로컬 우선 경로인 Apple Speech 전사와 Apple Translation 번역.
+- 기본 로컬 우선 경로인 Apple Speech 전사와 Apple Translation 번역(Apple 기본 모드에서 **품질 우선 / 빠른 자막** 전환 지원).
+- API 키 없이 번들된 `llama.cpp` 런타임으로 Apple Speech 자막을 기기에서 번역하는 선택형 **Hy-MT2 1.8B** 로컬 번역(설정 > 일반에서 모델 다운로드).
 - 번역 없이 원문 자막만 보는 전사 전용 모드.
 - 플로팅 자막, 저장된 기록 보관함, 선택형 번역 음성, 원클릭 언어 바꾸기.
-- 글자만 표시하는 플로팅 자막과 설정의 다섯 스타일·글꼴·색상·폭·줄 간격·배치·미리보기·저장·초기화.
+- 배경 스타일 3종(`다크 글래스`, `시네마 다크`, `투명`), 호버 미니 HUD, 다섯 스타일·글꼴·색상·폭·줄 간격·배치·미리보기·저장·초기화를 지원하는 플로팅 자막.
 - 기록 파일 저장은 기본으로 꺼져 있습니다. 일반 `.txt` 파일을 Application Support에 남기려면 **Save Transcript Files**를 켭니다.
 - 영어, 한국어, 일본어, 중국어 간체 앱 언어.
 
@@ -74,7 +75,8 @@ API 기반 엔진은 **설정 > API 키**에서 키를 설정한 뒤 사용할 �
 
 | 엔진 | 역할 | 필요 항목 |
 | --- | --- | --- |
-| Apple 기본 모드 | 기본 로컬 우선 전사와 번역입니다. | 없음 |
+| Apple 기본 모드 | 기본 로컬 우선 전사와 번역(**품질 우선 / 빠른 자막** 선택 지원)입니다. | 없음 |
+| Hy-MT2 (로컬) | 번들된 `llama.cpp` 런타임으로 Apple Speech 자막을 기기에서 번역합니다. | 설정 > 일반에서 모델 다운로드 (API 키 불필요) |
 | OpenAI 음성 | 하나의 제공자 안에서 번역 또는 원문 전사를 선택합니다. 출력 아이콘으로 `gpt-realtime-translate`·`gpt-live-transcribe`를 전환하고 툴팁에서 모델과 요금을 확인합니다. | OpenAI |
 | Gemini Live | 문서화된 실시간 번역 모델 또는 자동 음성 언어 감지를 지원하는 별도 원문 전사 모델을 선택합니다. | Gemini |
 | Meta Scribe | AirTranslate 번역 전 단계의 화자 라벨 포함 다국어 전사입니다. | Meta |
@@ -95,9 +97,9 @@ Nari를 새로 선택하면 크레딧이 필요한 GA Fast 모델을 사용합�
 
 ## 플로팅 자막
 
-플로팅 자막은 화면 위에 원문·번역 글자만 표시합니다. 창 배경·테두리·도구막대·상태 문구·리사이즈 표시는 마우스를 올려도 나타나지 않으며, 자막이 없으면 아무것도 표시하지 않습니다. 조작은 설정·메인 화면·메뉴바에서 하고, ⌘⇧C로 자막을 표시하거나 숨깁니다.
+플로팅 자막은 화면 위에 원문과 번역을 표시하며 **다크 글래스**(기본), **시네마 다크**, **투명** 배경 스타일을 선택할 수 있습니다. 자막이 없으면 아무것도 표시하지 않으며, 표시된 자막 위에 마우스를 올리면 일시정지/재개, 최신 자막 복사, 표시 모드 전환, `A-`/`A+` 크기 조절, 배경 전환, 닫기를 실행하는 미니 HUD가 나타납니다. 조작은 설정·메인 화면·메뉴바에서도 가능하며, ⌘⇧C로 자막을 표시하거나 숨깁니다.
 
-기본·영화·강의·고대비·밝은 화면용의 5개 글자 스타일과 글꼴 4종, 굵기·줄 간격·그림자/윤곽선·글자 색상·정렬·줄 수·번역 우선 배치를 제공합니다. 밝은/어두운 예시 화면에서 실제 18–72pt 크기로 미리 볼 수 있고, 녹음 없이 샘플 자막을 띄울 수 있습니다. 가로 폭과 항상 위 표시는 설정에서 조절합니다. 기존 외형 설정은 복원하며, 예전 배경 설정값이 남아 있어도 창 배경은 표시하지 않습니다.
+기본·영화·강의·고대비·밝은 화면용의 5개 글자 스타일과 글꼴 4종, 굵기·줄 간격·그림자/윤곽선·글자 색상·정렬·줄 수·번역 우선 배치를 제공합니다. 밝은/어두운 예시 화면에서 실제 18–72pt 크기로 미리 볼 수 있고, 녹음 없이 샘플 자막을 띄울 수 있습니다. 가로 폭과 항상 위 표시는 설정에서 조절하며, 기존 외형 및 배경 설정을 그대로 불러옵니다.
 
 ## Microsoft MAI 오디오
 

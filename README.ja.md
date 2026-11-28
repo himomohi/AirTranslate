@@ -25,12 +25,12 @@ AirTranslateはMacで再生中の音声を取り込み、ライブで文字起�
 
 ## ダウンロード
 
-現在の公開最新版: **v1.20.0**。
+現在の公開最新版: **v1.21.0**。
 
 - [AirTranslate.dmgをダウンロード](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg)
-- [AirTranslate-1.20.0.zipをダウンロード](https://github.com/himomohi/AirTranslate/releases/download/v1.20.0/AirTranslate-1.20.0.zip)
+- [AirTranslate-1.21.0.zipをダウンロード](https://github.com/himomohi/AirTranslate/releases/download/v1.21.0/AirTranslate-1.21.0.zip)
 - [AirTranslate.dmg.sha256をダウンロード](https://github.com/himomohi/AirTranslate/releases/latest/download/AirTranslate.dmg.sha256)
-- [AirTranslate 1.20.0 リリースノート](https://github.com/himomohi/AirTranslate/releases/tag/v1.20.0)
+- [AirTranslate 1.21.0 リリースノート](https://github.com/himomohi/AirTranslate/releases/tag/v1.21.0)
 - [バージョン履歴を見る](Release/VERSION-HISTORY.md)
 
 オープンソースのDMGとZIPはad-hoc署名で、Appleの公証を受けていません。初回起動がブロックされた場合は[インストールガイド](docs/GETTING-STARTED.md)を確認してください。DMGのハッシュは次のように確認できます。
@@ -63,10 +63,11 @@ API連携エンジンは、**Settings > API Keys**でキーを設定すると利
 ## 主な機能
 
 - ScreenCaptureKitによるシステムオーディオ取り込みと、内蔵、Bluetooth、AirPodsマイク入力。
-- ローカル優先の標準経路であるApple Speech文字起こしとApple Translation翻訳。
+- ローカル優先の標準経路であるApple Speech文字起こしとApple Translation翻訳（Apple Modeで**品質優先 / 高速字幕**の切り替えに対応）。
+- APIキー不要で同梱の`llama.cpp`ランタイムによりApple Speech字幕を端末内で翻訳する任意のローカル**Hy-MT2 1.8B**翻訳（設定 > 一般からモデルをダウンロード）。
 - 翻訳なしで原文字幕だけを見る文字起こし専用モード。
 - フローティング字幕、保存済み記録ライブラリ、任意の翻訳音声、ワンクリック言語入れ替え。
-- 文字だけのフローティング字幕と、設定での5スタイル・フォント・色・幅・行間・順序・プレビュー・保存・リセット。
+- 3種類の背景（`フロストダーク`、`シネマダーク`、`透明`）、ホバーミニHUD、設定での5スタイル・フォント・色・幅・行間・順序・プレビュー・保存・リセットを備えたフローティング字幕。
 - 記録ファイル保存はデフォルトでオフです。Application Supportに通常の`.txt`ファイルを残す場合は**Save Transcript Files**を有効にします。
 - 英語、韓国語、日本語、簡体字中国語のアプリ言語。
 
@@ -74,7 +75,8 @@ API連携エンジンは、**Settings > API Keys**でキーを設定すると利
 
 | エンジン | 役割 | 必要なもの |
 | --- | --- | --- |
-| Apple Mode | 標準のローカル優先文字起こしと翻訳です。 | なし |
+| Apple Mode | 標準のローカル優先文字起こしと翻訳（**品質優先 / 高速字幕**の切り替え対応）です。 | なし |
+| Hy-MT2 (ローカル) | 同梱の`llama.cpp`ランタイムでApple Speech字幕を端末内で翻訳します。 | 設定 > 一般でのモデルダウンロード（APIキー不要） |
 | OpenAI 音声 | 1つのプロバイダー内で翻訳または原文文字起こしを選びます。出力アイコンで `gpt-realtime-translate`・`gpt-live-transcribe` を切り替え、ツールチップでモデルと料金を確認できます。 | OpenAI |
 | Gemini Live | 文書化されたリアルタイム翻訳モデル、または音声言語を自動検出する原文文字起こしモデルを選択できます。 | Gemini |
 | Meta Scribe | AirTranslate翻訳の前段にある、話者ラベル付き多言語文字起こしです。 | Meta |
@@ -95,9 +97,9 @@ Nariを新しく選択すると、Nariクレジットが必要なGA Fastモデ�
 
 ## フローティング字幕
 
-フローティング字幕は、画面に原文・翻訳の文字だけを重ねます。背景・枠・ツールバー・状態表示・サイズ変更の印は、ポインタを重ねても表示しません。字幕がないときは何も表示しません。設定・メイン画面・メニューバーで操作し、⌘⇧Cで字幕の表示を切り替えます。
+フローティング字幕は、画面上に原文と翻訳を表示し、**フロストダーク**（標準）、**シネマダーク**、**透明**の背景スタイルを選べます。字幕がないときは何も表示せず、表示中の字幕にポインタを合わせると、一時停止/再開、最新字幕のコピー、表示モード切り替え、`A-`/`A+`文字サイズ変更、背景切り替え、閉じる操作ができるミニHUDが表示されます。設定・メイン画面・メニューバーからも操作でき、⌘⇧Cで字幕の表示を切り替えます。
 
-標準・映画・講義・高コントラスト・明るい画面用の5つの文字スタイル、4種類のフォント、太さ・行間・影/縁取り・文字色・配置・行数・翻訳を上に表示する設定を用意しています。明暗のサンプル画面で実際の18–72ptサイズを確認し、録音せずにサンプル字幕を表示できます。幅と最前面表示は設定で変更します。既存の外観設定は復元しますが、以前の背景設定が残っていてもウインドウ背景は表示しません。
+標準・映画・講義・高コントラスト・明るい画面用の5つの文字スタイル、4種類のフォント、太さ・行間・影/縁取り・文字色・配置・行数・翻訳を上に表示する設定を用意しています。明暗のサンプル画面で実際の18–72ptサイズを確認し、録音せずにサンプル字幕を表示できます。幅と最前面表示は設定で変更でき、既存の外観および背景設定を保持します。
 
 ## Microsoft MAI 音声
 
