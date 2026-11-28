@@ -121,10 +121,41 @@ class LatencyTraceTests(unittest.TestCase):
         for events in (
             [event("floating.source", 10), event("translation.apply", 10000, id="other-line")],
             [event("translation.apply", 10, id="other-line"), event("floating.source", 10000)],
+            [
+                event("caption.present", 10, session_id="s1", line_id="l1"),
+                event("translation.apply", 11, session_id="s2", line_id="l1"),
+            ],
+            [
+                event("caption.present", 10, session_id="s1", line_id="l1"),
+                event("translation.apply", 11, session_id="s1", line_id="l2"),
+            ],
+            [
+                event("translation.apply", 9.5, session_id="s1", line_id="l1"),
+                event("caption.present", 10, session_id="s1", line_id="l1"),
+            ],
         ):
             with self.subTest(events=events):
                 summary = TRACE.summarize(events)
                 self.assertIsNone(summary["first_source_to_translation_ms"])
+
+    def test_matched_session_and_line_computes_first_source_to_translation_ms(self):
+        summary = TRACE.summarize([
+            event("caption.present", 10.0, session_id="s1", line_id="l1"),
+            event("floating.source", 10.05, session_id="s1", line_id="l1"),
+            event("translation.apply", 9.9, session_id="s1", line_id="l1"),
+            event("translation.first_apply", 10.25, session_id="s1", line_id="l1"),
+            event("caption.present", 11.0, session_id="s1", line_id="l2"),
+            event("translation.apply", 11.1, session_id="s1", line_id="l2"),
+        ])
+        self.assertEqual(summary["first_source_to_translation_ms"], 250.0)
+
+    def test_first_source_to_translation_skips_unmatched_earlier_line(self):
+        summary = TRACE.summarize([
+            event("caption.present", 10.0, session_id="s1", line_id="l1"),
+            event("caption.present", 11.0, session_id="s1", line_id="l2"),
+            event("floating.translation", 11.125, session_id="s1", line_id="l2"),
+        ])
+        self.assertEqual(summary["first_source_to_translation_ms"], 125.0)
 
     def test_duplicate_and_conflicting_terminals_do_not_bias_distribution(self):
         summary = TRACE.summarize([

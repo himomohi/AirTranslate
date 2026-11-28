@@ -19,6 +19,15 @@ package enum TranscriptTextProcessor {
     private static let committedRevisionSearchLimit = 2
     private static let committedReplayPrefixSearchLimit = 4
     private static let minimumCommittedReplayPrefixUnits = 2
+    private static let sentenceBoundaryRegex = try! NSRegularExpression(pattern: #"([.!?。！？]+)\s+"#)
+    private static let koreanSentenceBoundaryRegex = try! NSRegularExpression(
+        pattern: #"(습니다|니다|어요|아요|세요|군요|네요|죠|지요|다)\s+"#
+    )
+    private static let paragraphSeparatorRegex = try! NSRegularExpression(pattern: #"[ \t]*\n{2,}[ \t]*"#)
+    private static let lettersAndDigits = CharacterSet.letters.union(.decimalDigits)
+    private static let tokenAllowedCharacters = CharacterSet.letters
+        .union(.decimalDigits)
+        .union(.whitespacesAndNewlines)
 
     package static func organizeTranscript(_ text: String, languageID: String) -> String {
         paragraphParts(from: text)
@@ -28,21 +37,20 @@ package enum TranscriptTextProcessor {
     }
 
     package static func organizeParagraph(_ text: String, languageID: String) -> String {
-        var organized = text
-            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        var organized = normalizedForComparison(text)
+        guard !organized.isEmpty else { return "" }
 
-        organized = organized.replacingOccurrences(
-            of: #"([.!?。！？]+)\s+"#,
-            with: "$1\n",
-            options: .regularExpression
+        organized = Self.sentenceBoundaryRegex.stringByReplacingMatches(
+            in: organized,
+            range: NSRange(organized.startIndex..., in: organized),
+            withTemplate: "$1\n"
         )
 
         if languageID == "ko-KR" {
-            organized = organized.replacingOccurrences(
-                of: #"(습니다|니다|어요|아요|세요|군요|네요|죠|지요|다)\s+"#,
-                with: "$1\n",
-                options: .regularExpression
+            organized = Self.koreanSentenceBoundaryRegex.stringByReplacingMatches(
+                in: organized,
+                range: NSRange(organized.startIndex..., in: organized),
+                withTemplate: "$1\n"
             )
         }
 
@@ -55,10 +63,14 @@ package enum TranscriptTextProcessor {
 
     package static func paragraphParts(from text: String) -> [String] {
         let marker = "\u{1E}"
-        let normalized = text
+        let lineNormalized = text
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
-            .replacingOccurrences(of: #"[ \t]*\n{2,}[ \t]*"#, with: marker, options: .regularExpression)
+        let normalized = Self.paragraphSeparatorRegex.stringByReplacingMatches(
+            in: lineNormalized,
+            range: NSRange(lineNormalized.startIndex..., in: lineNormalized),
+            withTemplate: marker
+        )
 
         return normalized
             .components(separatedBy: marker)
@@ -391,9 +403,39 @@ package enum TranscriptTextProcessor {
     }
 
     package static func normalizedForComparison(_ text: String) -> String {
-        text
-            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        var scalars = String.UnicodeScalarView()
+        scalars.reserveCapacity(text.unicodeScalars.count)
+        var pendingSpace = false
+        var sawNonWhitespace = false
+        for scalar in text.unicodeScalars {
+            if scalar.properties.isWhitespace {
+                if sawNonWhitespace {
+                    pendingSpace = true
+                }
+            } else {
+                if pendingSpace {
+                    scalars.append(" ")
+                    pendingSpace = false
+                }
+                scalars.append(scalar)
+                sawNonWhitespace = true
+            }
+        }
+        return String(scalars)
+    }
+
+    package static func isCompatibleLiveSource(current: String, requested: String) -> Bool {
+        let currentText = current.trimmingCharacters(in: .whitespacesAndNewlines)
+        let requestedText = requested.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !requestedText.isEmpty else { return currentText.isEmpty }
+        if currentText == requestedText || currentText.hasPrefix(requestedText) {
+            return true
+        }
+
+        let normalizedCurrentText = normalizedForComparison(currentText)
+        let normalizedRequestedText = normalizedForComparison(requestedText)
+        return normalizedCurrentText == normalizedRequestedText
+            || normalizedCurrentText.hasPrefix(normalizedRequestedText)
     }
 
     package static func isLikelyRecentTranscriptRevision(
@@ -617,11 +659,8 @@ package enum TranscriptTextProcessor {
     }
 
     private static func transcriptTokens(from text: String) -> [String] {
-        let allowedCharacters = CharacterSet.letters
-            .union(.decimalDigits)
-            .union(.whitespacesAndNewlines)
         let filteredText = String(text.unicodeScalars.map { scalar in
-            allowedCharacters.contains(scalar) ? Character(scalar) : " "
+            tokenAllowedCharacters.contains(scalar) ? Character(scalar) : " "
         })
 
         return filteredText
@@ -649,8 +688,7 @@ package enum TranscriptTextProcessor {
     }
 
     private static func isLetterOrNumber(_ character: Character) -> Bool {
-        let lettersAndNumbers = CharacterSet.letters.union(.decimalDigits)
-        return character.unicodeScalars.allSatisfy { lettersAndNumbers.contains($0) }
+        character.unicodeScalars.allSatisfy { lettersAndDigits.contains($0) }
     }
 
     private static func commonPrefixLength(_ lhs: String, _ rhs: String) -> Int {

@@ -1,3 +1,4 @@
+import Accelerate
 import AVFoundation
 import CoreGraphics
 import ScreenCaptureKit
@@ -139,6 +140,10 @@ final class SystemAudioCapture: NSObject, @unchecked Sendable {
     private let stateLock = NSLock()
     private let operationGate = CaptureOperationGate()
     private let sampleQueue = DispatchQueue(label: "AirTranslate.SystemAudioCapture.sampleQueue")
+    private let screenSampleQueue = DispatchQueue(
+        label: "AirTranslate.SystemAudioCapture.screenSampleQueue",
+        qos: .utility
+    )
     private weak var delegateStorage: SystemAudioCaptureDelegate?
     private let screenRecordingAccessPolicy: ScreenRecordingAccessPolicy
     private var operationGeneration: UInt64 = 0
@@ -222,7 +227,7 @@ final class SystemAudioCapture: NSObject, @unchecked Sendable {
         configuration.channelCount = 1
 
         let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
-        try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: sampleQueue)
+        try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: screenSampleQueue)
         try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: sampleQueue)
 
         let installed = withStateLock {
@@ -369,6 +374,14 @@ extension SystemAudioCapture: SCStreamOutput {
     }
 
     private func audioLevel(from sampleBuffer: CMSampleBuffer) -> Float? {
+        AudioLevelCalculator.decibels(from: sampleBuffer)
+    }
+}
+
+enum AudioLevelCalculator {
+    private static let int16ConversionChunkSize = 4_096
+
+    static func decibels(from sampleBuffer: CMSampleBuffer) -> Float? {
         guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer),
               let streamDescription = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription)
         else {
@@ -389,58 +402,83 @@ extension SystemAudioCapture: SCStreamOutput {
 
         guard listSize > 0 else { return nil }
 
-        let rawList = UnsafeMutableRawPointer.allocate(
+        return withUnsafeTemporaryAllocation(
             byteCount: listSize,
             alignment: MemoryLayout<AudioBufferList>.alignment
-        )
-        defer { rawList.deallocate() }
+        ) { rawList -> Float? in
+            guard let baseAddress = rawList.baseAddress else { return nil }
 
-        let audioBufferList = rawList.bindMemory(to: AudioBufferList.self, capacity: 1)
-        var blockBuffer: CMBlockBuffer?
-        let status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
-            sampleBuffer,
-            bufferListSizeNeededOut: nil,
-            bufferListOut: audioBufferList,
-            bufferListSize: listSize,
-            blockBufferAllocator: kCFAllocatorDefault,
-            blockBufferMemoryAllocator: kCFAllocatorDefault,
-            flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
-            blockBufferOut: &blockBuffer
-        )
+            let audioBufferList = baseAddress.bindMemory(to: AudioBufferList.self, capacity: 1)
+            var blockBuffer: CMBlockBuffer?
+            let status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+                sampleBuffer,
+                bufferListSizeNeededOut: nil,
+                bufferListOut: audioBufferList,
+                bufferListSize: listSize,
+                blockBufferAllocator: kCFAllocatorDefault,
+                blockBufferMemoryAllocator: kCFAllocatorDefault,
+                flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
+                blockBufferOut: &blockBuffer
+            )
 
-        guard status == noErr else { return nil }
+            guard status == noErr else { return nil }
 
-        let buffers = UnsafeMutableAudioBufferListPointer(audioBufferList)
-        let isFloat = streamDescription.pointee.mFormatFlags & kAudioFormatFlagIsFloat != 0
-        var squareSum: Double = 0
-        var sampleCount = 0
+            let buffers = UnsafeMutableAudioBufferListPointer(audioBufferList)
+            let isFloat = streamDescription.pointee.mFormatFlags & kAudioFormatFlagIsFloat != 0
 
-        for buffer in buffers {
-            guard let data = buffer.mData else { continue }
-
-            if isFloat {
-                let samples = data.bindMemory(to: Float.self, capacity: Int(buffer.mDataByteSize) / MemoryLayout<Float>.size)
-                let count = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size
-                for index in 0..<count {
-                    let sample = Double(samples[index])
-                    squareSum += sample * sample
+            if buffers.count == 1, let buffer = buffers.first, let data = buffer.mData {
+                if isFloat {
+                    let count = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size
+                    guard count > 0 else { return nil }
+                    let samples = data.bindMemory(to: Float.self, capacity: count)
+                    var rms: Float = 0
+                    vDSP_rmsqv(samples, 1, &rms, vDSP_Length(count))
+                    return Float(20 * log10(max(Double(rms), 0.000_001)))
                 }
-                sampleCount += count
-            } else {
-                let samples = data.bindMemory(to: Int16.self, capacity: Int(buffer.mDataByteSize) / MemoryLayout<Int16>.size)
-                let count = Int(buffer.mDataByteSize) / MemoryLayout<Int16>.size
-                for index in 0..<count {
-                    let sample = Double(samples[index]) / Double(Int16.max)
-                    squareSum += sample * sample
-                }
-                sampleCount += count
             }
-        }
 
-        guard sampleCount > 0 else { return nil }
-        let rms = sqrt(squareSum / Double(sampleCount))
-        let decibels = 20 * log10(max(rms, 0.000_001))
-        return Float(decibels)
+            var squareSum: Double = 0
+            var sampleCount = 0
+
+            for buffer in buffers {
+                guard let data = buffer.mData else { continue }
+
+                if isFloat {
+                    let count = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size
+                    guard count > 0 else { continue }
+                    let samples = data.bindMemory(to: Float.self, capacity: count)
+                    var bufferSquareSum: Float = 0
+                    vDSP_svesq(samples, 1, &bufferSquareSum, vDSP_Length(count))
+                    squareSum += Double(bufferSquareSum)
+                    sampleCount += count
+                } else {
+                    let count = Int(buffer.mDataByteSize) / MemoryLayout<Int16>.size
+                    guard count > 0 else { continue }
+                    let samples = data.bindMemory(to: Int16.self, capacity: count)
+                    let chunkCapacity = min(count, int16ConversionChunkSize)
+                    let invScale = 1.0 / Double(Int16.max)
+                    let invScaleSquared = invScale * invScale
+                    withUnsafeTemporaryAllocation(of: Float.self, capacity: chunkCapacity) { scratch in
+                        guard let floatPtr = scratch.baseAddress else { return }
+                        var offset = 0
+                        while offset < count {
+                            let chunk = min(chunkCapacity, count - offset)
+                            vDSP_vflt16(samples.advanced(by: offset), 1, floatPtr, 1, vDSP_Length(chunk))
+                            var chunkSquareSum: Float = 0
+                            vDSP_svesq(floatPtr, 1, &chunkSquareSum, vDSP_Length(chunk))
+                            squareSum += Double(chunkSquareSum) * invScaleSquared
+                            offset += chunk
+                        }
+                    }
+                    sampleCount += count
+                }
+            }
+
+            guard sampleCount > 0 else { return nil }
+            let rms = sqrt(squareSum / Double(sampleCount))
+            let decibels = 20 * log10(max(rms, 0.000_001))
+            return Float(decibels)
+        }
     }
 }
 

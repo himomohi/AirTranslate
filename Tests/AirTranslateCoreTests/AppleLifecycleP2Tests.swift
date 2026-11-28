@@ -217,6 +217,31 @@ struct AppleLifecycleP2Tests {
 
     @Test
     @MainActor
+    func audioLevelDeadbandSuppressesSubDecibelJitterWhileAudibleJumpUpdatesImmediately() async {
+        let suiteName = "AudioLevelDeadbandTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let session = TranslationSessionStore(
+            modelAvailabilityProvider: { _, _ in [:] }, settingsDefaults: defaults
+        )
+        session.audioInputSource = .systemAudio
+        let generation = session.activateLiveCallbackPipelineForTesting().generation
+        let capture = session.systemAudioCaptureForTesting
+
+        session.systemAudioCapture(capture, didReceiveAudioSampleCount: 1, level: -60.0, generation: generation)
+        #expect(await waitUntil { session.latestAudioLevel == -60.0 })
+
+        session.systemAudioCapture(capture, didReceiveAudioSampleCount: 8, level: -59.5, generation: generation)
+        await settleMainActorTasks()
+        #expect(session.latestAudioLevel == -60.0)
+
+        session.systemAudioCapture(capture, didReceiveAudioSampleCount: 16, level: -25.0, generation: generation)
+        #expect(await waitUntil { session.latestAudioLevel == -25.0 })
+        session.stop()
+    }
+
+    @Test
+    @MainActor
     func externalUserStopSavesUnlocksRestartsAndIgnoresStaleGeneration() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("AirTranslateUserStopTests-\(UUID().uuidString)", isDirectory: true)

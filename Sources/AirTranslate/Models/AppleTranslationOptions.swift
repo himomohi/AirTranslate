@@ -70,8 +70,6 @@ struct AppleTranslationOptions: Equatable, Sendable {
             return $0.offset < $1.offset
         }
         guard !text.isEmpty, !terms.isEmpty else { return [] }
-        let boundaries = Array(text.indices) + [text.endIndex]
-        let boundarySet = Set(boundaries)
         var selected: [Range<String.Index>] = []
         for (_, term) in terms {
             var searchStart = text.startIndex
@@ -80,8 +78,9 @@ struct AppleTranslationOptions: Equatable, Sendable {
                     of: term, options: .caseInsensitive,
                     range: searchStart..<text.endIndex, locale: Self.matchingLocale
                   ) {
-                guard boundarySet.contains(range.lowerBound), boundarySet.contains(range.upperBound) else {
-                    searchStart = boundaries.first(where: { $0 > range.lowerBound }) ?? text.endIndex
+                guard Self.isCharacterBoundary(range.lowerBound, in: text),
+                      Self.isCharacterBoundary(range.upperBound, in: text) else {
+                    searchStart = text.rangeOfComposedCharacterSequence(at: range.lowerBound).upperBound
                     continue
                 }
                 if Self.hasWordBoundaries(range, term: term, in: text),
@@ -95,6 +94,10 @@ struct AppleTranslationOptions: Equatable, Sendable {
             }
         }
         return selected.sorted { $0.lowerBound < $1.lowerBound }
+    }
+
+    private static func isCharacterBoundary(_ index: String.Index, in text: String) -> Bool {
+        index == text.endIndex || text.rangeOfComposedCharacterSequence(at: index).lowerBound == index
     }
 
     @available(macOS 26.4, *)

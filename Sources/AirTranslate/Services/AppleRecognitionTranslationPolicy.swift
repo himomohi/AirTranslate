@@ -1,3 +1,4 @@
+import AirTranslateCore
 import Foundation
 
 struct AppleRecognitionTranslationPolicy: Sendable {
@@ -265,25 +266,7 @@ struct AppleRecognitionTranslationPolicy: Sendable {
     }
 
     private static func isCompatibleLiveSource(current: String, requested: String) -> Bool {
-        let currentText = current.trimmingCharacters(in: .whitespacesAndNewlines)
-        let requestedText = requested.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !requestedText.isEmpty else { return currentText.isEmpty }
-        if currentText == requestedText || currentText.hasPrefix(requestedText) {
-            return true
-        }
-
-        let normalizedCurrentText = currentText.replacingOccurrences(
-            of: #"\s+"#,
-            with: " ",
-            options: .regularExpression
-        )
-        let normalizedRequestedText = requestedText.replacingOccurrences(
-            of: #"\s+"#,
-            with: " ",
-            options: .regularExpression
-        )
-        return normalizedCurrentText == normalizedRequestedText
-            || normalizedCurrentText.hasPrefix(normalizedRequestedText)
+        TranscriptTextProcessor.isCompatibleLiveSource(current: current, requested: requested)
     }
 }
 

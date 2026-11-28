@@ -11,6 +11,7 @@ actor AppleTranslationService {
     private var availabilityByQuality: [AppleTranslationQuality: LanguageAvailability] = [:]
     private var sessionsByLanguagePair: [CacheKey: TranslationSession] = [:]
     private var availabilityByLanguagePair: [CacheKey: LanguageAvailability.Status] = [:]
+    private var readySessionKeys = Set<CacheKey>()
     private var activationAttempts = Set<CacheKey>()
 
     private static let warmupSentences = [
@@ -102,31 +103,27 @@ actor AppleTranslationService {
     ) async throws {
         guard model != .appleSpeechOnly else { return }
 
-        let sourceLanguage = Locale.Language(identifier: source.id)
-        let targetLanguage = Locale.Language(identifier: target.id)
         let cacheKey = Self.cacheKey(source: source, target: target, options: options)
         let status = try await availabilityStatus(
-            source: sourceLanguage,
-            target: targetLanguage,
-            cacheKey: cacheKey,
-            sourceTitle: source.localizedTitle,
-            targetTitle: target.localizedTitle
+            source: source,
+            target: target,
+            cacheKey: cacheKey
         )
         guard status != .unsupported else {
             throw TranslationServiceError.unsupportedPair(source.localizedTitle, target.localizedTitle)
         }
 
         let session = translationSession(
-            source: sourceLanguage,
-            target: targetLanguage,
+            source: source,
+            target: target,
             cacheKey: cacheKey
         )
-        if !(await session.isReady) {
-            try await session.prepareTranslation()
-        } else if cacheKey.quality == .highQuality || activatesRealtimeSession,
-                  source != target, !Task.isCancelled,
-                  let sample = Self.warmupSentences[source.id],
-                  activationAttempts.insert(cacheKey).inserted {
+        try await ensureSessionReady(session, cacheKey: cacheKey)
+
+        _ = activatesRealtimeSession
+        if source != target, !Task.isCancelled,
+           let sample = Self.warmupSentences[source.id],
+           activationAttempts.insert(cacheKey).inserted {
             // 캡처 시작 직후 설치된 엔진을 한 번 호출해 초기 비용을 앞당긴다.
             // 정해진 예문의 결과는 자막, 기록, 번역 캐시에 사용하지 않는다.
             _ = try? await session.translate(sample)
@@ -146,15 +143,11 @@ actor AppleTranslationService {
         if let translationForTesting { return try await translationForTesting(text, options) }
 #endif
 
-        let sourceLanguage = Locale.Language(identifier: source.id)
-        let targetLanguage = Locale.Language(identifier: target.id)
         let cacheKey = Self.cacheKey(source: source, target: target, options: options)
         let status = try await availabilityStatus(
-            source: sourceLanguage,
-            target: targetLanguage,
-            cacheKey: cacheKey,
-            sourceTitle: source.localizedTitle,
-            targetTitle: target.localizedTitle
+            source: source,
+            target: target,
+            cacheKey: cacheKey
         )
 
         guard status != .unsupported else {
@@ -162,23 +155,28 @@ actor AppleTranslationService {
         }
 
         let session = translationSession(
-            source: sourceLanguage,
-            target: targetLanguage,
+            source: source,
+            target: target,
             cacheKey: cacheKey
         )
-        if !(await session.isReady) {
-            try await session.prepareTranslation()
-        }
+        try await ensureSessionReady(session, cacheKey: cacheKey)
 
         activationAttempts.insert(cacheKey)
-        let response: TranslationSession.Response
-        if #available(macOS 26.4, *),
-           let attributed = options.attributedTextPreservingTerms(in: text) {
-            response = try await session.translate(attributed)
-        } else {
-            response = try await session.translate(text)
+        do {
+            let response: TranslationSession.Response
+            if #available(macOS 26.4, *),
+               let attributed = options.attributedTextPreservingTerms(in: text) {
+                response = try await session.translate(attributed)
+            } else {
+                response = try await session.translate(text)
+            }
+            return response.targetText
+        } catch {
+            if !(error is CancellationError), !(TranslationError.alreadyCancelled ~= error) {
+                readySessionKeys.remove(cacheKey)
+            }
+            throw error
         }
-        return response.targetText
     }
 
     nonisolated static func cacheKey(
@@ -193,41 +191,54 @@ actor AppleTranslationService {
         )
     }
 
+    private func ensureSessionReady(_ session: TranslationSession, cacheKey: CacheKey) async throws {
+        guard !readySessionKeys.contains(cacheKey) else { return }
+        if !(await session.isReady) {
+            try await session.prepareTranslation()
+        }
+        readySessionKeys.insert(cacheKey)
+    }
+
     private func availabilityStatus(
-        source: Locale.Language,
-        target: Locale.Language,
-        cacheKey: CacheKey,
-        sourceTitle: String,
-        targetTitle: String
+        source: LanguageOption,
+        target: LanguageOption,
+        cacheKey: CacheKey
     ) async throws -> LanguageAvailability.Status {
         if let status = availabilityByLanguagePair[cacheKey] {
+            if status == .unsupported {
+                throw TranslationServiceError.unsupportedPair(source.localizedTitle, target.localizedTitle)
+            }
             return status
         }
 
-        let status = await languageAvailability(quality: cacheKey.quality).status(from: source, to: target)
+        let sourceLanguage = Locale.Language(identifier: source.id)
+        let targetLanguage = Locale.Language(identifier: target.id)
+        let status = await languageAvailability(quality: cacheKey.quality).status(from: sourceLanguage, to: targetLanguage)
         availabilityByLanguagePair[cacheKey] = status
         if status == .unsupported {
-            throw TranslationServiceError.unsupportedPair(sourceTitle, targetTitle)
+            throw TranslationServiceError.unsupportedPair(source.localizedTitle, target.localizedTitle)
         }
         return status
     }
 
     private func translationSession(
-        source: Locale.Language,
-        target: Locale.Language,
+        source: LanguageOption,
+        target: LanguageOption,
         cacheKey: CacheKey
     ) -> TranslationSession {
         if let session = sessionsByLanguagePair[cacheKey] {
             return session
         }
 
+        let sourceLanguage = Locale.Language(identifier: source.id)
+        let targetLanguage = Locale.Language(identifier: target.id)
         let session: TranslationSession
         if #available(macOS 26.4, *) {
             session = TranslationSession(
-                installedSource: source, target: target, preferredStrategy: cacheKey.quality.strategy
+                installedSource: sourceLanguage, target: targetLanguage, preferredStrategy: cacheKey.quality.strategy
             )
         } else {
-            session = TranslationSession(installedSource: source, target: target)
+            session = TranslationSession(installedSource: sourceLanguage, target: targetLanguage)
         }
         sessionsByLanguagePair[cacheKey] = session
         return session

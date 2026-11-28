@@ -151,6 +151,12 @@ def summarize(events, *, malformed_json_lines=0, ignored_lines=0):
     trace_format = "mixed" if contract_events and legacy_events else "v2" if contract_events else "legacy"
     speech_dispatch = distribution(dispatch)
     speech_dispatch["legacy_missing_events"] = legacy_dispatch
+    first_source_to_translation_ms = compute_first_source_to_translation_ms(events)
+    first_s2t_boundary = (
+        "first_source_to_translation_ms는 동일한 (session_id, line_id)를 가진 최초 원문 표시와 번역 적용 시각(translation_uptime >= source_uptime)의 차이이다."
+        if first_source_to_translation_ms is not None
+        else "동일한 (session_id, line_id)로 연결된 원문·번역 이벤트가 없으면 first_source_to_translation_ms는 미측정(null)이다."
+    )
     return {
         "schema": "airtranslate.latency-summary.v2",
         "trace_format": trace_format,
@@ -170,7 +176,7 @@ def summarize(events, *, malformed_json_lines=0, ignored_lines=0):
             "invalid_id_events": invalid_id_events,
         },
         "capture_callback_delay": distribution(capture_delay, capture_excluded),
-        "first_source_to_translation_ms": None,
+        "first_source_to_translation_ms": first_source_to_translation_ms,
         "final_results": sum(event.get("final") == 1 for event in events if event["stage"] == "speech.result"),
         "board_rewrites": {
             stage: (sum(event.get("rewrite") == 1 for event in events if event["stage"] == stage)
@@ -182,12 +188,62 @@ def summarize(events, *, malformed_json_lines=0, ignored_lines=0):
             "번역은 요청별 고유 id와 직접 기록한 queue_ms·elapsed_ms만 사용한다. 기존 줄 id·글자 수·이벤트 간격으로 추정하지 않는다.",
             "translation_execution은 성공 요청의 실행 시간이며 큐 대기·debounce·전처리 시간은 translation_queue로 별도 집계한다.",
             "요청 상태는 로그에 남은 이벤트만 집계한다. 잘린 로그와 충돌·중복 이벤트는 전체 세션 완료율의 근거가 아니다.",
-            "원문·번역의 줄과 세션을 연결할 수 없어 first_source_to_translation_ms는 미측정(null)이다.",
+            first_s2t_boundary,
             "speech_dispatch는 직접 기록된 dispatch_ms만 사용하며 legacy_missing_events는 미측정이다.",
             "capture_callback_delay는 PCM 변환 후 시점과 PTS+duration의 차이이다. 시간 기준 호환성을 별도로 확인해야 하며 제외 값은 excluded에 표시한다.",
             "동일한 음성 파일, 설정, 빌드 구성과 계측 조건으로 수집한 로그끼리 비교한다.",
         ],
     }
+
+
+SOURCE_CORRELATION_STAGES = {"caption.present", "floating.source", "board.source"}
+TRANSLATION_CORRELATION_STAGES = {
+    "translation.first_apply",
+    "translation.apply",
+    "floating.translation",
+    "board.translation",
+}
+
+
+def opaque_correlation_id(event, key):
+    value = event.get(key)
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def compute_first_source_to_translation_ms(events):
+    earliest_source_by_key = {}
+    translation_uptimes_by_key = defaultdict(list)
+
+    for event in events:
+        stage = event["stage"]
+        if stage not in SOURCE_CORRELATION_STAGES and stage not in TRANSLATION_CORRELATION_STAGES:
+            continue
+        session_id = opaque_correlation_id(event, "session_id")
+        line_id = opaque_correlation_id(event, "line_id")
+        if session_id is None or line_id is None:
+            continue
+        key = (session_id, line_id)
+        uptime = event["uptime"]
+        if stage in SOURCE_CORRELATION_STAGES:
+            previous = earliest_source_by_key.get(key)
+            if previous is None or uptime < previous:
+                earliest_source_by_key[key] = uptime
+        else:
+            translation_uptimes_by_key[key].append(uptime)
+
+    earliest_match = None
+    for key, source_uptime in earliest_source_by_key.items():
+        candidates = [t for t in translation_uptimes_by_key.get(key, ()) if t >= source_uptime]
+        if not candidates:
+            continue
+        translation_uptime = min(candidates)
+        candidate = (source_uptime, translation_uptime)
+        if earliest_match is None or candidate < earliest_match:
+            earliest_match = candidate
+
+    if earliest_match is None:
+        return None
+    return round((earliest_match[1] - earliest_match[0]) * 1000, 3)
 
 
 def read_trace(stream):

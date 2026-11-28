@@ -55,4 +55,31 @@ struct TranslationSegmentCacheTests {
         #expect(cache.value(forKey: "a") == nil)
         #expect(cache.value(forKey: "b") == nil)
     }
+
+    @Test
+    func capacityOneEvictsPreviousEntryOnInsert() {
+        var cache = TranslationSegmentCache(capacity: 1)
+        cache.insert("first", forKey: "a")
+        #expect(cache.value(forKey: "a") == "first")
+        cache.insert("second", forKey: "b")
+        #expect(cache.count == 1)
+        #expect(cache.value(forKey: "a") == nil)
+        #expect(cache.value(forKey: "b") == "second")
+    }
+
+    @Test
+    func lruEvictionRemainsAccurateAtCapacity() {
+        var cache = TranslationSegmentCache(capacity: 64)
+        for index in 0..<64 {
+            cache.insert("v\(index)", forKey: "k\(index)")
+        }
+        // Refresh the oldest entry so k1 becomes the LRU victim.
+        #expect(cache.value(forKey: "k0") == "v0")
+        cache.insert("v64", forKey: "k64")
+
+        #expect(cache.count == 64)
+        #expect(cache.value(forKey: "k1") == nil)
+        #expect(cache.value(forKey: "k0") == "v0")
+        #expect(cache.value(forKey: "k64") == "v64")
+    }
 }

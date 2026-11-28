@@ -530,6 +530,11 @@ final class TranslationSessionStore {
     private static let appleAutoDetectionLanguageSwitchMinimumConfidence = 0.72
     private static let isAppleSourceAutoDetectionTemporarilyDisabled = true
 
+    private static let leadingCommaRegex = try! NSRegularExpression(pattern: #"(^|[\s,，])[,，]{1,}(\s*[,，]+)*"#)
+    private static let spaceBeforePunctuationRegex = try! NSRegularExpression(pattern: #"\s+([,.!?。！？])"#)
+    private static let spaceAfterPunctuationRegex = try! NSRegularExpression(pattern: #"([,.!?])(?=\S)"#)
+    private static let nonSpellableWordCharacterRegex = try! NSRegularExpression(pattern: #"[/\\@#_]"#)
+
     private enum CaptionRolloverContext {
         case sentenceBoundary
         case longSilence
@@ -1268,6 +1273,9 @@ final class TranslationSessionStore {
     var pendingAutoDetectionLanguageChange: AutoDetectionLanguageChangeConfirmation?
     var isFoundationTranscriptCleanupRunning = false
     private(set) var latestAudioLevel: Float?
+    @ObservationIgnored private var lastAudioLevelUpdateUptime: TimeInterval = 0
+    @ObservationIgnored private var lineIndexByID: [UUID: Int] = [:]
+    @ObservationIgnored private var diagnosticsSessionID = UUID()
     var modelAvailabilityByModelID = Dictionary(
         uniqueKeysWithValues: IntelligenceModel.allCases.map {
             ($0.id, ModelAvailability.checking(for: $0))
@@ -1303,7 +1311,7 @@ final class TranslationSessionStore {
     )?
     private let transcriptsDirectoryOverride: URL?
     private let settingsDefaults: UserDefaults
-    private var audioSampleCount = 0
+    @ObservationIgnored private var audioSampleCount = 0
     private var lastRecognizedText = ""
     private var lastRecognizedWasFinal = false
     private var lastRecognitionAt = Date.distantPast
@@ -1366,6 +1374,8 @@ final class TranslationSessionStore {
     private var latestTranslationRequest: TranslationRequest?
     private var orderedTranslationRequests: [TranslationRequest] = []
     private var translationBurstStartedAt = Date.distantPast
+    @ObservationIgnored private var lastUnfinalizedPartialAt = Date.distantPast
+    @ObservationIgnored private var unavailableTranslationLineIDs: Set<UUID> = []
     private var committedSourceText = ""
     private var currentPartialText = ""
     private var currentPartialLanguage: LanguageOption?
@@ -1376,8 +1386,10 @@ final class TranslationSessionStore {
     private var floatingRecognitionIdentity: FloatingCaptionIdentity?
     private var floatingPresentedSourceIdentity: FloatingCaptionIdentity?
     private var floatingQueuedSourceIdentity: FloatingCaptionIdentity?
+    @ObservationIgnored private var floatingQueuedSourceLineID: UUID?
     private var floatingDisplayTranslationIdentity: FloatingCaptionIdentity?
     private var floatingQueuedTranslationIdentity: FloatingCaptionIdentity?
+    @ObservationIgnored private var floatingQueuedTranslationLineID: UUID?
     @ObservationIgnored private var floatingHistoryExpiryTask: Task<Void, Never>?
     @ObservationIgnored private var floatingHistoryScheduledExpiry: Date?
     private var floatingCommittedSourceText = ""
@@ -1402,14 +1414,18 @@ final class TranslationSessionStore {
         capacity: TranslationSessionStore.maxTranslationCacheEntries
     )
     private let standardAppleRecognitionPolicy = AppleRecognitionTranslationPolicy()
-    private let fastAppleRecognitionPolicy = AppleRecognitionTranslationPolicy(firstSmallPartialSilenceFallback: 0.20)
+    private let fastAppleRecognitionPolicy = AppleRecognitionTranslationPolicy(
+        partialCadence: 0.16,
+        smallPartialSilenceFallback: 0.30,
+        firstSmallPartialSilenceFallback: 0.15
+    )
     private var appleRecognitionTranslationPolicy: AppleRecognitionTranslationPolicy {
         isUsingAppleFastCaptions ? fastAppleRecognitionPolicy : standardAppleRecognitionPolicy
     }
     private var appleRecognitionTranslationState = AppleRecognitionTranslationPolicy.State()
     private var appleSpeechSegmentIDByLineID: [UUID: String] = [:]
     private var appleSpeechRevisionByLineID: [UUID: Int] = [:]
-    private var appleSmallPartialFlushTask: Task<Void, Never>?
+    private var appleSmallPartialFlushTasksBySegmentID: [String: Task<Void, Never>] = [:]
     private var realtimeTranslationSourceText = ""
     private var realtimeTranslationOnlyText = ""
     private var geminiLiveInputTranscriptText = ""
@@ -1610,6 +1626,7 @@ final class TranslationSessionStore {
                 isFinal: true
             ),
         ]
+        rebuildLineIndex()
 
         let demoTranscript = SavedTranscript(
             id: "product-hunt-demo",
@@ -1623,6 +1640,11 @@ final class TranslationSessionStore {
         selectedSavedTranscriptID = demoTranscript.id
         savedDraftSourceText = demoTranscript.sourceText
         savedDraftTranslationText = demoTranscript.translatedText ?? ""
+    }
+
+    private enum StartSubtaskOutcome {
+        case captioners
+        case capture
     }
 
     func start() {
@@ -1687,36 +1709,54 @@ final class TranslationSessionStore {
                 } else {
                     statusMessage = AppText.checkingSpeechPermission
                 }
-                try await startCaptioners(
-                    configuration: configuration,
-                    generation: generation
-                )
-                try validatePipelineStart(generation: generation, configuration: configuration)
-                audioSamplePipelineRegistry.publish(
-                    generation: generation,
-                    transcriber: transcriber,
-                    openAITranscriber: openAITranscriber,
-                    geminiLiveTranslator: geminiLiveTranslator,
-                    metaVoiceTranscriber: metaVoiceTranscriber,
-                    azureMAITranscriber: azureMAITranscriber,
-                    grokTranscriber: grokTranscriber,
-                    nariTranscriber: nariTranscriber,
-                    qwenTranslator: qwenTranslator
-                )
+                warmTranslationSession()
+                let captionersTask = Task { @MainActor in
+                    try await self.startCaptioners(
+                        configuration: configuration,
+                        generation: generation
+                    )
+                    return StartSubtaskOutcome.captioners
+                }
+                let captureTask = Task { @MainActor in
+                    try await self.startAudioCapture(
+                        configuration: configuration,
+                        generation: generation
+                    )
+                    return StartSubtaskOutcome.capture
+                }
+                try await withThrowingTaskGroup(of: StartSubtaskOutcome.self) { group in
+                    group.addTask {
+                        try await withTaskCancellationHandler {
+                            try await captionersTask.value
+                        } onCancel: {
+                            captionersTask.cancel()
+                        }
+                    }
+                    group.addTask {
+                        try await withTaskCancellationHandler {
+                            try await captureTask.value
+                        } onCancel: {
+                            captureTask.cancel()
+                        }
+                    }
 
-                statusMessage = AppText.startingCapture(for: configuration.audioInputSource)
-                switch configuration.audioInputSource {
-                case .systemAudio:
-                    try await systemAudioCapture.start(
-                        sampleRate: configuration.sampleRate,
-                        generation: generation
-                    )
-                case .microphone:
-                    try await microphoneAudioCapture.start(
-                        sampleRate: configuration.sampleRate,
-                        deviceUniqueID: configuration.microphoneDeviceUniqueID,
-                        generation: generation
-                    )
+                    while let completed = try await group.next() {
+                        try validatePipelineStart(generation: generation, configuration: configuration)
+                        if completed == .captioners {
+                            audioSamplePipelineRegistry.publish(
+                                generation: generation,
+                                transcriber: transcriber,
+                                openAITranscriber: openAITranscriber,
+                                geminiLiveTranslator: geminiLiveTranslator,
+                                metaVoiceTranscriber: metaVoiceTranscriber,
+                                azureMAITranscriber: azureMAITranscriber,
+                                grokTranscriber: grokTranscriber,
+                                nariTranscriber: nariTranscriber,
+                                qwenTranslator: qwenTranslator
+                            )
+                            statusMessage = AppText.startingCapture(for: configuration.audioInputSource)
+                        }
+                    }
                 }
                 try validatePipelineStart(generation: generation, configuration: configuration)
                 let promotion = pipelineLifecycle.markRunning(
@@ -1737,8 +1777,11 @@ final class TranslationSessionStore {
                 captureStartFailureMessage = nil
                 captureStartRecoveryAction = nil
                 statusMessage = AppText.listeningForSpeech(from: configuration.audioInputSource)
-                PipelineDiagnostics.record("capture.running", values: ["generation": Double(generation)])
-                warmTranslationSession()
+                PipelineDiagnostics.record(
+                    "capture.running",
+                    sessionID: diagnosticsSessionID,
+                    values: ["generation": Double(generation)]
+                )
             } catch let error as CancellationError {
                 await handleCancelledCaptureStart(
                     generation: generation,
@@ -1756,6 +1799,25 @@ final class TranslationSessionStore {
                     configuration: configuration
                 )
             }
+        }
+    }
+
+    private func startAudioCapture(
+        configuration: StartConfiguration,
+        generation: UInt64
+    ) async throws {
+        switch configuration.audioInputSource {
+        case .systemAudio:
+            try await systemAudioCapture.start(
+                sampleRate: configuration.sampleRate,
+                generation: generation
+            )
+        case .microphone:
+            try await microphoneAudioCapture.start(
+                sampleRate: configuration.sampleRate,
+                deviceUniqueID: configuration.microphoneDeviceUniqueID,
+                generation: generation
+            )
         }
     }
 
@@ -1818,8 +1880,7 @@ final class TranslationSessionStore {
         flushPendingCaptionPresentation()
         transcriptCleanupTask?.cancel()
         transcriptCleanupTask = nil
-        appleSmallPartialFlushTask?.cancel()
-        appleSmallPartialFlushTask = nil
+        cancelAppleSmallPartialFlushTasks()
         commitCurrentPartial()
         finalizeHyMTCaptionsForStop()
         stopSpeaking()
@@ -1995,6 +2056,9 @@ final class TranslationSessionStore {
         generation: UInt64,
         error: Error
     ) async {
+        if translationSessionWarmupGeneration == generation {
+            cancelTranslationSessionWarmup()
+        }
         guard pipelineLifecycle.fail(generation: generation) else {
             // stop() may have invalidated this task while a permission prompt
             // was suspended. It must not affect a newer generation, but it can
@@ -2014,6 +2078,9 @@ final class TranslationSessionStore {
         _ error: PipelineStartError,
         generation: UInt64
     ) async {
+        if translationSessionWarmupGeneration == generation {
+            cancelTranslationSessionWarmup()
+        }
         if pipelineLifecycle.isActive(generation: generation) {
             _ = pipelineLifecycle.fail(generation: generation)
         }
@@ -2143,6 +2210,9 @@ final class TranslationSessionStore {
         generation: UInt64,
         configuration: StartConfiguration
     ) async {
+        if translationSessionWarmupGeneration == generation {
+            cancelTranslationSessionWarmup()
+        }
         if configuration.audioInputSource == .systemAudio,
            SystemAudioCapture.isUserStoppedError(error) {
             handleSystemAudioCaptureStoppedByUser(generation: generation)
@@ -4210,7 +4280,7 @@ final class TranslationSessionStore {
             scheduleTranscriptCheckpointIfNeeded()
         }
         if source.isEmpty && translated.isEmpty {
-            if let currentLineID { lines.removeAll { $0.id == currentLineID } }
+            if let currentLineID { removeLine(withID: currentLineID) }
             currentLineID = nil
             return
         }
@@ -4218,7 +4288,7 @@ final class TranslationSessionStore {
         lastRecognitionAt = Date()
         transcriptCleanupTask?.cancel()
         let final = qwenSourceTranscript.isFinal && qwenTranslationTranscript.isFinal
-        if let currentLineID, let index = lines.firstIndex(where: { $0.id == currentLineID }) {
+        if let currentLineID, let index = lineIndex(for: currentLineID) {
             let line = lines[index]
             lines[index] = CaptionLine(id: line.id, sourceText: source, translatedText: translated,
                 translatedSourceText: source, createdAt: line.createdAt, isFinal: final,
@@ -4228,7 +4298,7 @@ final class TranslationSessionStore {
                 translatedSourceText: source, createdAt: Date(), isFinal: final, revision: 1,
                 usesLongSessionDisplay: usesLongSessionMode)
             currentLineID = line.id
-            lines.append(line)
+            appendLine(line)
         }
     }
 
@@ -4469,9 +4539,14 @@ final class TranslationSessionStore {
         nariItemOrder.removeAll()
         if clearsVisibleLines { nariSavedTranscriptText = "" }
         if clearsVisibleLines { azureSavedTranscriptText = "" }
+        if clearsVisibleLines {
+            diagnosticsSessionID = UUID()
+        }
         azurePartialLineID = nil
         audioSampleCount = 0
         latestAudioLevel = nil
+        lastAudioLevelUpdateUptime = 0
+        unavailableTranslationLineIDs.removeAll()
         lastRecognizedText = ""
         lastRecognizedWasFinal = false
         currentLineID = nil
@@ -4489,8 +4564,7 @@ final class TranslationSessionStore {
         appleSpeechRevisionByLineID.removeAll()
         appleDubbingProgressByLineID.removeAll()
         appleDubbingLineOrder.removeAll()
-        appleSmallPartialFlushTask?.cancel()
-        appleSmallPartialFlushTask = nil
+        cancelAppleSmallPartialFlushTasks()
         committedSourceText = ""
         currentPartialText = ""
         currentPartialLanguage = nil
@@ -4502,6 +4576,8 @@ final class TranslationSessionStore {
         floatingPresentationTask = nil
         floatingTranslationHoldTask?.cancel()
         floatingTranslationHoldTask = nil
+        floatingQueuedSourceLineID = nil
+        floatingQueuedTranslationLineID = nil
         if clearsVisibleLines {
             sourceLanguageByLineID.removeAll()
             floatingCommittedSourceText = ""
@@ -4522,10 +4598,10 @@ final class TranslationSessionStore {
         }
         pendingTranslationSourceText = ""
         translationBurstStartedAt = Date.distantPast
+        lastUnfinalizedPartialAt = Date.distantPast
         if !clearsVisibleLines {
             clearPendingTranslationPlaceholders(message: AppText.translationCancelled)
         }
-        resetTranslationCache()
         qwenSourceTranscript = QwenCaptionTranscript()
         qwenTranslationTranscript = QwenCaptionTranscript()
         realtimeTranslationSourceText = ""
@@ -4548,7 +4624,7 @@ final class TranslationSessionStore {
         clearTranscribeOnlyNotice(resetActivation: clearsVisibleLines)
 
         if clearsVisibleLines {
-            lines.removeAll()
+            removeAllLines()
         }
     }
 
@@ -4641,6 +4717,7 @@ final class TranslationSessionStore {
     }
 
     func refreshModelAvailability() {
+        guard !isRestoringSelectedSettings else { return }
         if let request = modelAssetDownloadRequest,
            request.configuration != currentStartConfiguration() {
             cancelModelAssetDownload()
@@ -5490,7 +5567,7 @@ final class TranslationSessionStore {
         transcriptCleanupTask?.cancel()
 
         if let currentLineID,
-           let index = lines.firstIndex(where: { $0.id == currentLineID }) {
+           let index = lineIndex(for: currentLineID) {
             let existingLine = lines[index]
             let sourceLanguageChanged = sourceLanguageByLineID[existingLine.id] != direction.source
             sourceLanguageByLineID[existingLine.id] = direction.source
@@ -5550,7 +5627,16 @@ final class TranslationSessionStore {
             currentLineID = line.id
             sourceLanguageByLineID[line.id] = direction.source
             updateAppleSpeechIdentity(lineID: line.id, metadata: metadata)
-            lines.append(line)
+            appendLine(line)
+            if PipelineDiagnostics.isEnabled {
+                PipelineDiagnostics.record(
+                    "caption.present",
+                    id: line.id.uuidString,
+                    sessionID: diagnosticsSessionID,
+                    lineID: line.id,
+                    values: ["characters": Double(line.sourceText.count)]
+                )
+            }
             lastCaptionPresentationUpdateAt = Date()
             stageTranscriptForSave(line.sourceText)
             requestTranslationForAppleRecognition(
@@ -5613,7 +5699,7 @@ final class TranslationSessionStore {
         if usesManualCaptionDeliveryForTesting { return }
 #endif
         recognizedCaptionDeliveryTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(Int(delay * 1_000)))
+            try? await Task.sleep(for: .milliseconds(Int((delay * 1_000).rounded(.up))))
             guard !Task.isCancelled else { return }
             self?.flushPendingRecognizedCaption()
         }
@@ -5749,7 +5835,7 @@ final class TranslationSessionStore {
         if usesManualCaptionDeliveryForTesting { return }
 #endif
         captionPresentationTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(Int(delay * 1_000)))
+            try? await Task.sleep(for: .milliseconds(Int((delay * 1_000).rounded(.up))))
             guard !Task.isCancelled else { return }
             flushPendingCaptionPresentation()
         }
@@ -5799,9 +5885,15 @@ final class TranslationSessionStore {
         metadata: AppleSpeechRecognitionMetadata? = nil
     ) -> CaptionLine? {
         if PipelineDiagnostics.isEnabled {
-            PipelineDiagnostics.record("caption.present", id: lineID.uuidString, values: ["characters": Double(sourceText.count)])
+            PipelineDiagnostics.record(
+                "caption.present",
+                id: lineID.uuidString,
+                sessionID: diagnosticsSessionID,
+                lineID: lineID,
+                values: ["characters": Double(sourceText.count)]
+            )
         }
-        guard let index = lines.firstIndex(where: { $0.id == lineID }) else { return nil }
+        guard let index = lineIndex(for: lineID) else { return nil }
 
         let existingLine = lines[index]
         guard sourceText != existingLine.sourceText || isFinal != existingLine.isFinal || metadata != nil else {
@@ -6034,7 +6126,7 @@ final class TranslationSessionStore {
         }
 
         guard let currentLineID,
-              let index = lines.firstIndex(where: { $0.id == currentLineID })
+              let index = lineIndex(for: currentLineID)
         else {
             return
         }
@@ -6258,7 +6350,7 @@ final class TranslationSessionStore {
         let identity = floatingRecognitionIdentity ?? floatingIdentity(for: currentLineID)
 
         if floatingPresentedSourceText.isEmpty {
-            presentFloatingSourceText(candidate, identity: identity)
+            presentFloatingSourceText(candidate, identity: identity, lineID: currentLineID)
             return
         }
 
@@ -6270,19 +6362,20 @@ final class TranslationSessionStore {
             // Extensions keep the already-read text in place, so they can render
             // immediately. Keeping the dwell clock running prevents a stream of
             // extensions from postponing queued replacements forever.
-            presentFloatingSourceText(candidate, resetsDwell: false, identity: identity)
+            presentFloatingSourceText(candidate, resetsDwell: false, identity: identity, lineID: currentLineID)
             return
         }
 
         let now = Date()
         if canUpdateFloatingPresentationImmediately(now: now)
             || canAdvanceFloatingPresentation(now: now) {
-            presentFloatingSourceText(candidate, identity: identity)
+            presentFloatingSourceText(candidate, identity: identity, lineID: currentLineID)
             return
         }
 
         floatingQueuedSourceText = candidate
         floatingQueuedSourceIdentity = identity
+        floatingQueuedSourceLineID = currentLineID
         scheduleFloatingPresentationAdvance()
     }
 
@@ -6324,13 +6417,23 @@ final class TranslationSessionStore {
         return !translationSource(floatingDisplayTranslationSourceText, matches: floatingPresentedSourceText)
     }
 
-    func presentFloatingSourceText(_ text: String, resetsDwell: Bool = true, identity: FloatingCaptionIdentity? = nil) {
+    func presentFloatingSourceText(
+        _ text: String,
+        resetsDwell: Bool = true,
+        identity: FloatingCaptionIdentity? = nil,
+        lineID: UUID? = nil
+    ) {
         guard isFloatingCaptionPresentationActive else { return }
 #if DEBUG
         floatingPresentationWorkCountForTesting += 1
 #endif
         if PipelineDiagnostics.isEnabled {
-            PipelineDiagnostics.record("floating.source", values: ["characters": Double(text.count)])
+            PipelineDiagnostics.record(
+                "floating.source",
+                sessionID: diagnosticsSessionID,
+                lineID: lineID ?? currentLineID,
+                values: ["characters": Double(text.count)]
+            )
         }
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
@@ -6342,6 +6445,7 @@ final class TranslationSessionStore {
         floatingPresentedSourceIdentity = identity
         floatingQueuedSourceText = ""
         floatingQueuedSourceIdentity = nil
+        floatingQueuedSourceLineID = nil
         recordFloatingSourceHistory()
         if resetsDwell {
             floatingPresentedAt = Date()
@@ -6373,7 +6477,7 @@ final class TranslationSessionStore {
         if remaining == .greatestFiniteMagnitude {
             remaining = 0.05
         }
-        let delayMilliseconds = max(50, Int(max(0.05, remaining) * 1_000))
+        let delayMilliseconds = max(50, Int((max(0.05, remaining) * 1_000).rounded(.up)))
         floatingPresentationTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(delayMilliseconds))
             guard !Task.isCancelled, isFloatingCaptionPresentationActive else { return }
@@ -6384,7 +6488,11 @@ final class TranslationSessionStore {
     private func promoteQueuedFloatingPresentationIfReady() {
         guard isFloatingCaptionPresentationActive else { return }
         if !floatingQueuedSourceText.isEmpty, canAdvanceFloatingPresentation() {
-            presentFloatingSourceText(floatingQueuedSourceText, identity: floatingQueuedSourceIdentity)
+            presentFloatingSourceText(
+                floatingQueuedSourceText,
+                identity: floatingQueuedSourceIdentity,
+                lineID: floatingQueuedSourceLineID
+            )
         }
         if !floatingQueuedTranslationText.isEmpty {
             promoteQueuedFloatingTranslationIfPossible()
@@ -6456,7 +6564,7 @@ final class TranslationSessionStore {
         committedSourceText = transcriptText(from: remainingUnits)
 
         if updatedGuardUnits != replayGuard.units,
-           let index = lines.firstIndex(where: { $0.id == replayGuard.lineID }) {
+           let index = lineIndex(for: replayGuard.lineID) {
             let line = lines[index]
             var lineUnits = transcriptUnits(from: line.sourceText)
             let replacedUnitCount = min(replayGuard.units.count, lineUnits.count)
@@ -6618,7 +6726,7 @@ final class TranslationSessionStore {
 
         guard isRunning,
               let currentLineID,
-              let index = lines.firstIndex(where: { $0.id == currentLineID })
+              let index = lineIndex(for: currentLineID)
         else {
             return
         }
@@ -6715,12 +6823,22 @@ final class TranslationSessionStore {
     }
 
     private func lintLine(_ text: String, language: LanguageOption) -> String {
-        var linted = text
-            .replacingOccurrences(of: #"(^|[\s,，])[,，]{1,}(\s*[,，]+)*"#, with: " ", options: .regularExpression)
-            .replacingOccurrences(of: #"\s+([,.!?。！？])"#, with: "$1", options: .regularExpression)
-            .replacingOccurrences(of: #"([,.!?])(?=\S)"#, with: "$1 ", options: .regularExpression)
-            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        var linted = Self.leadingCommaRegex.stringByReplacingMatches(
+            in: text,
+            range: NSRange(text.startIndex..., in: text),
+            withTemplate: " "
+        )
+        linted = Self.spaceBeforePunctuationRegex.stringByReplacingMatches(
+            in: linted,
+            range: NSRange(linted.startIndex..., in: linted),
+            withTemplate: "$1"
+        )
+        linted = Self.spaceAfterPunctuationRegex.stringByReplacingMatches(
+            in: linted,
+            range: NSRange(linted.startIndex..., in: linted),
+            withTemplate: "$1 "
+        )
+        linted = TranscriptTextProcessor.normalizedForComparison(linted)
 
         linted = correctUnknownWords(in: linted, language: language)
 
@@ -6809,7 +6927,8 @@ final class TranslationSessionStore {
         let trimmed = word.trimmingCharacters(in: .punctuationCharacters)
         guard trimmed.count > 1 else { return false }
         guard trimmed.rangeOfCharacter(from: .decimalDigits) == nil else { return false }
-        guard trimmed.range(of: #"[/\\@#_]"#, options: .regularExpression) == nil else { return false }
+        let range = NSRange(trimmed.startIndex..., in: trimmed)
+        guard Self.nonSpellableWordCharacterRegex.firstMatch(in: trimmed, range: range) == nil else { return false }
 
         if language.hasPrefix("en"),
            let first = trimmed.first,
@@ -6859,6 +6978,7 @@ final class TranslationSessionStore {
         _ text: String,
         source: LanguageOption,
         target: LanguageOption,
+        precomputedParagraphSegments: [[String]]? = nil,
         progress: @escaping @MainActor @Sendable (String) -> Void = { _ in }
     ) async throws -> String {
 #if DEBUG
@@ -6878,13 +6998,27 @@ final class TranslationSessionStore {
         let translationOptions = appleTranslationOptions
         let hyMTOptions = hyMTTranslationOptions(source: source, target: target, currentText: text)
         let segmentationOptions = isUsingAppleTextTranslation ? translationOptions : AppleTranslationOptions()
-        let paragraphSegments = try await Task.detached(priority: .userInitiated) {
+        let paragraphSegments: [[String]]
+        if let precomputedParagraphSegments {
+            paragraphSegments = precomputedParagraphSegments
+        } else if text.utf16.count < 2_000 {
             try Task.checkCancellation()
-            return Self.translationSegmentGroups(from: text, options: segmentationOptions)
-        }.value
+            paragraphSegments = Self.translationSegmentGroups(from: text, options: segmentationOptions)
+        } else {
+            paragraphSegments = try await Task.detached(priority: .userInitiated) {
+                try Task.checkCancellation()
+                return Self.translationSegmentGroups(from: text, options: segmentationOptions)
+            }.value
+        }
 
         guard !paragraphSegments.isEmpty else { return "" }
 
+        let cacheKeyPrefix = translationCacheKeyPrefix(
+            source: source,
+            target: target,
+            options: translationOptions,
+            hyMTOptions: hyMTOptions
+        )
         var translatedParagraphs: [String] = []
         var consecutiveCacheHitCount = 0
         for segments in paragraphSegments {
@@ -6892,9 +7026,7 @@ final class TranslationSessionStore {
 
             for segment in segments {
                 try Task.checkCancellation()
-                let cacheKey = translationCacheKey(
-                    segment: segment, source: source, target: target, options: translationOptions
-                )
+                let cacheKey = cacheKeyPrefix + segment
                 if !isUsingHyMT, let cachedSegment = translationSegmentCache.value(forKey: cacheKey) {
                     consecutiveCacheHitCount += 1
                     if consecutiveCacheHitCount.isMultiple(of: Self.translationCacheHitYieldInterval) {
@@ -7047,17 +7179,21 @@ final class TranslationSessionStore {
         return segments
     }
 
-    private func translationCacheKey(
-        segment: String, source: LanguageOption, target: LanguageOption, options: AppleTranslationOptions
+    private func translationCacheKeyPrefix(
+        source: LanguageOption,
+        target: LanguageOption,
+        options: AppleTranslationOptions,
+        hyMTOptions: HyMTTranslationOptions
     ) -> String {
         // 구분 문자가 포함된 용어도 서로 다른 설정과 같은 캐시 키가 되지 않게 한다.
         let policy = isUsingAppleTextTranslation ? ([options.effectiveQuality.rawValue] + options.normalizedProtectedTerms)
             .map { "\($0.utf8.count):\($0)" }.joined() : ""
-        return "\(source.id)\t\(target.id)\t\(translationEngineCacheID)\t\(policy)\t\(segment)"
+        let engineID = translationEngineCacheID(hyMTOptions: hyMTOptions)
+        return "\(source.id)\t\(target.id)\t\(engineID)\t\(policy)\t"
     }
 
-    private var translationEngineCacheID: String {
-        if isUsingHyMT { return "hymt2:\(HyMTModelStore.revision):\(hyMTTerminologyText.utf8.count):\(hyMTTerminologyText)" }
+    private func translationEngineCacheID(hyMTOptions: HyMTTranslationOptions) -> String {
+        if isUsingHyMT { return "hymt2:\(HyMTModelStore.revision):\(hyMTOptions.cacheID)" }
         if openAITranslationModel.isEnabled {
             return "openai:\(openAITranslationModel.id)"
         }
@@ -7114,7 +7250,7 @@ final class TranslationSessionStore {
         let visibleTranslatedText = translatedText.isEmpty ? AppText.translating : translatedText
 
         if let currentLineID,
-           let index = lines.firstIndex(where: { $0.id == currentLineID }) {
+           let index = lineIndex(for: currentLineID) {
             let existingLine = lines[index]
             lines[index] = CaptionLine(
                 id: existingLine.id,
@@ -7137,15 +7273,20 @@ final class TranslationSessionStore {
                 usesLongSessionDisplay: usesLongSessionMode
             )
             currentLineID = line.id
-            lines.append(line)
+            appendLine(line)
         }
 
         if !inputText.isEmpty {
-            presentFloatingSourceText(inputText, identity: floatingIdentity(for: currentLineID))
+            presentFloatingSourceText(inputText, identity: floatingIdentity(for: currentLineID), lineID: currentLineID)
         }
         if !translatedText.isEmpty {
             stageTranscriptForSave(sourceText, translatedText: translatedText)
-            updateFloatingTranslationPresentation(translatedText, sourceText: sourceText, identity: floatingIdentity(for: currentLineID))
+            updateFloatingTranslationPresentation(
+                translatedText,
+                sourceText: sourceText,
+                identity: floatingIdentity(for: currentLineID),
+                lineID: currentLineID
+            )
             speakTranslatedDeltaIfNeeded(translatedText)
         }
     }
@@ -7188,7 +7329,7 @@ final class TranslationSessionStore {
         transcriptCleanupTask?.cancel()
 
         if let currentLineID,
-           let index = lines.firstIndex(where: { $0.id == currentLineID }) {
+           let index = lineIndex(for: currentLineID) {
             let existingLine = lines[index]
             lines[index] = CaptionLine(
                 id: existingLine.id,
@@ -7211,11 +7352,11 @@ final class TranslationSessionStore {
             )
             currentLineID = line.id
             sourceLanguageByLineID[line.id] = sourceLanguage
-            lines.append(line)
+            appendLine(line)
         }
 
         stageTranscriptForSave(sourceText)
-        presentFloatingSourceText(sourceText, identity: floatingIdentity(for: currentLineID))
+        presentFloatingSourceText(sourceText, identity: floatingIdentity(for: currentLineID), lineID: currentLineID)
 
         if isFinal {
             currentLineID = nil
@@ -7239,9 +7380,11 @@ final class TranslationSessionStore {
         transcriptCleanupTask?.cancel()
         let speakerLabel = metaTurnSpeakerLabels[turnId]
 
+        let resolvedLineID: UUID
         if let lineID = metaTurnLineIDs[turnId],
-           let index = lines.firstIndex(where: { $0.id == lineID }) {
+           let index = lineIndex(for: lineID) {
             let existingLine = lines[index]
+            resolvedLineID = existingLine.id
             lines[index] = CaptionLine(
                 id: existingLine.id,
                 sourceText: sourceText,
@@ -7263,18 +7406,19 @@ final class TranslationSessionStore {
                 speakerLabel: speakerLabel,
                 usesLongSessionDisplay: usesLongSessionMode
             )
+            resolvedLineID = line.id
             metaTurnLineIDs[turnId] = line.id
             sourceLanguageByLineID[line.id] = sourceLanguage
-            lines.append(line)
+            appendLine(line)
         }
-        presentFloatingSourceText(sourceText, identity: floatingIdentity(for: metaTurnLineIDs[turnId]))
+        presentFloatingSourceText(sourceText, identity: floatingIdentity(for: resolvedLineID), lineID: resolvedLineID)
     }
 
     private func labelMetaSpeaker(_ label: String) {
         guard isRunning, !isPaused, isUsingMetaScribe, let turnId = metaActiveTurnID else { return }
         metaTurnSpeakerLabels[turnId] = label
         guard let lineID = metaTurnLineIDs[turnId],
-              let index = lines.firstIndex(where: { $0.id == lineID })
+              let index = lineIndex(for: lineID)
         else {
             return
         }
@@ -7302,7 +7446,7 @@ final class TranslationSessionStore {
         }
         let language = detectedLanguage ?? sourceLanguage
         let unknownDetectedLanguage = isNariSourceAutoDetectionEnabled && update.isFinal && detectedLanguage == nil
-        let existingIndex = nariTurnLineIDs[update.itemID].flatMap { id in lines.firstIndex { $0.id == id } }
+        let existingIndex = nariTurnLineIDs[update.itemID].flatMap { lineIndex(for: $0) }
         if nariTurnLineIDs[update.itemID] == nil && !nariItemOrder.contains(update.itemID) {
             nariItemOrder.append(update.itemID)
         }
@@ -7317,7 +7461,8 @@ final class TranslationSessionStore {
         }
         if text.isEmpty {
             if let index = existingIndex {
-                let removed = lines.remove(at: index)
+                let removed = lines[index]
+                removeLine(withID: removed.id)
                 sourceLanguageByLineID.removeValue(forKey: removed.id)
                 nariTurnLineIDs.removeValue(forKey: update.itemID)
                 rehydrateFloatingCaptionDisplayFromCurrentLine()
@@ -7331,13 +7476,13 @@ final class TranslationSessionStore {
             createdAt: previous?.createdAt ?? Date(), isFinal: update.isFinal,
             revision: (previous?.revision ?? 0) + 1, usesLongSessionDisplay: usesLongSessionMode
         )
-        if let index = existingIndex { lines[index] = line } else { lines.append(line) }
+        if let index = existingIndex { lines[index] = line } else { appendLine(line) }
         nariTurnLineIDs[update.itemID] = line.id
         sourceLanguageByLineID[line.id] = language
         lastRecognizedText = text
         lastRecognizedWasFinal = update.isFinal
         lastRecognitionAt = Date()
-        presentFloatingSourceText(text, identity: floatingIdentity(for: line.id))
+        presentFloatingSourceText(text, identity: floatingIdentity(for: line.id), lineID: line.id)
         if update.isFinal {
             nariSavedTranscriptText = nariSavedTranscriptText.isEmpty ? text : nariSavedTranscriptText + "\n" + text
             stageTranscriptForSave(nariSavedTranscriptText)
@@ -7357,7 +7502,7 @@ final class TranslationSessionStore {
         }
         let language = detectedLanguage ?? sourceLanguage
         let unknownDetectedLanguage = isGrokSourceAutoDetectionEnabled && update.isFinal && detectedLanguage == nil
-        let existingIndex = grokTurnLineIDs[update.itemID].flatMap { id in lines.firstIndex { $0.id == id } }
+        let existingIndex = grokTurnLineIDs[update.itemID].flatMap { lineIndex(for: $0) }
         if grokTurnLineIDs[update.itemID] == nil && !grokItemOrder.contains(update.itemID) {
             grokItemOrder.append(update.itemID)
         }
@@ -7372,7 +7517,8 @@ final class TranslationSessionStore {
         }
         if text.isEmpty {
             if let index = existingIndex {
-                let removed = lines.remove(at: index)
+                let removed = lines[index]
+                removeLine(withID: removed.id)
                 sourceLanguageByLineID.removeValue(forKey: removed.id)
                 grokTurnLineIDs.removeValue(forKey: update.itemID)
                 rehydrateFloatingCaptionDisplayFromCurrentLine()
@@ -7386,13 +7532,13 @@ final class TranslationSessionStore {
             createdAt: previous?.createdAt ?? Date(), isFinal: update.isFinal,
             revision: (previous?.revision ?? 0) + 1, usesLongSessionDisplay: usesLongSessionMode
         )
-        if let index = existingIndex { lines[index] = line } else { lines.append(line) }
+        if let index = existingIndex { lines[index] = line } else { appendLine(line) }
         grokTurnLineIDs[update.itemID] = line.id
         sourceLanguageByLineID[line.id] = isGrokSourceAutoDetectionEnabled ? detectedLanguage : language
         lastRecognizedText = text
         lastRecognizedWasFinal = update.isFinal
         lastRecognitionAt = Date()
-        presentFloatingSourceText(text, identity: floatingIdentity(for: line.id))
+        presentFloatingSourceText(text, identity: floatingIdentity(for: line.id), lineID: line.id)
         if update.isFinal {
             grokSavedTranscriptText = grokSavedTranscriptText.isEmpty ? text : grokSavedTranscriptText + "\n" + text
             stageTranscriptForSave(grokSavedTranscriptText)
@@ -7405,15 +7551,16 @@ final class TranslationSessionStore {
     private func receiveAzureMAIPartial(_ text: String, service: AzureMAITranscriber?, generation: UInt64) {
         guard let service, service === azureMAITranscriber,
               pipelineLifecycle.acceptsSample(generation: generation), isRunning, isUsingAzureMAI else { return }
-        let previous = azurePartialLineID.flatMap { id in lines.first(where: { $0.id == id }) }
+        let existingIndex = azurePartialLineID.flatMap { lineIndex(for: $0) }
+        let previous = existingIndex.map { lines[$0] }
         let line = CaptionLine(id: previous?.id ?? UUID(), sourceText: text,
                                translatedText: AppText.translating, createdAt: previous?.createdAt ?? Date(),
                                isFinal: false, revision: (previous?.revision ?? 0) + 1,
                                usesLongSessionDisplay: usesLongSessionMode)
-        if let index = lines.firstIndex(where: { $0.id == line.id }) { lines[index] = line }
-        else if !text.isEmpty { lines.append(line) }
+        if let index = existingIndex { lines[index] = line }
+        else if !text.isEmpty { appendLine(line) }
         azurePartialLineID = line.id
-        presentFloatingSourceText(text, identity: floatingIdentity(for: line.id))
+        presentFloatingSourceText(text, identity: floatingIdentity(for: line.id), lineID: line.id)
     }
 
     private func receiveAzureMAI(_ result: Result<String, AzureMAIError>, service: AzureMAITranscriber?, generation: UInt64) {
@@ -7427,23 +7574,27 @@ final class TranslationSessionStore {
             finishPipeline(statusOverride: error.localizedDescription)
         case .success(let text):
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                if let id = azurePartialLineID { lines.removeAll { $0.id == id }; sourceLanguageByLineID.removeValue(forKey: id) }
+                if let id = azurePartialLineID {
+                    removeLine(withID: id)
+                    sourceLanguageByLineID.removeValue(forKey: id)
+                }
                 azurePartialLineID = nil
                 rehydrateFloatingCaptionDisplayFromCurrentLine()
                 return
             }
-            let previous = azurePartialLineID.flatMap { id in lines.first(where: { $0.id == id }) }
+            let existingIndex = azurePartialLineID.flatMap { lineIndex(for: $0) }
+            let previous = existingIndex.map { lines[$0] }
             let line = CaptionLine(id: previous?.id ?? UUID(), sourceText: text, translatedText: AppText.translating,
                                    createdAt: previous?.createdAt ?? Date(), isFinal: true, revision: (previous?.revision ?? 0) + 1,
                                    usesLongSessionDisplay: usesLongSessionMode)
-            if let index = lines.firstIndex(where: { $0.id == line.id }) { lines[index] = line }
-            else { lines.append(line) }
+            if let index = existingIndex { lines[index] = line }
+            else { appendLine(line) }
             azurePartialLineID = nil
             sourceLanguageByLineID[line.id] = sourceLanguage
             lastRecognizedText = text
             lastRecognizedWasFinal = true
             lastRecognitionAt = Date()
-            presentFloatingSourceText(text, identity: floatingIdentity(for: line.id))
+            presentFloatingSourceText(text, identity: floatingIdentity(for: line.id), lineID: line.id)
             azureSavedTranscriptText = azureSavedTranscriptText.isEmpty ? text : azureSavedTranscriptText + "\n" + text
             stageTranscriptForSave(azureSavedTranscriptText)
             requestTranslation(for: line, source: sourceLanguage, target: targetLanguage)
@@ -7457,7 +7608,7 @@ final class TranslationSessionStore {
         let speakerLabel = metaTurnSpeakerLabels[turnId]
         let line: CaptionLine
         if let lineID = metaTurnLineIDs[turnId],
-           let index = lines.firstIndex(where: { $0.id == lineID }) {
+           let index = lineIndex(for: lineID) {
             let existingLine = lines[index]
             line = CaptionLine(
                 id: existingLine.id,
@@ -7481,13 +7632,13 @@ final class TranslationSessionStore {
                 usesLongSessionDisplay: usesLongSessionMode
             )
             metaTurnLineIDs[turnId] = line.id
-            lines.append(line)
+            appendLine(line)
         }
         sourceLanguageByLineID[line.id] = sourceLanguage
         lastRecognizedText = sourceText
         lastRecognizedWasFinal = true
         lastRecognitionAt = Date()
-        presentFloatingSourceText(sourceText, identity: floatingIdentity(for: line.id))
+        presentFloatingSourceText(sourceText, identity: floatingIdentity(for: line.id), lineID: line.id)
 
         let savedTurn = speakerLabel.map { "\($0): \(sourceText)" } ?? sourceText
         metaSavedTranscriptText = metaSavedTranscriptText.isEmpty
@@ -7524,7 +7675,7 @@ final class TranslationSessionStore {
         let translatedText = outputText.isEmpty ? AppText.translating : outputText
 
         if let currentLineID,
-           let index = lines.firstIndex(where: { $0.id == currentLineID }) {
+           let index = lineIndex(for: currentLineID) {
             let existingLine = lines[index]
             lines[index] = CaptionLine(
                 id: existingLine.id,
@@ -7549,7 +7700,7 @@ final class TranslationSessionStore {
             )
             currentLineID = line.id
             sourceLanguageByLineID[line.id] = sourceLanguage
-            lines.append(line)
+            appendLine(line)
         }
 
         if !inputText.isEmpty {
@@ -7598,8 +7749,7 @@ final class TranslationSessionStore {
     ) {
         switch decision {
         case .requestNow(let identity):
-            appleSmallPartialFlushTask?.cancel()
-            appleSmallPartialFlushTask = nil
+            appleSmallPartialFlushTasksBySegmentID.removeValue(forKey: identity.segmentKey)?.cancel()
             requestTranslation(
                 for: line,
                 source: source,
@@ -7619,8 +7769,17 @@ final class TranslationSessionStore {
                 dueAt: until
             )
         case .ignoreStale, .unchanged:
-            break
+            if metadata.isFinal {
+                appleSmallPartialFlushTasksBySegmentID.removeValue(forKey: metadata.segmentID)?.cancel()
+            }
         }
+    }
+
+    private func cancelAppleSmallPartialFlushTasks() {
+        for task in appleSmallPartialFlushTasksBySegmentID.values {
+            task.cancel()
+        }
+        appleSmallPartialFlushTasksBySegmentID.removeAll()
     }
 
     private func jevSelectionInput(
@@ -7658,12 +7817,18 @@ final class TranslationSessionStore {
         metadata: AppleSpeechRecognitionMetadata,
         dueAt: Date
     ) {
-        appleSmallPartialFlushTask?.cancel()
+        let segmentKey = metadata.segmentID
+        appleSmallPartialFlushTasksBySegmentID[segmentKey]?.cancel()
         let delay = max(0, dueAt.timeIntervalSince(Date()))
-        appleSmallPartialFlushTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(Int(delay * 1_000)))
-            guard let self, !Task.isCancelled, self.isRunning, !self.isPaused else { return }
-            guard let index = self.lines.firstIndex(where: { $0.id == lineID }) else { return }
+        let delayMilliseconds = Int((delay * 1_000).rounded(.up))
+        appleSmallPartialFlushTasksBySegmentID[segmentKey] = Task { @MainActor [weak self] in
+            if delayMilliseconds > 0 {
+                try? await Task.sleep(for: .milliseconds(delayMilliseconds))
+            }
+            guard let self, !Task.isCancelled else { return }
+            self.appleSmallPartialFlushTasksBySegmentID.removeValue(forKey: segmentKey)
+            guard self.isRunning, !self.isPaused else { return }
+            guard let index = self.lineIndex(for: lineID) else { return }
             guard self.appleSpeechSegmentIDByLineID[lineID] == metadata.segmentID,
                   !self.lines[index].isFinal || metadata.isFinal
             else {
@@ -7767,6 +7932,41 @@ final class TranslationSessionStore {
 
         let sourceText = line.sourceText
         let preservesOrdering = preservesOrdering ?? (isUsingMetaScribe || isUsingAzureMAI || isUsingNariSTT || isUsingGrokSTT)
+        if !isUsingHyMT,
+           line.isFinal || appleIdentity?.isFinal == true,
+           jevInput == nil,
+           line.translatedSourceText == sourceText,
+           !line.translatedText.isEmpty,
+           line.translatedText != AppText.translating,
+           !unavailableTranslationLineIDs.contains(line.id) {
+            if let index = lineIndex(for: line.id), !lines[index].isFinal {
+                let existing = lines[index]
+                lines[index] = CaptionLine(
+                    id: existing.id,
+                    sourceText: existing.sourceText,
+                    translatedText: existing.translatedText,
+                    translatedSourceText: existing.translatedSourceText,
+                    createdAt: existing.createdAt,
+                    isFinal: true,
+                    revision: existing.revision + 1,
+                    speakerLabel: existing.speakerLabel,
+                    usesLongSessionDisplay: usesLongSessionMode
+                )
+            }
+            if pendingTranslationSourceText == sourceText {
+                pendingTranslationSourceText = ""
+            }
+            if isUsingHyMT {
+                completedHyMTTranslations[line.id] = CompletedHyMTTranslation(
+                    sourceText: sourceText,
+                    translatedText: line.translatedText,
+                    sourceLanguageID: (sourceLanguageByLineID[line.id] ?? source).id,
+                    targetLanguageID: target.id
+                )
+            }
+            speakTranslatedDeltaIfNeeded(line.translatedText, isFinal: true, appleLineID: appleIdentity?.lineID)
+            return
+        }
         if appleIdentity?.isFinal == true, jevInput == nil,
            let active = activeTranslationRequest,
            active.request.line.id == line.id,
@@ -7793,8 +7993,25 @@ final class TranslationSessionStore {
             guard force || pendingTranslationSourceText != sourceText else { return }
             pendingTranslationSourceText = sourceText
         }
-        if latestTranslationRequest == nil, orderedTranslationRequests.isEmpty {
-            translationBurstStartedAt = Date()
+        let now = Date()
+        let isFinalOrOrdered = preservesOrdering || line.isFinal || appleIdentity?.isFinal == true
+        if isFinalOrOrdered {
+            translationBurstStartedAt = .distantPast
+            lastUnfinalizedPartialAt = .distantPast
+        } else {
+            let queueWasBusy = activeTranslationRequest != nil
+                || latestTranslationRequest != nil
+                || !orderedTranslationRequests.isEmpty
+            let hadRecentPartial = lastUnfinalizedPartialAt != .distantPast
+                && now.timeIntervalSince(lastUnfinalizedPartialAt) < 0.45
+            if queueWasBusy || hadRecentPartial {
+                if translationBurstStartedAt == .distantPast {
+                    translationBurstStartedAt = now
+                }
+            } else {
+                translationBurstStartedAt = .distantPast
+            }
+            lastUnfinalizedPartialAt = now
         }
         let request = TranslationRequest(
             generation: translationTaskGeneration,
@@ -7823,6 +8040,7 @@ final class TranslationSessionStore {
                 recordTranslationEvent("translation.superseded", request: pending)
             }
             latestTranslationRequest = request
+            supersedeActivePartialTranslation(with: request)
         }
 
         startTranslationDriverIfNeeded()
@@ -7855,7 +8073,9 @@ final class TranslationSessionStore {
             let operation = Task { @MainActor [self] in
                 try Task.checkCancellation()
                 guard acceptsTranslationUpdates(for: request) else { throw CancellationError() }
-                let delay = request.bypassesDebounce ? 0 : translationDebounceDelay(for: request.sourceText)
+                let delay = (request.bypassesDebounce || request.preservesOrdering || request.line.isFinal)
+                    ? 0
+                    : translationDebounceDelay(for: request.sourceText)
                 if delay > 0 {
                     try await Task.sleep(for: .milliseconds(delay))
                 }
@@ -7872,7 +8092,7 @@ final class TranslationSessionStore {
                 let selectedSourceText = try await selectJevTranscriptIfNeeded(for: request)
                 try Task.checkCancellation()
                 guard acceptsTranslationUpdates(for: request) else { throw CancellationError() }
-                let translationSourceText = try await preparedTranslationSourceText(
+                let payload = try await prepareTranslationPayload(
                     selectedSourceText,
                     language: request.source
                 )
@@ -7889,9 +8109,10 @@ final class TranslationSessionStore {
                     "queue_ms": max(0, (startedAt - request.enqueuedAtUptime) * 1_000)
                 ])
                 return try await translateTranscript(
-                    translationSourceText,
+                    payload.sourceText,
                     source: request.source,
                     target: request.target,
+                    precomputedParagraphSegments: payload.paragraphSegments,
                     progress: { [weak self] partialText in
                         self?.updateTranslation(
                             partialText,
@@ -7948,12 +8169,28 @@ final class TranslationSessionStore {
     }
 
     private func supersedeActivePartialTranslation(with request: TranslationRequest) {
-        guard let final = request.appleIdentity, final.isFinal,
-              let active = activeTranslationRequest,
-              let partial = active.request.appleIdentity, !partial.isFinal,
-              partial.segmentID == final.segmentID,
-              active.request.line.id == request.line.id,
-              active.request.generation == request.generation else { return }
+        guard let active = activeTranslationRequest,
+              !active.request.preservesOrdering,
+              !active.request.line.isFinal,
+              active.request.appleIdentity?.isFinal != true,
+              active.request.generation == request.generation
+        else {
+            return
+        }
+
+        let isFinalReplacement = request.preservesOrdering
+            || request.line.isFinal
+            || request.appleIdentity?.isFinal == true
+        let isDifferentSegment: Bool = {
+            if let activeSegmentID = active.request.appleIdentity?.segmentID,
+               let requestSegmentID = request.appleIdentity?.segmentID {
+                return activeSegmentID != requestSegmentID
+            }
+            return active.request.line.id != request.line.id
+        }()
+
+        guard isFinalReplacement || isDifferentSegment else { return }
+
         finishActiveTranslationRequest("translation.superseded", request: active.request)
         if pendingTranslationSourceText == active.request.sourceText,
            latestTranslationRequest?.sourceText != active.request.sourceText {
@@ -8014,7 +8251,13 @@ final class TranslationSessionStore {
 #if DEBUG
         translationEventForTesting?(stage, request.requestID, values)
 #endif
-        PipelineDiagnostics.record(stage, id: request.requestID.uuidString, values: values)
+        PipelineDiagnostics.record(
+            stage,
+            id: request.requestID.uuidString,
+            sessionID: diagnosticsSessionID,
+            lineID: request.line.id,
+            values: values
+        )
     }
 
     private func nextTranslationRequest() -> TranslationRequest? {
@@ -8136,12 +8379,67 @@ final class TranslationSessionStore {
         }
 
         let languageID = language.id
-        let organizedSourceText = try await Task.detached(priority: .userInitiated) {
+        let organizedSourceText: String
+        if sourceText.utf16.count < 2_000 {
             try Task.checkCancellation()
-            return TranscriptTextProcessor.organizeTranscript(sourceText, languageID: languageID)
-        }.value
+            organizedSourceText = TranscriptTextProcessor.organizeTranscript(sourceText, languageID: languageID)
+        } else {
+            organizedSourceText = try await Task.detached(priority: .userInitiated) {
+                try Task.checkCancellation()
+                return TranscriptTextProcessor.organizeTranscript(sourceText, languageID: languageID)
+            }.value
+        }
         guard !organizedSourceText.isEmpty else { return sourceText }
         return organizedSourceText
+    }
+
+    private func prepareTranslationPayload(
+        _ sourceText: String,
+        language: LanguageOption
+    ) async throws -> (sourceText: String, paragraphSegments: [[String]]?) {
+#if DEBUG
+        let hasTestingOverride = translationForTesting != nil
+            || (isUsingAzureMAI && azureTranslationForTesting != nil)
+            || (isUsingGrokSTT && grokTranslationForTesting != nil)
+            || (isUsingNariSTT && nariTranslationForTesting != nil)
+        if hasTestingOverride {
+            let prepared = try await preparedTranslationSourceText(sourceText, language: language)
+            return (prepared, nil)
+        }
+#endif
+        let translationOptions = appleTranslationOptions
+        let shouldOrganize = usesLongSessionMode
+            && !isUsingOpenAIRealtime
+            && !(isUsingAppleTextTranslation && !translationOptions.protectedRanges(in: sourceText).isEmpty)
+        let segmentationOptions = isUsingAppleTextTranslation ? translationOptions : AppleTranslationOptions()
+        let languageID = language.id
+
+        if sourceText.utf16.count < 2_000 {
+            try Task.checkCancellation()
+            let prepared: String
+            if shouldOrganize {
+                let organized = TranscriptTextProcessor.organizeTranscript(sourceText, languageID: languageID)
+                prepared = organized.isEmpty ? sourceText : organized
+            } else {
+                prepared = sourceText
+            }
+            let segments = Self.translationSegmentGroups(from: prepared, options: segmentationOptions)
+            return (prepared, segments)
+        }
+
+        return try await Task.detached(priority: .userInitiated) {
+            try Task.checkCancellation()
+            let prepared: String
+            if shouldOrganize {
+                let organized = TranscriptTextProcessor.organizeTranscript(sourceText, languageID: languageID)
+                prepared = organized.isEmpty ? sourceText : organized
+            } else {
+                prepared = sourceText
+            }
+            try Task.checkCancellation()
+            let segments = Self.translationSegmentGroups(from: prepared, options: segmentationOptions)
+            return (prepared, segments)
+        }.value
     }
 
     private func translationDebounceDelay(for sourceText: String) -> Int {
@@ -8155,31 +8453,13 @@ final class TranslationSessionStore {
             }
         }
 
-        guard translationBurstStartedAt != .distantPast else { return 45 }
+        guard translationBurstStartedAt != .distantPast else { return 0 }
         let burstAge = Date().timeIntervalSince(translationBurstStartedAt)
         return burstAge >= 0.45 ? 0 : 70
     }
 
     nonisolated static func isCompatibleLiveSource(current: String, requested: String) -> Bool {
-        let currentText = current.trimmingCharacters(in: .whitespacesAndNewlines)
-        let requestedText = requested.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !requestedText.isEmpty else { return currentText.isEmpty }
-        if currentText == requestedText || currentText.hasPrefix(requestedText) {
-            return true
-        }
-
-        let normalizedCurrentText = currentText.replacingOccurrences(
-            of: #"\s+"#,
-            with: " ",
-            options: .regularExpression
-        )
-        let normalizedRequestedText = requestedText.replacingOccurrences(
-            of: #"\s+"#,
-            with: " ",
-            options: .regularExpression
-        )
-        return normalizedCurrentText == normalizedRequestedText
-            || normalizedCurrentText.hasPrefix(normalizedRequestedText)
+        TranscriptTextProcessor.isCompatibleLiveSource(current: current, requested: requested)
     }
 
     private func updateTranslation(
@@ -8191,7 +8471,7 @@ final class TranslationSessionStore {
         request: TranslationRequest? = nil
     ) {
         if let request, !acceptsTranslationUpdates(for: request) { return }
-        guard let index = lines.firstIndex(where: { $0.id == line.id }) else { return }
+        guard let index = lineIndex(for: line.id) else { return }
         let currentSourceText = lines[index].sourceText
         if let appleIdentity {
             guard let currentIdentity = appleTranslationLineIdentity(for: line.id),
@@ -8223,6 +8503,7 @@ final class TranslationSessionStore {
             language: targetLanguage,
             options: isUsingAppleTextTranslation ? appleTranslationOptions : .init()
         )
+        unavailableTranslationLineIDs.remove(line.id)
         if isUsingHyMT, finalizesRequest {
             completedHyMTTranslations[line.id] = CompletedHyMTTranslation(
                 sourceText: sourceText, translatedText: organizedTranslatedText,
@@ -8268,13 +8549,18 @@ final class TranslationSessionStore {
             }
         }
         if isFloatingCaptionPresentationActive {
-            updateFloatingTranslationPresentation(translatedText.trimmingCharacters(in: .whitespacesAndNewlines), sourceText: sourceText, identity: floatingIdentity(for: line.id))
+            updateFloatingTranslationPresentation(
+                organizedTranslatedText,
+                sourceText: sourceText,
+                identity: floatingIdentity(for: line.id),
+                lineID: line.id
+            )
         }
         speakTranslatedDeltaIfNeeded(organizedTranslatedText, isFinal: finalizesRequest, appleLineID: appleIdentity?.lineID)
     }
 
     private func appleTranslationLineIdentity(for lineID: UUID) -> AppleTranslationLineIdentity? {
-        guard let index = lines.firstIndex(where: { $0.id == lineID }) else { return nil }
+        guard let index = lineIndex(for: lineID) else { return nil }
         let line = lines[index]
         return AppleTranslationLineIdentity(
             lineID: line.id,
@@ -8286,7 +8572,7 @@ final class TranslationSessionStore {
     }
 
     private func markTranslationUnavailable(_ message: String, for line: CaptionLine, matching sourceText: String) {
-        guard let index = lines.firstIndex(where: { $0.id == line.id }) else {
+        guard let index = lineIndex(for: line.id) else {
             statusMessage = message
             return
         }
@@ -8294,6 +8580,7 @@ final class TranslationSessionStore {
         guard Self.isCompatibleLiveSource(current: currentSourceText, requested: sourceText) else {
             if lines[index].translatedText == AppText.translating {
                 let line = lines[index]
+                unavailableTranslationLineIDs.insert(line.id)
                 lines[index] = CaptionLine(
                     id: line.id,
                     sourceText: line.sourceText,
@@ -8323,6 +8610,7 @@ final class TranslationSessionStore {
             pendingTranslationSourceText = ""
         }
 
+        unavailableTranslationLineIDs.insert(line.id)
         lines[index] = CaptionLine(
             id: line.id,
             sourceText: currentSourceText,
@@ -8334,11 +8622,21 @@ final class TranslationSessionStore {
             speakerLabel: lines[index].speakerLabel,
             usesLongSessionDisplay: usesLongSessionMode
         )
-        updateFloatingTranslationPresentation(message, sourceText: sourceText, identity: floatingIdentity(for: line.id))
+        updateFloatingTranslationPresentation(
+            message,
+            sourceText: sourceText,
+            identity: floatingIdentity(for: line.id),
+            lineID: line.id
+        )
         statusMessage = message
     }
 
-    func updateFloatingTranslationPresentation(_ translatedText: String, sourceText: String, identity: FloatingCaptionIdentity? = nil) {
+    func updateFloatingTranslationPresentation(
+        _ translatedText: String,
+        sourceText: String,
+        identity: FloatingCaptionIdentity? = nil,
+        lineID: UUID? = nil
+    ) {
         guard isFloatingCaptionPresentationActive else { return }
 #if DEBUG
         floatingPresentationWorkCountForTesting += 1
@@ -8358,7 +8656,12 @@ final class TranslationSessionStore {
         }
 
         if shouldUpdateFloatingTranslationDisplay(for: displaySourceText, identity: identity) {
-            applyFloatingTranslationCandidate(displayTranslatedText, sourceText: displaySourceText, identity: identity)
+            applyFloatingTranslationCandidate(
+                displayTranslatedText,
+                sourceText: displaySourceText,
+                identity: identity,
+                lineID: lineID
+            )
             return
         }
 
@@ -8366,6 +8669,7 @@ final class TranslationSessionStore {
             floatingQueuedTranslationText = displayTranslatedText
             floatingQueuedTranslationSourceText = displaySourceText
             floatingQueuedTranslationIdentity = identity
+            floatingQueuedTranslationLineID = lineID
             scheduleFloatingPresentationAdvance()
         }
     }
@@ -8376,13 +8680,24 @@ final class TranslationSessionStore {
     /// Extensions of the visible translation and translations that replace a
     /// stale (already-superseded) translation render immediately; every other
     /// rewrite is held so retranslations of a growing sentence do not flicker.
-    private func applyFloatingTranslationCandidate(_ translatedText: String, sourceText: String, identity: FloatingCaptionIdentity?) {
+    private func applyFloatingTranslationCandidate(
+        _ translatedText: String,
+        sourceText: String,
+        identity: FloatingCaptionIdentity?,
+        lineID: UUID? = nil
+    ) {
         guard isFloatingCaptionPresentationActive else { return }
         let normalizedDisplayed = normalizedTranscriptForComparison(floatingDisplayTranslationText)
         let normalizedCandidate = normalizedTranscriptForComparison(translatedText)
 
         if floatingDisplayTranslationText.isEmpty || isFloatingTranslationDisplayStale {
-            setFloatingDisplayTranslation(translatedText, sourceText: sourceText, resetsDwell: true, identity: identity)
+            setFloatingDisplayTranslation(
+                translatedText,
+                sourceText: sourceText,
+                resetsDwell: true,
+                identity: identity,
+                lineID: lineID
+            )
             return
         }
 
@@ -8396,25 +8711,49 @@ final class TranslationSessionStore {
         }
 
         if isWholeTextPrefix(normalizedDisplayed, of: normalizedCandidate) {
-            setFloatingDisplayTranslation(translatedText, sourceText: sourceText, resetsDwell: false, identity: identity)
+            setFloatingDisplayTranslation(
+                translatedText,
+                sourceText: sourceText,
+                resetsDwell: false,
+                identity: identity,
+                lineID: lineID
+            )
             return
         }
 
         if canAdvanceFloatingTranslation() {
-            setFloatingDisplayTranslation(translatedText, sourceText: sourceText, resetsDwell: true, identity: identity)
+            setFloatingDisplayTranslation(
+                translatedText,
+                sourceText: sourceText,
+                resetsDwell: true,
+                identity: identity,
+                lineID: lineID
+            )
             return
         }
 
         floatingQueuedTranslationText = translatedText
         floatingQueuedTranslationSourceText = sourceText
         floatingQueuedTranslationIdentity = identity
+        floatingQueuedTranslationLineID = lineID
         scheduleFloatingPresentationAdvance()
     }
 
-    private func setFloatingDisplayTranslation(_ translatedText: String, sourceText: String, resetsDwell: Bool, identity: FloatingCaptionIdentity? = nil) {
+    private func setFloatingDisplayTranslation(
+        _ translatedText: String,
+        sourceText: String,
+        resetsDwell: Bool,
+        identity: FloatingCaptionIdentity? = nil,
+        lineID: UUID? = nil
+    ) {
         guard isFloatingCaptionPresentationActive else { return }
         if PipelineDiagnostics.isEnabled {
-            PipelineDiagnostics.record("floating.translation", values: ["characters": Double(sourceText.count)])
+            PipelineDiagnostics.record(
+                "floating.translation",
+                sessionID: diagnosticsSessionID,
+                lineID: lineID ?? currentLineID,
+                values: ["characters": Double(sourceText.count)]
+            )
         }
         let normalizedDisplayed = normalizedTranscriptForComparison(floatingDisplayTranslationText)
         let normalizedCandidate = normalizedTranscriptForComparison(translatedText)
@@ -8442,6 +8781,7 @@ final class TranslationSessionStore {
         floatingQueuedTranslationText = ""
         floatingQueuedTranslationSourceText = ""
         floatingQueuedTranslationIdentity = nil
+        floatingQueuedTranslationLineID = nil
     }
 
     private func promoteQueuedFloatingTranslationIfPossible() {
@@ -8464,7 +8804,8 @@ final class TranslationSessionStore {
             floatingQueuedTranslationText,
             sourceText: floatingQueuedTranslationSourceText,
             resetsDwell: true,
-            identity: floatingQueuedTranslationIdentity
+            identity: floatingQueuedTranslationIdentity,
+            lineID: floatingQueuedTranslationLineID
         )
     }
 
@@ -8657,6 +8998,52 @@ final class TranslationSessionStore {
         return pipelineLifecycle.isActive(generation: generation) ? generation : nil
     }
 
+    private func lineIndex(for id: UUID) -> Int? {
+        if let lastIndex = lines.indices.last, lines[lastIndex].id == id {
+            lineIndexByID[id] = lastIndex
+            return lastIndex
+        }
+        if let cachedIndex = lineIndexByID[id],
+           lines.indices.contains(cachedIndex),
+           lines[cachedIndex].id == id {
+            return cachedIndex
+        }
+        guard let foundIndex = lines.firstIndex(where: { $0.id == id }) else {
+            lineIndexByID.removeValue(forKey: id)
+            return nil
+        }
+        lineIndexByID[id] = foundIndex
+        return foundIndex
+    }
+
+    private func appendLine(_ line: CaptionLine) {
+        lineIndexByID[line.id] = lines.count
+        lines.append(line)
+    }
+
+    @discardableResult
+    private func removeLine(withID id: UUID) -> CaptionLine? {
+        guard let index = lineIndex(for: id) else { return nil }
+        let removed = lines.remove(at: index)
+        lineIndexByID.removeValue(forKey: id)
+        for updatedIndex in index..<lines.count {
+            lineIndexByID[lines[updatedIndex].id] = updatedIndex
+        }
+        return removed
+    }
+
+    private func removeAllLines() {
+        lines.removeAll()
+        lineIndexByID.removeAll()
+    }
+
+    private func rebuildLineIndex() {
+        lineIndexByID.removeAll(keepingCapacity: true)
+        for (index, line) in lines.enumerated() {
+            lineIndexByID[line.id] = index
+        }
+    }
+
 #if DEBUG
     func stopHyMTFromSystemMenuForTesting(generation: UInt64) {
         handleSystemAudioCaptureStoppedByUser(generation: generation)
@@ -8784,6 +9171,7 @@ final class TranslationSessionStore {
     ) {
         pipelineLifecycle.stop()
         stopCaptioners()
+        diagnosticsSessionID = UUID()
 
         let configuration = currentStartConfiguration()
         let generation = pipelineLifecycle.beginStart(configuration: configuration)
@@ -8888,21 +9276,51 @@ extension TranslationSessionStore: SystemAudioCaptureDelegate {
             else {
                 return
             }
-            audioSampleCount = count
-            latestAudioLevel = level
-            if PipelineDiagnostics.isEnabled, let level, level >= -55 {
-                PipelineDiagnostics.record("capture.audible", values: ["level": Double(level)])
-            }
-            guard !isPaused else {
-                statusMessage = AppText.paused
-                return
-            }
-            if isRunning, lines.isEmpty {
-                statusMessage = audioStatusMessage(sampleCount: count, level: level)
-            }
-            if let level, level < -50 {
-                scheduleTranscriptCleanup()
-            }
+            handleCapturedAudioLevel(count: count, level: level, isSystemAudio: true)
+        }
+    }
+
+    private func handleCapturedAudioLevel(count: Int, level: Float?, isSystemAudio: Bool) {
+        audioSampleCount = count
+        updateAudioLevelIfNeeded(level)
+        if isSystemAudio, PipelineDiagnostics.isEnabled, let level, level >= -55 {
+            PipelineDiagnostics.record(
+                "capture.audible",
+                sessionID: diagnosticsSessionID,
+                values: ["level": Double(level)]
+            )
+        }
+        guard !isPaused else {
+            statusMessage = AppText.paused
+            return
+        }
+        if isRunning, lines.isEmpty {
+            statusMessage = audioStatusMessage(sampleCount: count, level: level)
+        }
+        if let level, level < -50 {
+            scheduleTranscriptCleanup()
+        }
+    }
+
+    private func updateAudioLevelIfNeeded(_ level: Float?) {
+        let nowUptime = ProcessInfo.processInfo.systemUptime
+        switch (latestAudioLevel, level) {
+        case (nil, nil):
+            return
+        case (nil, .some(let newLevel)):
+            latestAudioLevel = newLevel
+            lastAudioLevelUpdateUptime = nowUptime
+        case (.some, nil):
+            latestAudioLevel = nil
+            lastAudioLevelUpdateUptime = nowUptime
+        case (.some(let oldLevel), .some(let newLevel)):
+            let delta = abs(newLevel - oldLevel)
+            guard delta >= 1.0 else { return }
+            let elapsed = nowUptime - lastAudioLevelUpdateUptime
+            let crossedThreshold = (oldLevel < -55) != (newLevel < -55)
+            guard elapsed >= (1.0 / 15.0) || crossedThreshold || delta >= 6.0 else { return }
+            latestAudioLevel = newLevel
+            lastAudioLevelUpdateUptime = nowUptime
         }
     }
 
@@ -8970,18 +9388,7 @@ extension TranslationSessionStore: MicrophoneAudioCaptureDelegate {
             else {
                 return
             }
-            audioSampleCount = count
-            latestAudioLevel = level
-            guard !isPaused else {
-                statusMessage = AppText.paused
-                return
-            }
-            if isRunning, lines.isEmpty {
-                statusMessage = audioStatusMessage(sampleCount: count, level: level)
-            }
-            if let level, level < -50 {
-                scheduleTranscriptCleanup()
-            }
+            handleCapturedAudioLevel(count: count, level: level, isSystemAudio: false)
         }
     }
 

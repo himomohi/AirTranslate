@@ -411,28 +411,41 @@ final class LiveSpeechTranscriber: @unchecked Sendable {
     }
 
     static func installedSupportedLanguages(from languages: [LanguageOption]) async -> [LanguageOption] {
-        guard SpeechTranscriber.isAvailable else { return [] }
+        guard SpeechTranscriber.isAvailable, !languages.isEmpty else { return [] }
 
         let maximumLanguageCount = max(1, AssetInventory.maximumReservedLocales)
-        var installedLanguages: [LanguageOption] = []
-        for language in languages {
-            guard installedLanguages.count < maximumLanguageCount else { break }
-            guard let supportedLocale = await SpeechTranscriber.supportedLocale(equivalentTo: language.locale) else {
-                continue
+        let matches = await withTaskGroup(of: (Int, LanguageOption?).self) { group in
+            for (index, language) in languages.enumerated() {
+                group.addTask {
+                    guard let supportedLocale = await SpeechTranscriber.supportedLocale(equivalentTo: language.locale) else {
+                        return (index, nil)
+                    }
+
+                    let transcriber = SpeechTranscriber(locale: supportedLocale, preset: .progressiveTranscription)
+                    switch await AssetInventory.status(forModules: [transcriber]) {
+                    case .installed:
+                        return (index, language)
+                    case .downloading, .supported, .unsupported:
+                        return (index, nil)
+                    @unknown default:
+                        return (index, nil)
+                    }
+                }
             }
 
-            let transcriber = SpeechTranscriber(locale: supportedLocale, preset: .progressiveTranscription)
-            switch await AssetInventory.status(forModules: [transcriber]) {
-            case .installed:
-                installedLanguages.append(language)
-            case .downloading, .supported, .unsupported:
-                continue
-            @unknown default:
-                continue
+            var collected: [(Int, LanguageOption)] = []
+            for await (index, language) in group {
+                if let language {
+                    collected.append((index, language))
+                }
             }
+            return collected
         }
 
-        return installedLanguages
+        return matches
+            .sorted { $0.0 < $1.0 }
+            .prefix(maximumLanguageCount)
+            .map(\.1)
     }
 
     func start(

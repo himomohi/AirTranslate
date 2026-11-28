@@ -556,6 +556,136 @@ struct TranslationSchedulingTests {
         #expect(fixture.translator.calls[0].invocation.text == "Original words.")
     }
 
+    @Test
+    func newerSegmentPartialSupersedesInFlightPartialWithoutWaitingForOldCompletion() async throws {
+        let fixture = makeFixture(cooperatesWithCancellation: true)
+        defer { fixture.cleanup() }
+        let session = fixture.session
+
+        deliver("First segment partial", segment: 1, revision: 1, final: false, to: session)
+        try #require(await waitUntil { fixture.translator.calls.count == 1 })
+        deliver("Second segment partial", segment: 2, revision: 1, final: false, to: session)
+
+        try #require(await waitUntil { fixture.translator.calls.count == 2 })
+        #expect(fixture.translator.calls[0].cancellationObserved)
+        #expect(fixture.translator.calls[1].invocation.text == "Second segment partial")
+        #expect(fixture.translator.maximumActiveCount == 1)
+        fixture.translator.complete(1, with: .success("두 번째 부분 번역"))
+        try #require(await waitUntil { session.lines.last?.translatedText == "두 번째 부분 번역" })
+        assertCompleteEventAccounting(fixture.recorder)
+    }
+
+    @Test
+    func identicalFinalAfterCompletedPartialFastPathsWithoutRetranslating() async throws {
+        let fixture = makeFixture(cooperatesWithCancellation: true)
+        defer { fixture.cleanup() }
+        let session = fixture.session
+        let source = "Already translated partial."
+
+        deliver(source, segment: 1, revision: 1, final: false, to: session)
+        try #require(await waitUntil { fixture.translator.calls.count == 1 })
+        fixture.translator.complete(0, with: .success("이미 번역된 부분입니다."))
+        try #require(await waitUntil { session.lines.last?.translatedText == "이미 번역된 부분입니다." })
+
+        deliver(source, segment: 1, revision: 2, final: true, to: session)
+        await Task.yield()
+
+        #expect(fixture.translator.calls.count == 1)
+        #expect(session.lines.last?.isFinal == true)
+        #expect(session.lines.last?.translatedText == "이미 번역된 부분입니다.")
+        assertCompleteEventAccounting(fixture.recorder)
+    }
+
+    @Test
+    func finalLongSessionUtteranceBypassesLargeTranscriptDebounce() async throws {
+        let fixture = makeFixture(cooperatesWithCancellation: true)
+        defer { fixture.cleanup() }
+        let session = fixture.session
+        session.sessionDurationMode = .thirtyMinutesOrMore
+        let longSource = String(repeating: "This is a long finalized utterance. ", count: 150)
+
+        deliver(longSource, segment: 1, revision: 1, final: true, to: session)
+        try #require(await waitUntil { fixture.translator.calls.count == 1 })
+        let startEvent = try #require(fixture.recorder.events.first { $0.stage == "translation.start" })
+        #expect(try #require(startEvent.values["queue_ms"]) < 200)
+        fixture.translator.complete(0, with: .success("긴 확정 발화 번역"))
+        try #require(await waitUntil { session.lines.last?.translatedText == "긴 확정 발화 번역" })
+        assertCompleteEventAccounting(fixture.recorder)
+    }
+
+    @Test
+    func fastCaptionsFlushesMultipleSmallPartialSegmentsWithoutDroppingEarlierSegment() async throws {
+        let fixture = makeFixture(cooperatesWithCancellation: true)
+        defer { fixture.cleanup() }
+        let session = fixture.session
+        session.stop()
+        session.useAppleDefaultMode()
+        session.appleFastCaptionsEnabled = true
+        _ = session.activateLiveCallbackPipelineForTesting()
+
+        deliver("One", segment: 1, revision: 1, final: false, to: session)
+        try #require(await waitUntil { session.lines.count == 1 })
+        deliver("Two", segment: 2, revision: 1, final: false, to: session)
+        try #require(await waitUntil { session.lines.count == 2 })
+
+        try #require(await waitUntil { fixture.translator.calls.count >= 1 })
+        fixture.translator.complete(0, with: .success("하나"))
+        try #require(await waitUntil { fixture.translator.calls.count >= 2 })
+        fixture.translator.complete(1, with: .success("둘"))
+        try #require(await waitUntil { session.lines[0].translatedText == "하나" && session.lines[1].translatedText == "둘" })
+        assertCompleteEventAccounting(fixture.recorder)
+    }
+
+    @Test
+    func segmentCachePersistsAcrossStartStopAndClearsWhenOptionsChange() async throws {
+        actor CallCounter {
+            var count = 0
+            func increment() { count += 1 }
+        }
+        let suiteName = "SegmentCachePersistenceTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let counter = CallCounter()
+        let service = AppleTranslationService { text, _ in
+            await counter.increment()
+            return "번역:\(text)"
+        }
+        let session = TranslationSessionStore(
+            appleTranslationService: service,
+            modelAvailabilityProvider: { _, _ in [:] },
+            settingsDefaults: defaults
+        )
+        defer { session.prepareForTermination() }
+
+        session.sourceLanguage = .english
+        session.targetLanguage = .korean
+        session.isAppleSourceAutoDetectionEnabled = false
+        session.isTranscriptPersistenceEnabled = false
+        session.isDubbingEnabled = false
+        session.useAppleDefaultMode()
+
+        _ = session.activateLiveCallbackPipelineForTesting()
+        deliver("Cache across restart.", segment: 1, revision: 1, final: true, to: session)
+        try #require(await waitUntil { session.lines.last?.translatedText == "번역:Cache across restart." })
+        #expect(await counter.count == 1)
+
+        // Restarting without changing model/language/terms preserves the segment cache.
+        session.stop()
+        _ = session.activateLiveCallbackPipelineForTesting()
+        deliver("Cache across restart.", segment: 2, revision: 1, final: true, to: session)
+        try #require(await waitUntil { session.lines.last?.translatedText == "번역:Cache across restart." })
+        #expect(await counter.count == 1)
+
+        // Changing protected terms clears the cache.
+        session.stop()
+        session.appleProtectedTermsText = "Cache"
+        _ = session.activateLiveCallbackPipelineForTesting()
+        deliver("Cache across restart.", segment: 3, revision: 1, final: true, to: session)
+        try #require(await waitUntil { session.lines.last?.translatedText == "번역:Cache across restart." })
+        #expect(await counter.count == 2)
+    }
+
     private struct Fixture {
         let session: TranslationSessionStore
         let translator: ControlledScheduledTranslator
