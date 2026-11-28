@@ -73,7 +73,9 @@ final class QwenRealtimeTranslationService: @unchecked Sendable {
     private var sendTask: Task<Void, Never>?
     private var receiveTask: Task<Void, Never>?
     private var outbound: [QwenClientMessage] = []
+    private var outboundHead = 0
     private var pcmBuffer = Data()
+    private var pcmBufferReadOffset = 0
     private var configurationMessage = ""
     private var targetLanguageCode = ""
     private var activeModel: QwenTranslationModel = .liveTranslateFlashRealtime
@@ -86,6 +88,7 @@ final class QwenRealtimeTranslationService: @unchecked Sendable {
     private var responseInProgress = false
     private var deliveriesInFlight = 0
     private var terminalError: QwenTranslationError?
+    private let stateWaiters = LockConditionWaiters()
     private var sourceLedger = QwenTextLedger()
     private var translationLedger = QwenTextLedger()
     private var sourceHandler: TextHandler?
@@ -158,16 +161,26 @@ final class QwenRealtimeTranslationService: @unchecked Sendable {
                 paused = true
                 return (.audioFormat, generation)
             }
+            let availablePCM = pcmBuffer.count - pcmBufferReadOffset
+            let pendingOutbound = outbound.count - outboundHead
             guard pcm.count <= Self.chunkBytes * Self.maximumPendingAudioChunks,
-                  outbound.count + (pcmBuffer.count + pcm.count) / Self.chunkBytes <= Self.maximumPendingAudioChunks else {
+                  pendingOutbound + (availablePCM + pcm.count) / Self.chunkBytes <= Self.maximumPendingAudioChunks else {
                 paused = true
                 return (.backlog, generation)
             }
             pcmBuffer.append(pcm)
-            while pcmBuffer.count >= Self.chunkBytes {
-                let chunk = Data(pcmBuffer.prefix(Self.chunkBytes))
-                pcmBuffer.removeFirst(Self.chunkBytes)
+            while pcmBuffer.count - pcmBufferReadOffset >= Self.chunkBytes {
+                let end = pcmBufferReadOffset + Self.chunkBytes
+                let chunk = Data(pcmBuffer[pcmBufferReadOffset..<end])
+                pcmBufferReadOffset = end
                 enqueueLocked(.audio(chunk), generation: generation)
+            }
+            if pcmBufferReadOffset == pcmBuffer.count {
+                pcmBuffer.removeAll(keepingCapacity: true)
+                pcmBufferReadOffset = 0
+            } else if pcmBufferReadOffset >= 65_536 {
+                pcmBuffer.removeFirst(pcmBufferReadOffset)
+                pcmBufferReadOffset = 0
             }
             return nil
         }
@@ -182,10 +195,11 @@ final class QwenRealtimeTranslationService: @unchecked Sendable {
             if phase == .streaming {
                 phase = .draining
                 paused = true
-                if !pcmBuffer.isEmpty {
-                    enqueueLocked(.audio(pcmBuffer), generation: generation)
-                    pcmBuffer.removeAll(keepingCapacity: false)
+                if pcmBufferReadOffset < pcmBuffer.count {
+                    enqueueLocked(.audio(Data(pcmBuffer[pcmBufferReadOffset...])), generation: generation)
                 }
+                pcmBuffer.removeAll(keepingCapacity: false)
+                pcmBufferReadOffset = 0
                 if activeModel == .audio31RealtimePlus {
                     // Plus uses server VAD; one second of silence closes the final speech turn.
                     for _ in 0..<10 {
@@ -209,9 +223,23 @@ final class QwenRealtimeTranslationService: @unchecked Sendable {
         try await withTaskCancellationHandler {
             do {
                 let deadline = ContinuousClock.now.advanced(by: finishing ? finishTimeout : setupTimeout)
-                while true {
-                    try Task.checkCancellation()
-                    let ready = try lock.withLock {
+                let timeoutError = finishing ? QwenTranslationError.finishTimeout : QwenTranslationError.setupTimeout
+                try await stateWaiters.wait(
+                    lock: lock,
+                    deadline: deadline,
+                    timeoutError: timeoutError,
+                    nextWakeDeadline: {
+                        guard finishing,
+                              self.generation == token,
+                              self.activeModel == .audio31RealtimePlus,
+                              self.finishAudioSent,
+                              !self.responseStartedDuringDrain,
+                              let sentAt = self.finishAudioSentAt else {
+                            return nil
+                        }
+                        return sentAt.advanced(by: self.idleDrainGrace)
+                    },
+                    predicate: {
                         guard generation == token else { throw CancellationError() }
                         if let terminalError { throw terminalError }
                         if !finishing { return phase == .streaming }
@@ -221,15 +249,8 @@ final class QwenRealtimeTranslationService: @unchecked Sendable {
                         if responseStartedDuringDrain { return finishAcknowledged }
                         return ContinuousClock.now >= finishAudioSentAt.advanced(by: idleDrainGrace)
                     }
-                    if ready {
-                        if finishing { stop(generation: token) }
-                        return
-                    }
-                    guard ContinuousClock.now < deadline else {
-                        throw finishing ? QwenTranslationError.finishTimeout : QwenTranslationError.setupTimeout
-                    }
-                    try await Task.sleep(for: .milliseconds(10))
-                }
+                )
+                if finishing { stop(generation: token) }
             } catch {
                 if error is CancellationError { stop(generation: token) }
                 else { fail(error as? QwenTranslationError ?? .connection, generation: token) }
@@ -241,8 +262,8 @@ final class QwenRealtimeTranslationService: @unchecked Sendable {
     func stop() { stop(generation: nil) }
 
     private func stop(generation token: UUID?) {
-        let socket: (any QwenWebSocketConnection)? = lock.withLock {
-            if let token, token != generation { return nil }
+        let (socket, waiters): ((any QwenWebSocketConnection)?, [CheckedContinuation<Void, Error>]) = lock.withLock {
+            if let token, token != generation { return (nil, []) }
             generation = UUID()
             phase = .stopped
             paused = true
@@ -251,7 +272,9 @@ final class QwenRealtimeTranslationService: @unchecked Sendable {
             sendTask = nil
             receiveTask = nil
             outbound.removeAll()
+            outboundHead = 0
             pcmBuffer.removeAll()
+            pcmBufferReadOffset = 0
             configurationMessage = ""
             sourceLedger = QwenTextLedger()
             translationLedger = QwenTextLedger()
@@ -264,8 +287,9 @@ final class QwenRealtimeTranslationService: @unchecked Sendable {
             terminalError = nil
             let socket = connection
             connection = nil
-            return socket
+            return (socket, stateWaiters.takeAllLocked())
         }
+        LockConditionWaiters.resume(waiters)
         socket?.close()
     }
 
@@ -276,26 +300,46 @@ final class QwenRealtimeTranslationService: @unchecked Sendable {
             guard let self else { return }
             var nextAudioSend = ContinuousClock.now
             while !Task.isCancelled {
-                let next: QwenClientMessage? = self.lock.withLock {
-                    guard self.generation == token, self.phase != .stopped, self.phase != .failed else { return nil }
-                    guard !self.outbound.isEmpty else {
+                let (next, waiters): (QwenClientMessage?, [CheckedContinuation<Void, Error>]) = self.lock.withLock {
+                    guard self.generation == token, self.phase != .stopped, self.phase != .failed else { return (nil, []) }
+                    guard self.outboundHead < self.outbound.count else {
+                        var drainedWaiters: [CheckedContinuation<Void, Error>] = []
                         if self.phase == .draining, self.activeModel == .audio31RealtimePlus {
                             self.finishAudioSent = true
                             self.finishAudioSentAt = .now
+                            drainedWaiters = self.stateWaiters.takeAllLocked()
                         }
+                        self.outbound.removeAll(keepingCapacity: true)
+                        self.outboundHead = 0
                         self.sendTask = nil
-                        return nil
+                        return (nil, drainedWaiters)
                     }
-                    return self.outbound.removeFirst()
+                    let item = self.outbound[self.outboundHead]
+                    self.outboundHead += 1
+                    if self.outboundHead == self.outbound.count {
+                        self.outbound.removeAll(keepingCapacity: true)
+                        self.outboundHead = 0
+                    } else if self.outboundHead >= 32 {
+                        self.outbound.removeFirst(self.outboundHead)
+                        self.outboundHead = 0
+                    }
+                    return (item, [])
                 }
+                LockConditionWaiters.resume(waiters)
                 guard let next else { return }
                 do {
-                    if case .audio = next { try await Task.sleep(until: nextAudioSend, clock: .continuous) }
+                    if case .audio = next {
+                        let now = ContinuousClock.now
+                        if nextAudioSend > now {
+                            try await Task.sleep(until: nextAudioSend, clock: .continuous)
+                        }
+                    }
                     try Task.checkCancellation()
                     guard self.lock.withLock({ self.generation == token && self.phase != .stopped && self.phase != .failed }) else { return }
                     try await socket.send(next.text)
                     if case .audio(let data) = next {
-                        nextAudioSend = ContinuousClock.now.advanced(by: .seconds(Double(data.count) / 32_000))
+                        let duration = Duration.nanoseconds(Int64(data.count) * 1_000_000_000 / 32_000)
+                        nextAudioSend = max(nextAudioSend + duration, ContinuousClock.now)
                     }
                 } catch { self.fail(.connection, generation: token); return }
             }
@@ -311,15 +355,15 @@ final class QwenRealtimeTranslationService: @unchecked Sendable {
         do {
             while !Task.isCancelled {
                 let event = try QwenServerEvent.parse(try await socket.receive(), model: lock.withLock { activeModel })
-                let delivery: Delivery? = try lock.withLock {
-                    guard generation == token, phase != .stopped, phase != .failed else { return nil }
+                let (delivery, waiters): (Delivery?, [CheckedContinuation<Void, Error>]) = try lock.withLock {
+                    guard generation == token, phase != .stopped, phase != .failed else { return (nil, []) }
                     switch event {
                     case .created:
                         guard phase == .connecting else { throw QwenTranslationError.invalidResponse }
                         phase = .configuring
                         enqueueLocked(.configuration(configurationMessage), generation: token)
                         configurationMessage = ""
-                        return nil
+                        return (nil, [])
                     case .updated(let language, let modalities):
                         let expected: Set<String> = audioOutputEnabled ? ["text", "audio"] : ["text"]
                         let languageMatches = activeModel == .liveTranslateFlashRealtime
@@ -329,13 +373,14 @@ final class QwenRealtimeTranslationService: @unchecked Sendable {
                             throw QwenTranslationError.invalidResponse
                         }
                         phase = .streaming
-                        return nil
+                        return (nil, stateWaiters.takeAllLocked())
                     case .failure: throw QwenTranslationError.serviceUnavailable
-                    case .ignored: return nil
+                    case .ignored: return (nil, [])
                     default: break
                     }
                     guard phase == .streaming || phase == .draining else { throw QwenTranslationError.invalidResponse }
                     let result: Delivery?
+                    var shouldWake = false
                     switch event {
                     case let .source(id, text, final):
                         result = try sourceLedger.apply(id: id, text: text, final: final).map { .text(sourceHandler, $0, final) }
@@ -349,30 +394,41 @@ final class QwenRealtimeTranslationService: @unchecked Sendable {
                             throw QwenTranslationError.invalidResponse
                         }
                         finishAcknowledged = true
+                        shouldWake = true
                         result = nil
                     case .responseStarted:
                         responseInProgress = true
                         if phase == .draining {
                             responseStartedDuringDrain = true
                             finishAcknowledged = false
+                            shouldWake = true
                         }
                         result = nil
                     case .responseFinished:
                         responseInProgress = false
-                        if phase == .draining { finishAcknowledged = true }
+                        if phase == .draining {
+                            finishAcknowledged = true
+                            shouldWake = true
+                        }
                         result = nil
                     default: result = nil
                     }
                     if result != nil { deliveriesInFlight += 1 }
-                    return result
+                    return (result, shouldWake ? stateWaiters.takeAllLocked() : [])
                 }
+                LockConditionWaiters.resume(waiters)
                 if let delivery {
                     guard lock.withLock({ generation == token && phase != .stopped && phase != .failed }) else { return }
                     switch delivery {
                     case let .text(handler, text, final): await handler?(text, final)
                     case let .audio(handler, data): await handler?(data)
                     }
-                    lock.withLock { if generation == token { deliveriesInFlight -= 1 } }
+                    let waiters = lock.withLock { () -> [CheckedContinuation<Void, Error>] in
+                        guard generation == token else { return [] }
+                        deliveriesInFlight -= 1
+                        return stateWaiters.takeAllLocked()
+                    }
+                    LockConditionWaiters.resume(waiters)
                 }
                 if case .finished = event { return }
             }
@@ -380,20 +436,23 @@ final class QwenRealtimeTranslationService: @unchecked Sendable {
     }
 
     private func fail(_ error: QwenTranslationError, generation token: UUID) {
-        let failure: ((any QwenWebSocketConnection)?, ErrorHandler?)? = lock.withLock {
+        let failure: ((any QwenWebSocketConnection)?, ErrorHandler?, [CheckedContinuation<Void, Error>])? = lock.withLock {
             guard generation == token, phase != .stopped, phase != .failed else { return nil }
             phase = .failed
             paused = true
             terminalError = error
             outbound.removeAll()
+            outboundHead = 0
             pcmBuffer.removeAll()
+            pcmBufferReadOffset = 0
             sendTask?.cancel()
             receiveTask?.cancel()
             let socket = connection
             connection = nil
-            return (socket, errorHandler)
+            return (socket, errorHandler, stateWaiters.takeAllLocked())
         }
         guard let failure else { return }
+        LockConditionWaiters.resume(failure.2)
         failure.0?.close()
         Task { [weak self] in
             guard let self, self.lock.withLock({ self.generation == token && self.phase == .failed }) else { return }

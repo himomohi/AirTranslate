@@ -110,6 +110,7 @@ final class MetaVoiceTranscribeService: @unchecked Sendable {
     static let maxPreHandshakeAudioByteCount = inputAudioSampleRate
         * bytesPerPCM16Sample
         * maxPreHandshakeAudioSeconds
+    private static let encoder = JSONEncoder()
 
     var delegate: MetaVoiceTranscribeServiceDelegate? {
         get { withStateLock { serviceDelegate } }
@@ -128,6 +129,8 @@ final class MetaVoiceTranscribeService: @unchecked Sendable {
 
     private let stateLock = NSLock()
     private let conversionLock = NSLock()
+    private let sendQueue = DispatchQueue(label: "AirTranslate.MetaVoiceTranscribeService.send", qos: .userInitiated)
+    private let handshakeWaiters = LockConditionWaiters()
     private weak var serviceDelegate: MetaVoiceTranscribeServiceDelegate?
     private var urlSession: URLSession?
     private var webSocketTask: URLSessionWebSocketTask?
@@ -170,7 +173,12 @@ final class MetaVoiceTranscribeService: @unchecked Sendable {
         }
 
         let observer = MetaVoiceWebSocketConnectionObserver()
-        let session = URLSession(configuration: .default, delegate: observer, delegateQueue: nil)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.urlCache = nil
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.urlCredentialStorage = nil
+        let session = URLSession(configuration: configuration, delegate: observer, delegateQueue: nil)
         let socket = session.webSocketTask(with: url)
         let installation = withStateLock {
             let displaced = (receiveTask, webSocketTask, urlSession)
@@ -288,11 +296,15 @@ final class MetaVoiceTranscribeService: @unchecked Sendable {
             }
             return
         }
-        let socket = webSocketTask
+        guard let socket = webSocketTask else {
+            stateLock.unlock()
+            return
+        }
         let generation = connectionGeneration
+        sendQueue.async { [weak self] in
+            self?.sendAudioChunks(chunks, over: socket, connectionGeneration: generation)
+        }
         stateLock.unlock()
-        guard let socket else { return }
-        sendAudioChunks(chunks, over: socket, connectionGeneration: generation)
     }
 
     private func sendAudioChunks(
@@ -350,7 +362,7 @@ final class MetaVoiceTranscribeService: @unchecked Sendable {
     }
 
     func stop() {
-        let displaced = withStateLock {
+        let (displaced, waiters) = withStateLock {
             connectionGeneration &+= 1
             let displaced = (receiveTask, webSocketTask, urlSession)
             receiveTask = nil
@@ -367,8 +379,9 @@ final class MetaVoiceTranscribeService: @unchecked Sendable {
             preHandshakeAudioChunks = []
             preHandshakeAudioByteCount = 0
             turnAssembler = MetaTurnAssembler()
-            return displaced
+            return (displaced, handshakeWaiters.takeAllLocked())
         }
+        LockConditionWaiters.resume(waiters)
         displaced.0?.cancel()
         guard let socket = displaced.1 else {
             displaced.2?.finishTasksAndInvalidate()
@@ -402,7 +415,7 @@ final class MetaVoiceTranscribeService: @unchecked Sendable {
         languageBias: [String]?,
         keywords: [String]
     ) throws -> Data {
-        try JSONEncoder().encode(
+        try encoder.encode(
             MetaVoiceHandshake(
                 authorization: MetaVoiceAuthorization(accessToken: "Bearer \(accessToken)"),
                 audioEncoding: "PCM_24KHZ",
@@ -561,10 +574,8 @@ final class MetaVoiceTranscribeService: @unchecked Sendable {
                 else {
                     return
                 }
-                try? await Task.sleep(for: .milliseconds(50))
-                let closed = withStateLock {
-                    connectionObserver?.closeInfo != nil
-                }
+                let observer = withStateLock { connectionObserver }
+                let closed = await observer?.waitForCloseIfNeeded(timeoutMilliseconds: 50) ?? false
                 guard !closed else { return }
                 let publicError = Self.publicConnectionError(from: error)
                 recordSetupFailureIfNeeded(
@@ -598,63 +609,55 @@ final class MetaVoiceTranscribeService: @unchecked Sendable {
     }
 
     private func waitForHandshakeComplete(connectionGeneration: UInt64) async throws {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(10))
-        while !Task.isCancelled {
-            let state = withStateLock {
-                (
-                    current: isCurrentConnectionLocked(connectionGeneration),
-                    complete: isHandshakeComplete,
-                    error: setupError
-                )
-            }
-            guard state.current else { throw CancellationError() }
-            if state.complete { return }
-            if let error = state.error { throw error }
-            if clock.now >= deadline {
-                throw MetaVoiceTranscribeError.setupTimedOut
-            }
-            try await Task.sleep(for: .milliseconds(50))
+        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+        try await handshakeWaiters.wait(
+            lock: stateLock,
+            deadline: deadline,
+            timeoutError: MetaVoiceTranscribeError.setupTimedOut
+        ) {
+            guard isCurrentConnectionLocked(connectionGeneration) else { throw CancellationError() }
+            if let setupError { throw setupError }
+            return isHandshakeComplete
         }
-        throw CancellationError()
     }
 
     private func markHandshakeComplete(connectionGeneration expectedGeneration: UInt64?) {
-        while true {
-            stateLock.lock()
-            if let expectedGeneration, !isCurrentGenerationLocked(expectedGeneration) {
-                stateLock.unlock()
-                return
-            }
-            guard let socket = webSocketTask, !preHandshakeAudioChunks.isEmpty else {
-                isHandshakeComplete = true
-                setupError = nil
-                preHandshakeAudioChunks = []
-                preHandshakeAudioByteCount = 0
-                stateLock.unlock()
-                return
-            }
-            let chunks = preHandshakeAudioChunks
-            preHandshakeAudioChunks = []
-            preHandshakeAudioByteCount = 0
-            let generation = connectionGeneration
+        stateLock.lock()
+        if let expectedGeneration, !isCurrentGenerationLocked(expectedGeneration) {
             stateLock.unlock()
-            sendAudioChunks(chunks, over: socket, connectionGeneration: generation)
+            return
         }
+        let chunks = preHandshakeAudioChunks
+        preHandshakeAudioChunks = []
+        preHandshakeAudioByteCount = 0
+        isHandshakeComplete = true
+        setupError = nil
+        let waiters = handshakeWaiters.takeAllLocked()
+        if let socket = webSocketTask, !chunks.isEmpty {
+            let generation = connectionGeneration
+            sendQueue.async { [weak self] in
+                self?.sendAudioChunks(chunks, over: socket, connectionGeneration: generation)
+            }
+        }
+        stateLock.unlock()
+        LockConditionWaiters.resume(waiters)
     }
 
     private func recordSetupFailureIfNeeded(
         _ error: Error,
         connectionGeneration expectedGeneration: UInt64?
     ) {
-        withStateLock {
+        let waiters = withStateLock { () -> [CheckedContinuation<Void, Error>] in
             if let expectedGeneration, !isCurrentGenerationLocked(expectedGeneration) {
-                return
+                return []
             }
             if !isHandshakeComplete {
                 setupError = error
+                return handshakeWaiters.takeAllLocked()
             }
+            return []
         }
+        LockConditionWaiters.resume(waiters)
     }
 
     private func send(_ text: String, connectionGeneration: UInt64) async throws {
@@ -767,71 +770,17 @@ final class MetaVoiceTranscribeService: @unchecked Sendable {
     }
 
     private func pcm16AudioChunks(from sampleBuffer: CMSampleBuffer) -> [Data] {
-        guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer),
-              let description = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription)
-        else {
-            return []
+        guard let audioData = AzureMAITranscriber.pcm16AudioData(from: sampleBuffer) else { return [] }
+        guard audioData.count > Self.maxPCM16AudioChunkByteCount else {
+            return [audioData]
         }
-        var listSize = 0
-        CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
-            sampleBuffer,
-            bufferListSizeNeededOut: &listSize,
-            bufferListOut: nil,
-            bufferListSize: 0,
-            blockBufferAllocator: nil,
-            blockBufferMemoryAllocator: nil,
-            flags: 0,
-            blockBufferOut: nil
-        )
-        guard listSize > 0 else { return [] }
-
-        return withUnsafeTemporaryAllocation(
-            byteCount: listSize,
-            alignment: MemoryLayout<AudioBufferList>.alignment
-        ) { rawList -> [Data] in
-            guard let baseAddress = rawList.baseAddress else { return [] }
-            let audioBufferList = baseAddress.bindMemory(to: AudioBufferList.self, capacity: 1)
-            var blockBuffer: CMBlockBuffer?
-            let status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
-                sampleBuffer,
-                bufferListSizeNeededOut: nil,
-                bufferListOut: audioBufferList,
-                bufferListSize: listSize,
-                blockBufferAllocator: kCFAllocatorDefault,
-                blockBufferMemoryAllocator: kCFAllocatorDefault,
-                flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
-                blockBufferOut: &blockBuffer
-            )
-            guard status == noErr else { return [] }
-
-            var audioData = Data()
-            let sourceIsFloat = description.pointee.mFormatFlags & kAudioFormatFlagIsFloat != 0
-            for buffer in UnsafeMutableAudioBufferListPointer(audioBufferList) {
-                guard let data = buffer.mData else { continue }
-                if sourceIsFloat {
-                    let sampleCount = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size
-                    let samples = data.bindMemory(to: Float.self, capacity: sampleCount)
-                    for index in 0..<sampleCount {
-                        let clamped = max(-1, min(1, samples[index]))
-                        var sample = Int16(clamped * Float(Int16.max)).littleEndian
-                        withUnsafeBytes(of: &sample) { audioData.append(contentsOf: $0) }
-                    }
-                } else {
-                    audioData.append(
-                        data.assumingMemoryBound(to: UInt8.self),
-                        count: Int(buffer.mDataByteSize)
-                    )
-                }
-            }
-            guard !audioData.isEmpty else { return [] }
-            return stride(
-                from: 0,
-                to: audioData.count,
-                by: Self.maxPCM16AudioChunkByteCount
-            ).map { offset in
-                let end = min(offset + Self.maxPCM16AudioChunkByteCount, audioData.count)
-                return Data(audioData[offset..<end])
-            }
+        return stride(
+            from: 0,
+            to: audioData.count,
+            by: Self.maxPCM16AudioChunkByteCount
+        ).map { offset in
+            let end = min(offset + Self.maxPCM16AudioChunkByteCount, audioData.count)
+            return Data(audioData[offset..<end])
         }
     }
 
@@ -886,17 +835,59 @@ final class MetaVoiceTranscribeService: @unchecked Sendable {
     }
 }
 
-final class MetaVoiceWebSocketConnectionObserver: NSObject, URLSessionWebSocketDelegate, @unchecked Sendable {
+final class MetaVoiceWebSocketConnectionObserver: NSObject, URLSessionWebSocketDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: CheckedContinuation<Void, Error>?
     private var completedResult: Result<Void, Error>?
     private var storedCloseInfo: (Int, String?)?
+    private var closeWaiters: [CheckedContinuation<Void, Never>] = []
     var onClose: (@Sendable (Int, String?) -> Void)?
 
     var closeInfo: (Int, String?)? {
         lock.lock()
         defer { lock.unlock() }
         return storedCloseInfo
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping @Sendable (URLRequest?) -> Void
+    ) {
+        completionHandler(nil)
+    }
+
+    func waitForCloseIfNeeded(timeoutMilliseconds: Int) async -> Bool {
+        if closeInfo != nil { return true }
+        let timeoutTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(timeoutMilliseconds))
+            guard !Task.isCancelled else { return }
+            self?.wakeCloseWaiters()
+        }
+        defer { timeoutTask.cancel() }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            lock.lock()
+            if storedCloseInfo != nil {
+                lock.unlock()
+                continuation.resume()
+                return
+            }
+            closeWaiters.append(continuation)
+            lock.unlock()
+        }
+        return closeInfo != nil
+    }
+
+    private func wakeCloseWaiters() {
+        lock.lock()
+        let waiters = closeWaiters
+        closeWaiters.removeAll(keepingCapacity: true)
+        lock.unlock()
+        for waiter in waiters {
+            waiter.resume()
+        }
     }
 
     func waitForOpen(timeoutMilliseconds: Int) async throws {
@@ -933,7 +924,12 @@ final class MetaVoiceWebSocketConnectionObserver: NSObject, URLSessionWebSocketD
         lock.lock()
         storedCloseInfo = (closeCode.rawValue, reasonText)
         let callback = onClose
+        let waiters = closeWaiters
+        closeWaiters.removeAll(keepingCapacity: true)
         lock.unlock()
+        for waiter in waiters {
+            waiter.resume()
+        }
         callback?(closeCode.rawValue, reasonText)
     }
 

@@ -41,6 +41,8 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
     static let maximumTrackedRealtimeTimelineItemCount = 256
     private static let missingLifecycleMetadataGraceRegistrations = 8
     private static let missingLifecycleMetadataGraceSeconds: TimeInterval = 0.1
+    private static let encoder = JSONEncoder()
+    private static let decoder = JSONDecoder()
 
     enum OutputMode {
         case transcription
@@ -77,6 +79,7 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
     private let stateLock = NSLock()
     private let conversionLock = NSLock()
     private weak var delegateStorage: LiveSpeechTranscriberDelegate?
+    private var urlSession: URLSession?
     private var webSocketTask: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
     private var connectionGeneration: UInt64 = 0
@@ -218,18 +221,30 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
         var request = URLRequest(url: url)
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
 
-        let webSocketTask = URLSession.shared.webSocketTask(with: request)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.urlCache = nil
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.urlCredentialStorage = nil
+        let urlSession = URLSession(
+            configuration: configuration,
+            delegate: OpenAIRealtimeRejectRedirects(),
+            delegateQueue: nil
+        )
+        let webSocketTask = urlSession.webSocketTask(with: request)
         let generation = stateLock.withLock { () -> UInt64? in
             guard connectionGeneration == startIntentGeneration else { return nil }
             connectionGeneration &+= 1
             self.language = language
             self.outputMode = outputMode
+            self.urlSession = urlSession
             self.webSocketTask = webSocketTask
             isPaused = false
             return connectionGeneration
         }
         guard let generation else {
             webSocketTask.cancel(with: .goingAway, reason: nil)
+            urlSession.invalidateAndCancel()
             throw CancellationError()
         }
         webSocketTask.resume()
@@ -285,15 +300,10 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
         let audioChunks = pcm16Base64AudioChunks(from: sampleBuffer)
         conversionLock.unlock()
 
-        for audio in audioChunks {
-            let event = OpenAIRealtimeAudioAppendEvent(
-                type: audioAppendEventType,
-                audio: audio
-            )
-            guard let data = try? JSONEncoder().encode(event),
-                  let text = String(data: data, encoding: .utf8) else { continue }
+        for chunk in audioChunks {
+            let text = "{\"type\":\"\(audioAppendEventType)\",\"audio\":\"\(chunk.base64)\"}"
             guard reserveAudioSendSlot(
-                audioByteCount: Self.decodedAudioByteCount(audio),
+                audioByteCount: chunk.byteCount,
                 generation: generation
             ) else {
                 continue
@@ -336,8 +346,10 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
         let stoppedGeneration = connectionGeneration
         let receiveTask = receiveTask
         let webSocketTask = webSocketTask
+        let urlSession = urlSession
         self.receiveTask = nil
         self.webSocketTask = nil
+        self.urlSession = nil
         isPaused = false
         pendingAudioSendCount = 0
         droppedAudioChunkCount = 0
@@ -360,6 +372,7 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
         }
         receiveTask?.cancel()
         webSocketTask?.cancel(with: .goingAway, reason: nil)
+        urlSession?.invalidateAndCancel()
         return stoppedGeneration
     }
 
@@ -473,7 +486,7 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
                     )
                 )
             )
-            data = try JSONEncoder().encode(event)
+            data = try Self.encoder.encode(event)
         }
         guard let text = String(data: data, encoding: .utf8) else { return }
         try await send(
@@ -501,7 +514,7 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
                 )
             )
         )
-        return try JSONEncoder().encode(event)
+        return try Self.encoder.encode(event)
     }
 
     private func send(
@@ -562,7 +575,7 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
     func handleEventText(_ text: String, generation: UInt64) {
         guard isCurrentGeneration(generation) else { return }
         guard let data = text.data(using: .utf8),
-              let event = try? JSONDecoder().decode(OpenAIRealtimeTranscriptionEvent.self, from: data)
+              let event = try? Self.decoder.decode(OpenAIRealtimeTranscriptionEvent.self, from: data)
         else { return }
 
         stateLock.lock()
@@ -1139,9 +1152,10 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
     private func waitForRealtimeTranscriptDeliveries(generation: UInt64) {
         let deliveryThreadKey = realtimeTranscriptDeliveryThreadKey(generation: generation)
         guard Thread.current.threadDictionary[deliveryThreadKey] == nil else { return }
+        let deadline = Date(timeIntervalSinceNow: 2.0)
         realtimeTranscriptDeliveryCondition.lock()
-        while (realtimeTranscriptDeliveryCounts[generation] ?? 0) > 0 {
-            realtimeTranscriptDeliveryCondition.wait()
+        while (realtimeTranscriptDeliveryCounts[generation] ?? 0) > 0, Date() < deadline {
+            realtimeTranscriptDeliveryCondition.wait(until: deadline)
         }
         realtimeTranscriptDeliveryCondition.unlock()
     }
@@ -1339,13 +1353,16 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
         }
         connectionGeneration &+= 1
         let receiveTask = receiveTask
+        let urlSession = urlSession
         self.receiveTask = nil
         self.webSocketTask = nil
+        self.urlSession = nil
         pendingAudioSendCount = 0
         resetRealtimeTranscriptBuffers()
         stateLock.unlock()
         receiveTask?.cancel()
         webSocketTask.cancel(with: .goingAway, reason: nil)
+        urlSession?.invalidateAndCancel()
     }
 
     func ownsDelegateProxy(_ transcriber: LiveSpeechTranscriber) -> Bool {
@@ -1410,83 +1427,37 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
         return terminalTranscripts
     }
 
-    private func pcm16Base64AudioChunks(from sampleBuffer: CMSampleBuffer) -> [String] {
-        guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer),
-              let streamDescription = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription)
-        else {
-            return []
-        }
-
-        var listSize = 0
-        CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
-            sampleBuffer,
-            bufferListSizeNeededOut: &listSize,
-            bufferListOut: nil,
-            bufferListSize: 0,
-            blockBufferAllocator: nil,
-            blockBufferMemoryAllocator: nil,
-            flags: 0,
-            blockBufferOut: nil
-        )
-        guard listSize > 0 else { return [] }
-
-        return withUnsafeTemporaryAllocation(
-            byteCount: listSize,
-            alignment: MemoryLayout<AudioBufferList>.alignment
-        ) { rawList -> [String] in
-            guard let baseAddress = rawList.baseAddress else { return [] }
-
-            let audioBufferList = baseAddress.bindMemory(to: AudioBufferList.self, capacity: 1)
-            var blockBuffer: CMBlockBuffer?
-            let status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
-                sampleBuffer,
-                bufferListSizeNeededOut: nil,
-                bufferListOut: audioBufferList,
-                bufferListSize: listSize,
-                blockBufferAllocator: kCFAllocatorDefault,
-                blockBufferMemoryAllocator: kCFAllocatorDefault,
-                flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
-                blockBufferOut: &blockBuffer
-            )
-            guard status == noErr else { return [] }
-
-            let buffers = UnsafeMutableAudioBufferListPointer(audioBufferList)
-            var audioData = Data()
-            let sourceIsFloat = streamDescription.pointee.mFormatFlags & kAudioFormatFlagIsFloat != 0
-            for buffer in buffers {
-                guard let data = buffer.mData else { continue }
-
-                if sourceIsFloat {
-                    let sampleCount = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size
-                    let samples = data.bindMemory(to: Float.self, capacity: sampleCount)
-                    for index in 0..<sampleCount {
-                        let clamped = max(-1, min(1, samples[index]))
-                        var sample = Int16(clamped * Float(Int16.max)).littleEndian
-                        withUnsafeBytes(of: &sample) { audioData.append(contentsOf: $0) }
-                    }
-                } else {
-                    audioData.append(data.assumingMemoryBound(to: UInt8.self), count: Int(buffer.mDataByteSize))
-                }
-            }
-
-            guard !audioData.isEmpty else { return [] }
-            return base64PCM16Chunks(from: audioData)
-        }
+    private func pcm16Base64AudioChunks(from sampleBuffer: CMSampleBuffer) -> [(base64: String, byteCount: Int)] {
+        guard let audioData = AzureMAITranscriber.pcm16AudioData(from: sampleBuffer) else { return [] }
+        return base64PCM16Chunks(from: audioData)
     }
 
-    private func base64PCM16Chunks(from audioData: Data) -> [String] {
+    private func base64PCM16Chunks(from audioData: Data) -> [(base64: String, byteCount: Int)] {
         guard audioData.count > Self.maxPCM16AudioChunkByteCount else {
-            return [audioData.base64EncodedString()]
+            return [(audioData.base64EncodedString(), audioData.count)]
         }
 
-        var chunks: [String] = []
+        var chunks: [(base64: String, byteCount: Int)] = []
+        chunks.reserveCapacity((audioData.count + Self.maxPCM16AudioChunkByteCount - 1) / Self.maxPCM16AudioChunkByteCount)
         var offset = 0
         while offset < audioData.count {
             let end = min(offset + Self.maxPCM16AudioChunkByteCount, audioData.count)
-            chunks.append(Data(audioData[offset..<end]).base64EncodedString())
+            chunks.append((audioData[offset..<end].base64EncodedString(), end - offset))
             offset = end
         }
         return chunks
+    }
+}
+
+private final class OpenAIRealtimeRejectRedirects: NSObject, URLSessionTaskDelegate {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping @Sendable (URLRequest?) -> Void
+    ) {
+        completionHandler(nil)
     }
 }
 

@@ -77,13 +77,16 @@ final class NariRealtimeTranscriber: @unchecked Sendable {
     private var sendTask: Task<Void, Never>?
     private var receiveTask: Task<Void, Never>?
     private var outbound: [String] = []
+    private var outboundHead = 0
     private var pcmBuffer = Data()
+    private var pcmBufferReadOffset = 0
     private var paused = false
     private var expectedModel = ""
     private var finishEventID: String?
     private var finishAcknowledged = false
     private var deliveriesInFlight = 0
     private var terminalError: NariTranscriptionError?
+    private let stateWaiters = LockConditionWaiters()
     private var ledger = NariTranscriptLedger()
     private var transcriptHandler: TranscriptHandler?
     private var errorHandler: ErrorHandler?
@@ -132,16 +135,10 @@ final class NariRealtimeTranscriber: @unchecked Sendable {
         try await withTaskCancellationHandler {
             do {
                 let deadline = ContinuousClock.now.advanced(by: setupTimeout)
-                while true {
-                    try Task.checkCancellation()
-                    let ready = try lock.withLock {
-                        guard generation == token else { throw CancellationError() }
-                        if let terminalError { throw terminalError }
-                        return phase == .streaming
-                    }
-                    if ready { return }
-                    guard ContinuousClock.now < deadline else { throw NariTranscriptionError.setupTimeout }
-                    try await Task.sleep(for: .milliseconds(10))
+                try await stateWaiters.wait(lock: lock, deadline: deadline, timeoutError: NariTranscriptionError.setupTimeout) {
+                    guard generation == token else { throw CancellationError() }
+                    if let terminalError { throw terminalError }
+                    return phase == .streaming
                 }
             } catch {
                 if error is CancellationError { stop(generation: token) }
@@ -176,10 +173,11 @@ final class NariRealtimeTranscriber: @unchecked Sendable {
             if phase == .streaming {
                 phase = .draining
                 paused = true
-                if !pcmBuffer.isEmpty {
-                    enqueueLocked(Self.audioMessage(pcmBuffer), generation: generation)
-                    pcmBuffer.removeAll(keepingCapacity: false)
+                if pcmBufferReadOffset < pcmBuffer.count {
+                    enqueueLocked(Self.audioMessage(Data(pcmBuffer[pcmBufferReadOffset...])), generation: generation)
                 }
+                pcmBuffer.removeAll(keepingCapacity: false)
+                pcmBufferReadOffset = 0
                 let eventID = UUID().uuidString
                 finishEventID = eventID
                 enqueueLocked(Self.commitMessage(eventID: eventID), generation: generation)
@@ -190,20 +188,12 @@ final class NariRealtimeTranscriber: @unchecked Sendable {
         try await withTaskCancellationHandler {
             do {
                 let deadline = ContinuousClock.now.advanced(by: finishTimeout)
-                while true {
-                    try Task.checkCancellation()
-                    let done = try lock.withLock {
-                        guard generation == token else { throw CancellationError() }
-                        if let terminalError { throw terminalError }
-                        return finishAcknowledged && ledger.isDrained && deliveriesInFlight == 0
-                    }
-                    if done {
-                        stop(generation: token)
-                        return
-                    }
-                    guard ContinuousClock.now < deadline else { throw NariTranscriptionError.finishTimeout }
-                    try await Task.sleep(for: .milliseconds(10))
+                try await stateWaiters.wait(lock: lock, deadline: deadline, timeoutError: NariTranscriptionError.finishTimeout) {
+                    guard generation == token else { throw CancellationError() }
+                    if let terminalError { throw terminalError }
+                    return finishAcknowledged && ledger.isDrained && deliveriesInFlight == 0
                 }
+                stop(generation: token)
             } catch {
                 if error is CancellationError { stop(generation: token) }
                 else { fail(error as? NariTranscriptionError ?? .connection, generation: token) }
@@ -215,8 +205,8 @@ final class NariRealtimeTranscriber: @unchecked Sendable {
     func stop() { stop(generation: nil) }
 
     private func stop(generation token: UUID?) {
-        let socket: (any NariWebSocketConnection)? = lock.withLock {
-            if let token, token != generation { return nil }
+        let (socket, waiters): ((any NariWebSocketConnection)?, [CheckedContinuation<Void, Error>]) = lock.withLock {
+            if let token, token != generation { return (nil, []) }
             generation = UUID()
             phase = .stopped
             paused = true
@@ -225,7 +215,9 @@ final class NariRealtimeTranscriber: @unchecked Sendable {
             sendTask = nil
             receiveTask = nil
             outbound.removeAll()
+            outboundHead = 0
             pcmBuffer.removeAll()
+            pcmBufferReadOffset = 0
             ledger = NariTranscriptLedger()
             finishEventID = nil
             finishAcknowledged = false
@@ -233,23 +225,34 @@ final class NariRealtimeTranscriber: @unchecked Sendable {
             terminalError = nil
             let socket = connection
             connection = nil
-            return socket
+            return (socket, stateWaiters.takeAllLocked())
         }
+        LockConditionWaiters.resume(waiters)
         socket?.close()
     }
 
     private func appendPCMLocked(_ pcm: Data) -> (NariTranscriptionError, UUID)? {
         // 한 입력 버퍼가 비정상적으로 커도 큐 한도를 넘는 할당을 하지 않는다.
+        let availablePCM = pcmBuffer.count - pcmBufferReadOffset
+        let pendingOutbound = outbound.count - outboundHead
         guard pcm.count <= Self.chunkBytes * Self.maximumPendingAudioChunks,
-              outbound.count + (pcmBuffer.count + pcm.count) / Self.chunkBytes <= Self.maximumPendingAudioChunks else {
+              pendingOutbound + (availablePCM + pcm.count) / Self.chunkBytes <= Self.maximumPendingAudioChunks else {
             paused = true
             return (.backlog, generation)
         }
         pcmBuffer.append(pcm)
-        while pcmBuffer.count >= Self.chunkBytes {
-            let chunk = Data(pcmBuffer.prefix(Self.chunkBytes))
-            pcmBuffer.removeFirst(Self.chunkBytes)
+        while pcmBuffer.count - pcmBufferReadOffset >= Self.chunkBytes {
+            let end = pcmBufferReadOffset + Self.chunkBytes
+            let chunk = Data(pcmBuffer[pcmBufferReadOffset..<end])
+            pcmBufferReadOffset = end
             enqueueLocked(Self.audioMessage(chunk), generation: generation)
+        }
+        if pcmBufferReadOffset == pcmBuffer.count {
+            pcmBuffer.removeAll(keepingCapacity: true)
+            pcmBufferReadOffset = 0
+        } else if pcmBufferReadOffset >= 65_536 {
+            pcmBuffer.removeFirst(pcmBufferReadOffset)
+            pcmBufferReadOffset = 0
         }
         return nil
     }
@@ -262,11 +265,22 @@ final class NariRealtimeTranscriber: @unchecked Sendable {
             while !Task.isCancelled {
                 let next: String? = self.lock.withLock {
                     guard self.generation == token, self.phase != .stopped, self.phase != .failed else { return nil }
-                    guard !self.outbound.isEmpty else {
+                    guard self.outboundHead < self.outbound.count else {
+                        self.outbound.removeAll(keepingCapacity: true)
+                        self.outboundHead = 0
                         self.sendTask = nil
                         return nil
                     }
-                    return self.outbound.removeFirst()
+                    let item = self.outbound[self.outboundHead]
+                    self.outboundHead += 1
+                    if self.outboundHead == self.outbound.count {
+                        self.outbound.removeAll(keepingCapacity: true)
+                        self.outboundHead = 0
+                    } else if self.outboundHead >= 32 {
+                        self.outbound.removeFirst(self.outboundHead)
+                        self.outboundHead = 0
+                    }
+                    return item
                 }
                 guard let next else { return }
                 do { try await socket.send(next) }
@@ -283,32 +297,43 @@ final class NariRealtimeTranscriber: @unchecked Sendable {
             while !Task.isCancelled {
                 let data = try await socket.receive()
                 let event = try NariServerEvent.parse(data)
-                let delivery: (TranscriptHandler?, [NariTranscriptUpdate]) = try lock.withLock {
-                    guard generation == token, phase != .stopped, phase != .failed else { return (nil, []) }
+                let (delivery, waiters): ((TranscriptHandler?, [NariTranscriptUpdate]), [CheckedContinuation<Void, Error>]) = try lock.withLock {
+                    guard generation == token, phase != .stopped, phase != .failed else { return ((nil, []), []) }
                     if case .configured(let model) = event {
                         guard phase == .configuring, model == expectedModel else { throw NariTranscriptionError.invalidResponse }
                         phase = .streaming
-                        return (nil, [])
+                        return ((nil, []), stateWaiters.takeAllLocked())
                     }
                     if case .failure(let error) = event { throw error }
                     guard phase == .streaming || phase == .draining else { throw NariTranscriptionError.invalidResponse }
                     let updates = try ledger.apply(event)
+                    var shouldWake = false
                     switch event {
                     case .committed(_, _, let clientID), .commitEmpty(let clientID):
-                        if let finishEventID, clientID == finishEventID { finishAcknowledged = true }
+                        if let finishEventID, clientID == finishEventID {
+                            finishAcknowledged = true
+                            shouldWake = updates.isEmpty && ledger.isDrained
+                        }
                     default: break
                     }
+                    if updates.isEmpty, ledger.isDrained, finishAcknowledged {
+                        shouldWake = true
+                    }
                     deliveriesInFlight += updates.count
-                    return (transcriptHandler, updates)
+                    return ((transcriptHandler, updates), shouldWake ? stateWaiters.takeAllLocked() : [])
                 }
+                LockConditionWaiters.resume(waiters)
                 for update in delivery.1 {
                     guard lock.withLock({ generation == token && phase != .stopped && phase != .failed }) else { return }
                     let namespaced = NariTranscriptUpdate(itemID: "\(token.uuidString):\(update.itemID)",
                         text: update.text, isFinal: update.isFinal, languageCode: update.languageCode, revision: update.revision)
                     await delivery.0?(namespaced)
-                    lock.withLock {
-                        if generation == token { deliveriesInFlight -= 1 }
+                    let waiters = lock.withLock { () -> [CheckedContinuation<Void, Error>] in
+                        guard generation == token else { return [] }
+                        deliveriesInFlight -= 1
+                        return stateWaiters.takeAllLocked()
                     }
+                    LockConditionWaiters.resume(waiters)
                 }
             }
         } catch {
@@ -317,20 +342,23 @@ final class NariRealtimeTranscriber: @unchecked Sendable {
     }
 
     private func fail(_ error: NariTranscriptionError, generation token: UUID) {
-        let failure: ((any NariWebSocketConnection)?, ErrorHandler?)? = lock.withLock {
+        let failure: ((any NariWebSocketConnection)?, ErrorHandler?, [CheckedContinuation<Void, Error>])? = lock.withLock {
             guard generation == token, phase != .stopped, phase != .failed else { return nil }
             phase = .failed
             paused = true
             terminalError = error
             outbound.removeAll()
+            outboundHead = 0
             pcmBuffer.removeAll()
+            pcmBufferReadOffset = 0
             sendTask?.cancel()
             receiveTask?.cancel()
             let socket = connection
             connection = nil
-            return (socket, errorHandler)
+            return (socket, errorHandler, stateWaiters.takeAllLocked())
         }
         guard let failure else { return }
+        LockConditionWaiters.resume(failure.2)
         failure.0?.close()
         Task { [weak self] in
             guard let self, self.lock.withLock({ self.generation == token && self.phase == .failed }) else { return }

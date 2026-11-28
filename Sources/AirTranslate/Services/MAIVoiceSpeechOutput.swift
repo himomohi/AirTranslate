@@ -3,17 +3,20 @@ import Foundation
 
 actor MAIVoiceCatalog {
     static let shared = MAIVoiceCatalog()
+    private static let decoder = JSONDecoder()
     private var cachedVoices: [String: [String]] = [:]
     private var refreshedAt: Date?
     private let session: URLSession
 
     init(configuration: URLSessionConfiguration = .ephemeral) {
-        configuration.timeoutIntervalForRequest = 15
-        configuration.timeoutIntervalForResource = 15
-        configuration.urlCache = nil
-        configuration.httpCookieStorage = nil
-        configuration.urlCredentialStorage = nil
-        session = URLSession(configuration: configuration, delegate: MAIVoiceRejectRedirects(), delegateQueue: nil)
+        let config = configuration.copy() as! URLSessionConfiguration
+        config.timeoutIntervalForRequest = 15
+        config.timeoutIntervalForResource = 15
+        config.urlCache = nil
+        config.httpCookieStorage = nil
+        config.httpShouldSetCookies = false
+        config.urlCredentialStorage = nil
+        session = URLSession(configuration: config, delegate: MAIVoiceRejectRedirects(), delegateQueue: nil)
     }
 
     func voices(for model: SpeechSynthesisModel) async throws -> [String] {
@@ -21,9 +24,14 @@ actor MAIVoiceCatalog {
         if let refreshedAt, Date().timeIntervalSince(refreshedAt) < 1_800,
            let voices = cachedVoices[model.rawValue] { return voices }
         let url = URL(string: "https://openrouter.ai/api/v1/models?output_modalities=speech")!
-        let (bytes, response) = try await session.bytes(from: url)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { throw MAIVoiceError.catalog }
-        let data = try await MAIVoiceSpeechOutput.collect(bytes, maximumBytes: 1_048_576)
+        let data = try await MAIVoiceSpeechOutput.fetchBoundedData(
+            session: session,
+            request: URLRequest(url: url),
+            maximumBytes: 1_048_576,
+            overflowError: .catalog
+        ) { response in
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { throw MAIVoiceError.catalog }
+        }
         cachedVoices = try Self.decode(data)
         refreshedAt = Date()
         guard let voices = cachedVoices[model.rawValue], !voices.isEmpty else { throw MAIVoiceError.catalog }
@@ -38,7 +46,7 @@ actor MAIVoiceCatalog {
             }
             let data: [Model]
         }
-        guard let catalog = try? JSONDecoder().decode(Catalog.self, from: data) else { throw MAIVoiceError.catalog }
+        guard let catalog = try? decoder.decode(Catalog.self, from: data) else { throw MAIVoiceError.catalog }
         var voices: [String: [String]] = [:]
         for model in catalog.data {
             guard let selection = SpeechSynthesisModel(rawValue: model.id), selection.isMAIVoice else { continue }
@@ -72,16 +80,21 @@ actor MAIVoiceCatalog {
 
 @MainActor
 final class MAIVoiceSpeechOutput: NSObject, AVAudioPlayerDelegate {
-    private struct Segment {
+    private struct Segment: Equatable {
         let text: String
         let model: SpeechSynthesisModel
         let languageID: String
         let voiceName: String
     }
+    private struct PrefetchedAudio {
+        let segment: Segment
+        let task: Task<Data, Error>
+    }
     private let session: URLSession
     private let catalog: MAIVoiceCatalog
     private let keyProvider: () throws -> String?
     private var pending: Segment?
+    private var prefetched: PrefetchedAudio?
     private var activeText: String?
     private var worker: Task<Void, Never>?
     private var generation: UInt64 = 0
@@ -93,13 +106,14 @@ final class MAIVoiceSpeechOutput: NSObject, AVAudioPlayerDelegate {
     init(configuration: URLSessionConfiguration = .ephemeral,
          catalog: MAIVoiceCatalog = .shared,
          keyProvider: @escaping () throws -> String? = { try OpenRouterAPIKeyStore.readAPIKey() }) {
-        configuration.timeoutIntervalForRequest = 30
-        configuration.timeoutIntervalForResource = 30
-        configuration.urlCache = nil
-        configuration.httpCookieStorage = nil
-        configuration.urlCredentialStorage = nil
-        configuration.httpShouldSetCookies = false
-        session = URLSession(configuration: configuration, delegate: MAIVoiceRejectRedirects(), delegateQueue: nil)
+        let config = configuration.copy() as! URLSessionConfiguration
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 30
+        config.urlCache = nil
+        config.httpCookieStorage = nil
+        config.urlCredentialStorage = nil
+        config.httpShouldSetCookies = false
+        session = URLSession(configuration: config, delegate: MAIVoiceRejectRedirects(), delegateQueue: nil)
         self.catalog = catalog
         self.keyProvider = keyProvider
         super.init()
@@ -115,7 +129,11 @@ final class MAIVoiceSpeechOutput: NSObject, AVAudioPlayerDelegate {
         guard model.isMAIVoice, !text.isEmpty, text != pending?.text, text != activeText else { return }
         guard text.count <= 10_000 else { onFailure?(.textTooLong); return }
         // 생성 중인 문장과 최신 대기 문장 하나만 유지한다.
-        pending = Segment(text: text, model: model, languageID: language.id, voiceName: voiceName)
+        let segment = Segment(text: text, model: model, languageID: language.id, voiceName: voiceName)
+        pending = segment
+        if player != nil {
+            startPrefetchIfNeeded(for: segment)
+        }
         guard worker == nil else { return }
         let current = generation
         worker = Task { [weak self] in
@@ -124,17 +142,27 @@ final class MAIVoiceSpeechOutput: NSObject, AVAudioPlayerDelegate {
                 self.pending = nil
                 self.activeText = segment.text
                 do {
-                    guard let key = try self.keyProvider() else { throw MAIVoiceError.missingKey }
-                    let voices = try await self.catalog.voices(for: segment.model)
-                    try Task.checkCancellation()
-                    let voice = try MAIVoiceCatalog.selectVoice(voices, languageID: segment.languageID, preferredName: segment.voiceName)
-                    let request = try Self.makeRequest(text: segment.text, model: segment.model, voice: voice, apiKey: key)
-                    let (bytes, response) = try await self.session.bytes(for: request)
-                    try Self.validateResponse(response)
-                    let audio = try await Self.collect(bytes, maximumBytes: 8_388_608)
+                    let audio: Data
+                    if let prefetched = self.prefetched, prefetched.segment == segment {
+                        self.prefetched = nil
+                        audio = try await prefetched.task.value
+                    } else {
+                        self.prefetched?.task.cancel()
+                        self.prefetched = nil
+                        guard let key = try self.keyProvider() else { throw MAIVoiceError.missingKey }
+                        audio = try await Self.fetchAudio(
+                            segment: segment,
+                            catalog: self.catalog,
+                            session: self.session,
+                            apiKey: key
+                        )
+                    }
                     try Task.checkCancellation()
                     guard self.generation == current else { return }
                     guard !audio.isEmpty else { throw MAIVoiceError.invalidAudio }
+                    if let next = self.pending {
+                        self.startPrefetchIfNeeded(for: next)
+                    }
                     try await self.play(audio)
                 } catch {
                     guard !Task.isCancelled, self.generation == current else { return }
@@ -150,6 +178,8 @@ final class MAIVoiceSpeechOutput: NSObject, AVAudioPlayerDelegate {
 
     func stop() {
         generation &+= 1
+        prefetched?.task.cancel()
+        prefetched = nil
         worker?.cancel()
         worker = nil
         pending = nil
@@ -157,6 +187,46 @@ final class MAIVoiceSpeechOutput: NSObject, AVAudioPlayerDelegate {
         player?.delegate = nil
         player?.stop()
         finishPlayback()
+    }
+
+    private func startPrefetchIfNeeded(for segment: Segment) {
+        if let existing = prefetched {
+            if existing.segment == segment { return }
+            existing.task.cancel()
+            prefetched = nil
+        }
+        guard let key = try? keyProvider() else { return }
+        let catalog = self.catalog
+        let session = self.session
+        let task = Task {
+            try await Self.fetchAudio(
+                segment: segment,
+                catalog: catalog,
+                session: session,
+                apiKey: key
+            )
+        }
+        prefetched = PrefetchedAudio(segment: segment, task: task)
+    }
+
+    private nonisolated static func fetchAudio(
+        segment: Segment,
+        catalog: MAIVoiceCatalog,
+        session: URLSession,
+        apiKey: String
+    ) async throws -> Data {
+        let voices = try await catalog.voices(for: segment.model)
+        try Task.checkCancellation()
+        let voice = try MAIVoiceCatalog.selectVoice(voices, languageID: segment.languageID, preferredName: segment.voiceName)
+        let request = try makeRequest(text: segment.text, model: segment.model, voice: voice, apiKey: apiKey)
+        return try await fetchBoundedData(
+            session: session,
+            request: request,
+            maximumBytes: 8_388_608,
+            overflowError: .invalidAudio
+        ) { response in
+            try validateResponse(response)
+        }
     }
 
     private func play(_ audio: Data) async throws {
@@ -191,6 +261,29 @@ final class MAIVoiceSpeechOutput: NSObject, AVAudioPlayerDelegate {
         Task { @MainActor [weak self] in
             guard self?.player === player else { return }
             self?.finishPlayback(failed: true)
+        }
+    }
+
+    nonisolated static func fetchBoundedData(
+        session: URLSession,
+        request: URLRequest,
+        maximumBytes: Int,
+        overflowError: MAIVoiceError,
+        validateResponse: @escaping @Sendable (URLResponse) throws -> Void
+    ) async throws -> Data {
+        try Task.checkCancellation()
+        let task = session.dataTask(with: request)
+        let delegate = BoundedDataTaskDelegate(
+            maximumBytes: maximumBytes,
+            overflowError: overflowError,
+            validateResponse: validateResponse
+        )
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                delegate.start(task: task, continuation: continuation)
+            }
+        } onCancel: {
+            task.cancel()
         }
     }
 
@@ -233,6 +326,105 @@ final class MAIVoiceRejectRedirects: NSObject, URLSessionTaskDelegate {
                     completionHandler: @escaping (URLRequest?) -> Void) {
         // 인증 키를 리디렉션 대상에 전달하지 않는다.
         completionHandler(nil)
+    }
+}
+
+private final class BoundedDataTaskDelegate: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private let maximumBytes: Int
+    private let overflowError: MAIVoiceError
+    private let validateResponse: @Sendable (URLResponse) throws -> Void
+    private var continuation: CheckedContinuation<Data, Error>?
+    private var buffer = Data()
+    private var selfRetain: BoundedDataTaskDelegate?
+
+    init(
+        maximumBytes: Int,
+        overflowError: MAIVoiceError,
+        validateResponse: @escaping @Sendable (URLResponse) throws -> Void
+    ) {
+        self.maximumBytes = maximumBytes
+        self.overflowError = overflowError
+        self.validateResponse = validateResponse
+    }
+
+    func start(task: URLSessionDataTask, continuation: CheckedContinuation<Data, Error>) {
+        lock.withLock {
+            self.continuation = continuation
+            self.selfRetain = self
+        }
+        task.delegate = self
+        task.resume()
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping @Sendable (URLRequest?) -> Void
+    ) {
+        completionHandler(nil)
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping @Sendable (URLSession.ResponseDisposition) -> Void
+    ) {
+        do {
+            try validateResponse(response)
+            if response.expectedContentLength > Int64(maximumBytes) {
+                throw overflowError
+            }
+            if response.expectedContentLength > 0 {
+                let capacity = min(Int(response.expectedContentLength), maximumBytes)
+                lock.withLock { buffer.reserveCapacity(capacity) }
+            }
+            completionHandler(.allow)
+        } catch {
+            completionHandler(.cancel)
+            finish(with: .failure(error))
+        }
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        let overflowed = lock.withLock { () -> Bool in
+            guard continuation != nil else { return false }
+            if buffer.count + data.count > maximumBytes {
+                return true
+            }
+            buffer.append(data)
+            return false
+        }
+        if overflowed {
+            dataTask.cancel()
+            finish(with: .failure(overflowError))
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        if let error {
+            if (error as? URLError)?.code == .cancelled {
+                finish(with: .failure(CancellationError()))
+            } else {
+                finish(with: .failure(error))
+            }
+        } else {
+            let data = lock.withLock { buffer }
+            finish(with: .success(data))
+        }
+    }
+
+    private func finish(with result: Result<Data, Error>) {
+        let pending = lock.withLock { () -> CheckedContinuation<Data, Error>? in
+            let cont = continuation
+            continuation = nil
+            selfRetain = nil
+            return cont
+        }
+        pending?.resume(with: result)
     }
 }
 

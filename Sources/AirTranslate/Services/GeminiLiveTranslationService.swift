@@ -38,6 +38,27 @@ final class GeminiLiveTranslationService: @unchecked Sendable {
     static let maxPreSetupAudioByteCount = inputAudioSampleRate
         * bytesPerPCM16Sample
         * maxPreSetupAudioSeconds
+    private static let encoder = JSONEncoder()
+    private static let decoder = JSONDecoder()
+
+    private enum PreSetupAudioItem {
+        case pcm(Data)
+        case base64(String, byteCount: Int)
+
+        var byteCount: Int {
+            switch self {
+            case let .pcm(data): data.count
+            case let .base64(_, byteCount): byteCount
+            }
+        }
+
+        var base64String: String {
+            switch self {
+            case let .pcm(data): data.base64EncodedString()
+            case let .base64(value, _): value
+            }
+        }
+    }
 
     var delegate: GeminiLiveTranslationServiceDelegate? {
         get {
@@ -78,6 +99,8 @@ final class GeminiLiveTranslationService: @unchecked Sendable {
 
     private let stateLock = NSLock()
     private let conversionLock = NSLock()
+    private let sendQueue = DispatchQueue(label: "AirTranslate.GeminiLiveTranslationService.send", qos: .userInitiated)
+    private let setupWaiters = LockConditionWaiters()
     private weak var serviceDelegate: GeminiLiveTranslationServiceDelegate?
     private var urlSession: URLSession?
     private var webSocketTask: URLSessionWebSocketTask?
@@ -94,7 +117,7 @@ final class GeminiLiveTranslationService: @unchecked Sendable {
         (@Sendable (RealtimeAudioTransportDegradation) -> Void)?
     private var sessionReconnectRecommendationHandler: (@Sendable (String?) -> Void)?
     private var sessionResumptionHandle: String?
-    private var preSetupAudioChunks: [String] = []
+    private var preSetupAudioItems: [PreSetupAudioItem] = []
     private var preSetupAudioByteCount = 0
 
     func start(
@@ -119,7 +142,12 @@ final class GeminiLiveTranslationService: @unchecked Sendable {
         }
 
         let connectionObserver = GeminiLiveWebSocketConnectionObserver()
-        let urlSession = URLSession(configuration: .default, delegate: connectionObserver, delegateQueue: nil)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.urlCache = nil
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.urlCredentialStorage = nil
+        let urlSession = URLSession(configuration: configuration, delegate: connectionObserver, delegateQueue: nil)
         let webSocketTask = urlSession.webSocketTask(with: url)
         let installation: (
             generation: UInt64,
@@ -141,7 +169,7 @@ final class GeminiLiveTranslationService: @unchecked Sendable {
             droppedAudioChunkCount = 0
             droppedAudioByteCount = 0
             lastAudioDropPhase = .sendWindow
-            preSetupAudioChunks = []
+            preSetupAudioItems = []
             preSetupAudioByteCount = 0
             return (
                 generation: connectionGeneration,
@@ -209,24 +237,24 @@ final class GeminiLiveTranslationService: @unchecked Sendable {
         guard !state.isPaused, state.hasActiveWebSocketTask else { return }
 
         conversionLock.lock()
-        let audioChunks = pcm16Base64AudioChunks(from: sampleBuffer)
+        let pcmChunks = pcm16AudioDataChunks(from: sampleBuffer)
         conversionLock.unlock()
+        guard !pcmChunks.isEmpty else { return }
 
-        sendOrBufferAudioChunks(
-            audioChunks,
-            connectionGeneration: state.connectionGeneration
-        )
+        let items = pcmChunks.map { PreSetupAudioItem.pcm($0) }
+        sendOrBufferAudioItems(items, connectionGeneration: state.connectionGeneration)
     }
 
     func sendOrBufferAudioChunks(_ audioChunks: [String]) {
-        sendOrBufferAudioChunks(audioChunks, connectionGeneration: nil)
+        let items = audioChunks.map { PreSetupAudioItem.base64($0, byteCount: Self.decodedAudioByteCount($0)) }
+        sendOrBufferAudioItems(items, connectionGeneration: nil)
     }
 
-    private func sendOrBufferAudioChunks(
-        _ audioChunks: [String],
+    private func sendOrBufferAudioItems(
+        _ items: [PreSetupAudioItem],
         connectionGeneration expectedGeneration: UInt64?
     ) {
-        guard !audioChunks.isEmpty else { return }
+        guard !items.isEmpty else { return }
 
         stateLock.lock()
         if let expectedGeneration,
@@ -235,7 +263,7 @@ final class GeminiLiveTranslationService: @unchecked Sendable {
             return
         }
         guard isSetupComplete else {
-            let degradation = bufferPreSetupAudioChunksLocked(audioChunks)
+            let degradation = bufferPreSetupAudioItemsLocked(items)
             let callback = audioTransportDegradationHandler
             stateLock.unlock()
             if let degradation {
@@ -243,36 +271,27 @@ final class GeminiLiveTranslationService: @unchecked Sendable {
             }
             return
         }
-        let webSocketTask = webSocketTask
+        guard let webSocketTask else {
+            stateLock.unlock()
+            return
+        }
         let connectionGeneration = self.connectionGeneration
+        let encodedPayloads = items.map { (base64: $0.base64String, byteCount: $0.byteCount) }
+        sendQueue.async { [weak self] in
+            self?.sendAudioPayloads(encodedPayloads, over: webSocketTask, connectionGeneration: connectionGeneration)
+        }
         stateLock.unlock()
-
-        guard let webSocketTask else { return }
-        sendAudioChunks(
-            audioChunks,
-            over: webSocketTask,
-            connectionGeneration: connectionGeneration
-        )
     }
 
-    private func sendAudioChunks(
-        _ audioChunks: [String],
+    private func sendAudioPayloads(
+        _ payloads: [(base64: String, byteCount: Int)],
         over webSocketTask: URLSessionWebSocketTask,
         connectionGeneration: UInt64
     ) {
-        for audioData in audioChunks {
-            let event = GeminiLiveRealtimeInputMessage(
-                realtimeInput: GeminiLiveRealtimeInput(
-                    audio: GeminiLiveAudioBlob(
-                        data: audioData,
-                        mimeType: "audio/pcm;rate=16000"
-                    )
-                )
-            )
-            guard let data = try? JSONEncoder().encode(event),
-                  let text = String(data: data, encoding: .utf8) else { continue }
+        for payload in payloads {
+            let text = "{\"realtimeInput\":{\"audio\":{\"data\":\"\(payload.base64)\",\"mimeType\":\"audio/pcm;rate=16000\"}}}"
             guard reserveAudioSendSlot(
-                audioByteCount: Self.decodedAudioByteCount(audioData),
+                audioByteCount: payload.byteCount,
                 connectionGeneration: connectionGeneration
             ) else {
                 continue
@@ -291,17 +310,17 @@ final class GeminiLiveTranslationService: @unchecked Sendable {
         }
     }
 
-    private func bufferPreSetupAudioChunksLocked(
-        _ audioChunks: [String]
+    private func bufferPreSetupAudioItemsLocked(
+        _ items: [PreSetupAudioItem]
     ) -> RealtimeAudioTransportDegradation? {
         var droppedChunkInThisCall = false
-        for chunk in audioChunks {
-            preSetupAudioChunks.append(chunk)
-            preSetupAudioByteCount += Self.decodedAudioByteCount(chunk)
+        for item in items {
+            preSetupAudioItems.append(item)
+            preSetupAudioByteCount += item.byteCount
         }
-        while preSetupAudioByteCount > Self.maxPreSetupAudioByteCount, !preSetupAudioChunks.isEmpty {
-            let removed = preSetupAudioChunks.removeFirst()
-            let removedByteCount = Self.decodedAudioByteCount(removed)
+        while preSetupAudioByteCount > Self.maxPreSetupAudioByteCount, !preSetupAudioItems.isEmpty {
+            let removed = preSetupAudioItems.removeFirst()
+            let removedByteCount = removed.byteCount
             preSetupAudioByteCount = max(0, preSetupAudioByteCount - removedByteCount)
             droppedAudioChunkCount += 1
             droppedAudioByteCount += removedByteCount
@@ -316,7 +335,7 @@ final class GeminiLiveTranslationService: @unchecked Sendable {
     }
 
     var bufferedPreSetupAudioChunks: [String] {
-        withStateLock { preSetupAudioChunks }
+        withStateLock { preSetupAudioItems.map(\.base64String) }
     }
 
     func setPaused(_ isPaused: Bool) {
@@ -342,9 +361,11 @@ final class GeminiLiveTranslationService: @unchecked Sendable {
         droppedAudioByteCount = 0
         lastAudioDropPhase = .sendWindow
         sessionResumptionHandle = nil
-        preSetupAudioChunks = []
+        preSetupAudioItems = []
         preSetupAudioByteCount = 0
+        let waiters = setupWaiters.takeAllLocked()
         stateLock.unlock()
+        LockConditionWaiters.resume(waiters)
         receiveTask?.cancel()
         webSocketTask?.cancel(with: .goingAway, reason: nil)
         urlSession?.finishTasksAndInvalidate()
@@ -409,33 +430,20 @@ final class GeminiLiveTranslationService: @unchecked Sendable {
                 )
             )
         )
-        return try JSONEncoder().encode(event)
+        return try Self.encoder.encode(event)
     }
 
     private func waitForSetupComplete(connectionGeneration: UInt64) async throws {
-        let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(10))
-
-        while !Task.isCancelled {
-            let state = withStateLock {
-                (
-                    isCurrent: isCurrentConnectionLocked(connectionGeneration),
-                    isSetupComplete: isSetupComplete,
-                    setupError: setupError
-                )
-            }
-
-            guard state.isCurrent else { throw CancellationError() }
-            if state.isSetupComplete { return }
-            if let setupError = state.setupError { throw setupError }
-            if clock.now >= deadline {
-                throw GeminiLiveTranslationError.setupTimedOut
-            }
-
-            try await Task.sleep(for: .milliseconds(50))
+        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+        try await setupWaiters.wait(
+            lock: stateLock,
+            deadline: deadline,
+            timeoutError: GeminiLiveTranslationError.setupTimedOut
+        ) {
+            guard isCurrentConnectionLocked(connectionGeneration) else { throw CancellationError() }
+            if let setupError { throw setupError }
+            return isSetupComplete
         }
-
-        throw CancellationError()
     }
 
     private func send(_ text: String, connectionGeneration: UInt64) async throws {
@@ -616,7 +624,7 @@ final class GeminiLiveTranslationService: @unchecked Sendable {
             return
         }
         guard let data = text.data(using: .utf8),
-              let event = try? JSONDecoder().decode(GeminiLiveServerMessage.self, from: data)
+              let event = try? Self.decoder.decode(GeminiLiveServerMessage.self, from: data)
         else { return }
 
         if event.error != nil {
@@ -723,33 +731,43 @@ final class GeminiLiveTranslationService: @unchecked Sendable {
     }
 
     private func markSetupComplete(connectionGeneration expectedGeneration: UInt64?) {
-        while true {
-            stateLock.lock()
-            if let expectedGeneration,
-               !isCurrentGenerationLocked(expectedGeneration) {
-                stateLock.unlock()
-                return
-            }
-            guard let webSocketTask, !preSetupAudioChunks.isEmpty else {
-                isSetupComplete = true
-                setupError = nil
-                preSetupAudioChunks = []
-                preSetupAudioByteCount = 0
-                stateLock.unlock()
-                return
-            }
-            let bufferedChunks = preSetupAudioChunks
-            preSetupAudioChunks = []
-            preSetupAudioByteCount = 0
-            let connectionGeneration = self.connectionGeneration
+        stateLock.lock()
+        if let expectedGeneration,
+           !isCurrentGenerationLocked(expectedGeneration) {
             stateLock.unlock()
-
-            sendAudioChunks(
-                coalescedAudioChunks(bufferedChunks),
-                over: webSocketTask,
-                connectionGeneration: connectionGeneration
-            )
+            return
         }
+        let bufferedItems = preSetupAudioItems
+        preSetupAudioItems = []
+        preSetupAudioByteCount = 0
+        isSetupComplete = true
+        setupError = nil
+        let waiters = setupWaiters.takeAllLocked()
+        if let webSocketTask, !bufferedItems.isEmpty {
+            let connectionGeneration = self.connectionGeneration
+            let payloads = Self.coalescedAudioPayloads(bufferedItems)
+            sendQueue.async { [weak self] in
+                self?.sendAudioPayloads(payloads, over: webSocketTask, connectionGeneration: connectionGeneration)
+            }
+        }
+        stateLock.unlock()
+        LockConditionWaiters.resume(waiters)
+    }
+
+    private static func coalescedAudioPayloads(_ items: [PreSetupAudioItem]) -> [(base64: String, byteCount: Int)] {
+        var audioData = Data()
+        for item in items {
+            switch item {
+            case let .pcm(data):
+                audioData.append(data)
+            case let .base64(chunk, _):
+                if let decoded = Data(base64Encoded: chunk) {
+                    audioData.append(decoded)
+                }
+            }
+        }
+        guard !audioData.isEmpty else { return [] }
+        return chunkedAudioData(audioData).map { ($0.base64EncodedString(), $0.count) }
     }
 
     func coalescedAudioChunks(_ chunks: [String]) -> [String] {
@@ -759,7 +777,7 @@ final class GeminiLiveTranslationService: @unchecked Sendable {
             audioData.append(decoded)
         }
         guard !audioData.isEmpty else { return [] }
-        return base64PCM16Chunks(from: audioData)
+        return Self.chunkedAudioData(audioData).map { $0.base64EncodedString() }
     }
 
     private func recordSetupFailureIfNeeded(
@@ -772,10 +790,13 @@ final class GeminiLiveTranslationService: @unchecked Sendable {
             stateLock.unlock()
             return
         }
+        var waiters: [CheckedContinuation<Void, Error>] = []
         if !isSetupComplete {
             setupError = error
+            waiters = setupWaiters.takeAllLocked()
         }
         stateLock.unlock()
+        LockConditionWaiters.resume(waiters)
     }
 
     nonisolated static func outputAudioSampleRate(from mimeType: String?) -> Double {
@@ -875,90 +896,42 @@ final class GeminiLiveTranslationService: @unchecked Sendable {
         )
     }
 
-    private func pcm16Base64AudioChunks(from sampleBuffer: CMSampleBuffer) -> [String] {
-        guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer),
-              let streamDescription = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription)
-        else {
-            return []
-        }
-
-        var listSize = 0
-        CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
-            sampleBuffer,
-            bufferListSizeNeededOut: &listSize,
-            bufferListOut: nil,
-            bufferListSize: 0,
-            blockBufferAllocator: nil,
-            blockBufferMemoryAllocator: nil,
-            flags: 0,
-            blockBufferOut: nil
-        )
-        guard listSize > 0 else { return [] }
-
-        return withUnsafeTemporaryAllocation(
-            byteCount: listSize,
-            alignment: MemoryLayout<AudioBufferList>.alignment
-        ) { rawList -> [String] in
-            guard let baseAddress = rawList.baseAddress else { return [] }
-
-            let audioBufferList = baseAddress.bindMemory(to: AudioBufferList.self, capacity: 1)
-            var blockBuffer: CMBlockBuffer?
-            let status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
-                sampleBuffer,
-                bufferListSizeNeededOut: nil,
-                bufferListOut: audioBufferList,
-                bufferListSize: listSize,
-                blockBufferAllocator: kCFAllocatorDefault,
-                blockBufferMemoryAllocator: kCFAllocatorDefault,
-                flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
-                blockBufferOut: &blockBuffer
-            )
-            guard status == noErr else { return [] }
-
-            let buffers = UnsafeMutableAudioBufferListPointer(audioBufferList)
-            var audioData = Data()
-            let sourceIsFloat = streamDescription.pointee.mFormatFlags & kAudioFormatFlagIsFloat != 0
-            for buffer in buffers {
-                guard let data = buffer.mData else { continue }
-
-                if sourceIsFloat {
-                    let sampleCount = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size
-                    let samples = data.bindMemory(to: Float.self, capacity: sampleCount)
-                    for index in 0..<sampleCount {
-                        let clamped = max(-1, min(1, samples[index]))
-                        var sample = Int16(clamped * Float(Int16.max)).littleEndian
-                        withUnsafeBytes(of: &sample) { audioData.append(contentsOf: $0) }
-                    }
-                } else {
-                    audioData.append(data.assumingMemoryBound(to: UInt8.self), count: Int(buffer.mDataByteSize))
-                }
-            }
-
-            guard !audioData.isEmpty else { return [] }
-            return base64PCM16Chunks(from: audioData)
-        }
+    private func pcm16AudioDataChunks(from sampleBuffer: CMSampleBuffer) -> [Data] {
+        guard let audioData = AzureMAITranscriber.pcm16AudioData(from: sampleBuffer) else { return [] }
+        return Self.chunkedAudioData(audioData)
     }
 
-    private func base64PCM16Chunks(from audioData: Data) -> [String] {
-        guard audioData.count > Self.maxPCM16AudioChunkByteCount else {
-            return [audioData.base64EncodedString()]
+    private static func chunkedAudioData(_ audioData: Data) -> [Data] {
+        guard audioData.count > maxPCM16AudioChunkByteCount else {
+            return [audioData]
         }
 
-        var chunks: [String] = []
+        var chunks: [Data] = []
+        chunks.reserveCapacity((audioData.count + maxPCM16AudioChunkByteCount - 1) / maxPCM16AudioChunkByteCount)
         var offset = 0
         while offset < audioData.count {
-            let end = min(offset + Self.maxPCM16AudioChunkByteCount, audioData.count)
-            chunks.append(Data(audioData[offset..<end]).base64EncodedString())
+            let end = min(offset + maxPCM16AudioChunkByteCount, audioData.count)
+            chunks.append(Data(audioData[offset..<end]))
             offset = end
         }
         return chunks
     }
 }
 
-final class GeminiLiveWebSocketConnectionObserver: NSObject, URLSessionWebSocketDelegate, @unchecked Sendable {
+final class GeminiLiveWebSocketConnectionObserver: NSObject, URLSessionWebSocketDelegate, URLSessionTaskDelegate, @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: CheckedContinuation<Void, Error>?
     private var completedResult: Result<Void, Error>?
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping @Sendable (URLRequest?) -> Void
+    ) {
+        completionHandler(nil)
+    }
 
     func waitForOpen(timeoutMilliseconds: Int) async throws {
         let timeoutTask = Task { [weak self] in

@@ -79,7 +79,9 @@ final class AzureMAIStreamingTranscriber: @unchecked Sendable {
     private var sendTask: Task<Void, Never>?
     private var receiveTask: Task<Void, Never>?
     private var outbound: [Outbound] = []
+    private var outboundHead = 0
     private var pcmBuffer = Data()
+    private var pcmBufferReadOffset = 0
     private var pendingAudioChunks = 0
     private var bytesSinceCommit = 0
     private var totalAudioBytes = 0
@@ -90,6 +92,7 @@ final class AzureMAIStreamingTranscriber: @unchecked Sendable {
     private var deliveriesInFlight = 0
     private var terminalError: AzureMAIError?
     private var failureDeliveryPending = false
+    private let stateWaiters = LockConditionWaiters()
     private var handler: ResultHandler?
     private var partialHandler: PartialHandler?
 
@@ -128,16 +131,10 @@ final class AzureMAIStreamingTranscriber: @unchecked Sendable {
         try await withTaskCancellationHandler {
             do {
                 let deadline = ContinuousClock.now.advanced(by: setupTimeout)
-                while true {
-                    try Task.checkCancellation()
-                    let ready = try lock.withLock {
-                        guard generation == token else { throw CancellationError() }
-                        if let terminalError { throw terminalError }
-                        return phase == .streaming
-                    }
-                    if ready { return }
-                    guard ContinuousClock.now < deadline else { throw AzureMAIError.connection }
-                    try await Task.sleep(for: .milliseconds(10))
+                try await stateWaiters.wait(lock: lock, deadline: deadline, timeoutError: AzureMAIError.connection) {
+                    guard generation == token else { throw CancellationError() }
+                    if let terminalError { throw terminalError }
+                    return phase == .streaming
                 }
             } catch {
                 if error is CancellationError { stop(generation: token) }
@@ -195,40 +192,44 @@ final class AzureMAIStreamingTranscriber: @unchecked Sendable {
         guard let token else { return }
         await withTaskCancellationHandler {
             let deadline = ContinuousClock.now.advanced(by: finishTimeout)
-            while !Task.isCancelled {
-                let result = lock.withLock { () -> Int in
-                    guard generation == token else { return 1 }
-                    if phase == .failed { return 1 }
-                    return ledger.isDrained && outbound.isEmpty && pendingAudioChunks == 0 && deliveriesInFlight == 0 ? 2 : 0
+            do {
+                try await stateWaiters.wait(lock: lock, deadline: deadline, timeoutError: AzureMAIError.connection) {
+                    guard generation == token, phase != .failed else { return true }
+                    return ledger.isDrained
+                        && outboundHead >= outbound.count
+                        && pendingAudioChunks == 0
+                        && deliveriesInFlight == 0
                 }
-                if result != 0 {
-                    if result == 2 { stop(generation: token) }
-                    else { await waitForFailureDelivery(generation: token) }
-                    return
-                }
-                guard ContinuousClock.now < deadline else {
-                    fail(.connection, generation: token)
-                    await waitForFailureDelivery(generation: token)
-                    return
-                }
-                do { try await Task.sleep(for: .milliseconds(10)) }
-                catch { break }
+            } catch is CancellationError {
+                stop(generation: token)
+                return
+            } catch {
+                fail(.connection, generation: token)
+                await waitForFailureDelivery(generation: token)
+                return
             }
-            stop(generation: token)
+            let outcome = lock.withLock { () -> Int in
+                guard generation == token else { return 1 }
+                if phase == .failed { return 1 }
+                return 2
+            }
+            if outcome == 2 { stop(generation: token) }
+            else { await waitForFailureDelivery(generation: token) }
         } onCancel: { self.stop(generation: token) }
     }
 
     func stop() { stop(generation: nil) }
 
     private func stop(generation token: UUID?) {
-        let socket: (any AzureMAIWebSocketConnection)? = lock.withLock {
-            if let token, token != generation { return nil }
+        let (socket, waiters): ((any AzureMAIWebSocketConnection)?, [CheckedContinuation<Void, Error>]) = lock.withLock {
+            if let token, token != generation { return (nil, []) }
             generation = UUID()
             phase = .stopped
             paused = true
             sendTask?.cancel(); receiveTask?.cancel()
             sendTask = nil; receiveTask = nil
-            outbound.removeAll(); pcmBuffer.removeAll()
+            outbound.removeAll(); outboundHead = 0
+            pcmBuffer.removeAll(); pcmBufferReadOffset = 0
             pendingAudioChunks = 0; bytesSinceCommit = 0; totalAudioBytes = 0
             ledger = AzureMAITranscriptLedger()
             deliveriesInFlight = 0
@@ -238,32 +239,46 @@ final class AzureMAIStreamingTranscriber: @unchecked Sendable {
             expectedDeployment = ""; configurationMessage = ""
             let socket = connection
             connection = nil
-            return socket
+            return (socket, stateWaiters.takeAllLocked())
         }
+        LockConditionWaiters.resume(waiters)
         socket?.close()
     }
 
     private func appendPCMLocked(_ pcm: Data) throws {
         guard !pcm.isEmpty else { return }
-        let bufferedChunks = (pcmBuffer.count + pcm.count + Self.chunkBytes - 1) / Self.chunkBytes
+        let availablePCMBytes = pcmBuffer.count - pcmBufferReadOffset
+        let bufferedChunks = (availablePCMBytes + pcm.count + Self.chunkBytes - 1) / Self.chunkBytes
         guard pcm.count <= Self.chunkBytes * Self.maximumPendingAudioChunks,
               pendingAudioChunks + bufferedChunks <= Self.maximumPendingAudioChunks,
               totalAudioBytes + pcm.count <= Self.sampleRate * 2 * 3_600 else { throw AzureMAIError.backlog }
         totalAudioBytes += pcm.count
         pcmBuffer.append(pcm)
-        while pcmBuffer.count >= Self.chunkBytes {
-            let chunk = Data(pcmBuffer.prefix(Self.chunkBytes))
-            pcmBuffer.removeFirst(Self.chunkBytes)
+        while pcmBuffer.count - pcmBufferReadOffset >= Self.chunkBytes {
+            let end = pcmBufferReadOffset + Self.chunkBytes
+            let chunk = Data(pcmBuffer[pcmBufferReadOffset..<end])
+            pcmBufferReadOffset = end
             try enqueueAudioLocked(chunk)
             if bytesSinceCommit >= commitBytes { try commitLocked() }
+        }
+        if pcmBufferReadOffset == pcmBuffer.count {
+            pcmBuffer.removeAll(keepingCapacity: true)
+            pcmBufferReadOffset = 0
+        } else if pcmBufferReadOffset >= 65_536 {
+            pcmBuffer.removeFirst(pcmBufferReadOffset)
+            pcmBufferReadOffset = 0
         }
     }
 
     private func flushAndCommitLocked() throws {
-        if !pcmBuffer.isEmpty {
-            let chunk = pcmBuffer
+        if pcmBufferReadOffset < pcmBuffer.count {
+            let chunk = Data(pcmBuffer[pcmBufferReadOffset...])
             pcmBuffer.removeAll(keepingCapacity: false)
+            pcmBufferReadOffset = 0
             try enqueueAudioLocked(chunk)
+        } else {
+            pcmBuffer.removeAll(keepingCapacity: false)
+            pcmBufferReadOffset = 0
         }
         if bytesSinceCommit > 0 { try commitLocked() }
     }
@@ -287,17 +302,37 @@ final class AzureMAIStreamingTranscriber: @unchecked Sendable {
         sendTask = Task { [weak self] in
             guard let self else { return }
             while !Task.isCancelled {
-                let next = self.lock.withLock { () -> Outbound? in
-                    guard self.generation == token, self.phase != .stopped, self.phase != .failed else { return nil }
-                    guard !self.outbound.isEmpty else { self.sendTask = nil; return nil }
-                    return self.outbound.removeFirst()
+                let (next, waiters) = self.lock.withLock { () -> (Outbound?, [CheckedContinuation<Void, Error>]) in
+                    guard self.generation == token, self.phase != .stopped, self.phase != .failed else { return (nil, []) }
+                    guard self.outboundHead < self.outbound.count else {
+                        self.outbound.removeAll(keepingCapacity: true)
+                        self.outboundHead = 0
+                        self.sendTask = nil
+                        return (nil, self.stateWaiters.takeAllLocked())
+                    }
+                    let item = self.outbound[self.outboundHead]
+                    self.outboundHead += 1
+                    if self.outboundHead == self.outbound.count {
+                        self.outbound.removeAll(keepingCapacity: true)
+                        self.outboundHead = 0
+                    } else if self.outboundHead >= 32 {
+                        self.outbound.removeFirst(self.outboundHead)
+                        self.outboundHead = 0
+                    }
+                    return (item, [])
                 }
+                LockConditionWaiters.resume(waiters)
                 guard let next else { return }
                 do {
                     try await socket.send(next.message)
-                    self.lock.withLock {
-                        if self.generation == token, next.isAudio { self.pendingAudioChunks -= 1 }
+                    let waiters = self.lock.withLock { () -> [CheckedContinuation<Void, Error>] in
+                        if self.generation == token, next.isAudio {
+                            self.pendingAudioChunks -= 1
+                            return self.stateWaiters.takeAllLocked()
+                        }
+                        return []
                     }
+                    LockConditionWaiters.resume(waiters)
                 } catch { self.fail(.connection, generation: token); return }
             }
         }
@@ -307,40 +342,53 @@ final class AzureMAIStreamingTranscriber: @unchecked Sendable {
         do {
             while !Task.isCancelled {
                 let event = try AzureMAIStreamingEvent.parse(try await socket.receive())
-                let delivery = try lock.withLock { () -> (ResultHandler?, PartialHandler?, [String], String?) in
-                    guard generation == token, phase != .stopped, phase != .failed else { return (nil, nil, [], nil) }
+                let (delivery, waiters) = try lock.withLock { () -> ((ResultHandler?, PartialHandler?, [String], String?), [CheckedContinuation<Void, Error>]) in
+                    guard generation == token, phase != .stopped, phase != .failed else { return ((nil, nil, [], nil), []) }
                     switch event {
                     case .created:
                         guard phase == .connecting else { throw AzureMAIError.response }
                         phase = .configuring
                         enqueueLocked(configurationMessage, generation: token)
-                        return (nil, nil, [], nil)
+                        return ((nil, nil, [], nil), [])
                     case .updated(let model, let rate, let format, let vadDisabled):
                         guard phase == .configuring, model == expectedDeployment, rate == Self.sampleRate,
                               format == "audio/pcm", vadDisabled else { throw AzureMAIError.response }
                         phase = .streaming
                         configurationMessage = ""
-                        return (nil, nil, [], nil)
+                        return ((nil, nil, [], nil), stateWaiters.takeAllLocked())
                     case .failure: throw AzureMAIError.response
-                    case .other: return (nil, nil, [], nil)
+                    case .other: return ((nil, nil, [], nil), [])
                     default: break
                     }
                     guard phase == .streaming || phase == .draining else { throw AzureMAIError.response }
                     let updates = try ledger.apply(event)
-                    deliveriesInFlight += updates.finals.count + (updates.partial == nil ? 0 : 1)
-                    return (handler, partialHandler, updates.finals, updates.partial)
+                    let added = updates.finals.count + (updates.partial == nil ? 0 : 1)
+                    deliveriesInFlight += added
+                    let wakeWaiters = (added == 0 && ledger.isDrained) ? stateWaiters.takeAllLocked() : []
+                    return ((handler, partialHandler, updates.finals, updates.partial), wakeWaiters)
                 }
+                LockConditionWaiters.resume(waiters)
                 for text in delivery.2 {
                     guard isCurrent(token) else { return }
                     // completed만 최종 처리한다. finalized delta를 다시 완료 결과로 보내지 않는다.
                     // 빈 완료도 알려야 마지막 provisional 자막을 호출자가 정리할 수 있다.
                     await delivery.0?(.success(text))
-                    lock.withLock { if generation == token { deliveriesInFlight -= 1 } }
+                    let waiters = lock.withLock { () -> [CheckedContinuation<Void, Error>] in
+                        guard generation == token else { return [] }
+                        deliveriesInFlight -= 1
+                        return stateWaiters.takeAllLocked()
+                    }
+                    LockConditionWaiters.resume(waiters)
                 }
                 if let partial = delivery.3 {
                     guard isCurrent(token) else { return }
                     await delivery.1?(partial)
-                    lock.withLock { if generation == token { deliveriesInFlight -= 1 } }
+                    let waiters = lock.withLock { () -> [CheckedContinuation<Void, Error>] in
+                        guard generation == token else { return [] }
+                        deliveriesInFlight -= 1
+                        return stateWaiters.takeAllLocked()
+                    }
+                    LockConditionWaiters.resume(waiters)
                 }
             }
         } catch { fail(error as? AzureMAIError ?? .connection, generation: token) }
@@ -351,10 +399,11 @@ final class AzureMAIStreamingTranscriber: @unchecked Sendable {
     }
 
     private func fail(_ error: AzureMAIError, generation token: UUID) {
-        let failure = lock.withLock { () -> ((any AzureMAIWebSocketConnection)?, ResultHandler?)? in
+        let result = lock.withLock { () -> ((any AzureMAIWebSocketConnection)?, ResultHandler?, [CheckedContinuation<Void, Error>])? in
             guard generation == token, phase != .stopped, phase != .failed else { return nil }
             phase = .failed; paused = true; terminalError = error
-            outbound.removeAll(); pcmBuffer.removeAll()
+            outbound.removeAll(); outboundHead = 0
+            pcmBuffer.removeAll(); pcmBufferReadOffset = 0
             sendTask?.cancel(); receiveTask?.cancel()
             sendTask = nil; receiveTask = nil
             configurationMessage = ""; expectedDeployment = ""
@@ -365,14 +414,20 @@ final class AzureMAIStreamingTranscriber: @unchecked Sendable {
             let callback = handler
             failureDeliveryPending = callback != nil
             handler = nil; partialHandler = nil
-            return (socket, callback)
+            return (socket, callback, stateWaiters.takeAllLocked())
         }
-        guard let failure else { return }
-        failure.0?.close()
+        guard let result else { return }
+        LockConditionWaiters.resume(result.2)
+        result.0?.close()
         Task { [weak self] in
             guard let self, self.lock.withLock({ self.generation == token && self.phase == .failed }) else { return }
-            await failure.1?(.failure(error))
-            self.lock.withLock { if self.generation == token { self.failureDeliveryPending = false } }
+            await result.1?(.failure(error))
+            let waiters = self.lock.withLock { () -> [CheckedContinuation<Void, Error>] in
+                guard self.generation == token else { return [] }
+                self.failureDeliveryPending = false
+                return self.stateWaiters.takeAllLocked()
+            }
+            LockConditionWaiters.resume(waiters)
         }
     }
 
@@ -380,10 +435,8 @@ final class AzureMAIStreamingTranscriber: @unchecked Sendable {
         // finish 직후 호출자가 stop하더라도 마지막 오류 안내가 먼저 적용되게 한다.
         // 외부 callback 자체가 응답하지 않는 경우에도 종료 시간은 유한하다.
         let deadline = ContinuousClock.now.advanced(by: .seconds(1))
-        while !Task.isCancelled, ContinuousClock.now < deadline,
-              lock.withLock({ generation == token && failureDeliveryPending }) {
-            do { try await Task.sleep(for: .milliseconds(5)) }
-            catch { return }
+        try? await stateWaiters.wait(lock: lock, deadline: deadline, timeoutError: AzureMAIError.connection) {
+            generation != token || !failureDeliveryPending
         }
     }
 

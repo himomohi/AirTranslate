@@ -6,6 +6,7 @@ final class AzureMAITranscriber: @unchecked Sendable {
     static let sampleRate = 16_000
     static let chunkBytes = sampleRate * 2 * 5
     static let maxPendingChunks = 6
+    private static let decoder = JSONDecoder()
     private let lock = NSLock()
     private let configuration: URLSessionConfiguration
     private var streaming: AzureMAIStreamingTranscriber?
@@ -14,6 +15,7 @@ final class AzureMAITranscriber: @unchecked Sendable {
         self.configuration = configuration
     }
     private var buffer = Data()
+    private var bufferReadOffset = 0
     private var tail: Task<Void, Never>?
     private var pending = 0
     private var active = false
@@ -34,9 +36,13 @@ final class AzureMAITranscriber: @unchecked Sendable {
             self.key = key
             self.language = language
             self.handler = handler
-            let config = configuration
+            let config = configuration.copy() as! URLSessionConfiguration
             config.timeoutIntervalForRequest = 45
             config.timeoutIntervalForResource = 60
+            config.urlCache = nil
+            config.httpCookieStorage = nil
+            config.httpShouldSetCookies = false
+            config.urlCredentialStorage = nil
             self.session = URLSession(configuration: config, delegate: AzureNoRedirect(), delegateQueue: nil)
             active = true
         }
@@ -67,10 +73,18 @@ final class AzureMAITranscriber: @unchecked Sendable {
                 return
             }
             buffer.append(pcm)
-            while buffer.count >= Self.chunkBytes, !failed {
-                let chunk = Data(buffer.prefix(Self.chunkBytes))
-                buffer.removeFirst(Self.chunkBytes)
+            while buffer.count - bufferReadOffset >= Self.chunkBytes, !failed {
+                let end = bufferReadOffset + Self.chunkBytes
+                let chunk = Data(buffer[bufferReadOffset..<end])
+                bufferReadOffset = end
                 enqueueLocked(chunk)
+            }
+            if bufferReadOffset == buffer.count {
+                buffer.removeAll(keepingCapacity: true)
+                bufferReadOffset = 0
+            } else if bufferReadOffset >= 65_536 {
+                buffer.removeFirst(bufferReadOffset)
+                bufferReadOffset = 0
             }
         }
     }
@@ -79,9 +93,10 @@ final class AzureMAITranscriber: @unchecked Sendable {
         if let service = lock.withLock({ streaming }) { service.setPaused(value); return }
         lock.withLock {
             paused = value
-            if value, active, !buffer.isEmpty {
-                let chunk = buffer
+            if value, active, bufferReadOffset < buffer.count {
+                let chunk = Data(buffer[bufferReadOffset...])
                 buffer.removeAll(keepingCapacity: true)
+                bufferReadOffset = 0
                 enqueueLocked(chunk)
             }
         }
@@ -91,10 +106,14 @@ final class AzureMAITranscriber: @unchecked Sendable {
         if let service = lock.withLock({ streaming }) { await service.finish(); return }
         let task = lock.withLock {
             active = false
-            if !buffer.isEmpty, !failed {
-                let chunk = buffer
+            if bufferReadOffset < buffer.count, !failed {
+                let chunk = Data(buffer[bufferReadOffset...])
                 buffer.removeAll()
+                bufferReadOffset = 0
                 enqueueLocked(chunk)
+            } else {
+                buffer.removeAll()
+                bufferReadOffset = 0
             }
             return tail
         }
@@ -108,6 +127,7 @@ final class AzureMAITranscriber: @unchecked Sendable {
             active = false
             handler = nil
             buffer.removeAll()
+            bufferReadOffset = 0
             tail?.cancel()
             session?.invalidateAndCancel()
             session = nil
@@ -119,6 +139,7 @@ final class AzureMAITranscriber: @unchecked Sendable {
         guard !failed else { return }
         failed = true
         buffer.removeAll()
+        bufferReadOffset = 0
         let callback = handler
         Task { await callback?(.failure(error)) }
     }
@@ -209,7 +230,7 @@ final class AzureMAITranscriber: @unchecked Sendable {
 
     static func transcript(_ data: Data) throws -> String {
         struct Response: Decodable { struct Phrase: Decodable { let text: String }; let combinedPhrases: [Phrase] }
-        guard let result = try? JSONDecoder().decode(Response.self, from: data) else { throw AzureMAIError.response }
+        guard let result = try? decoder.decode(Response.self, from: data) else { throw AzureMAIError.response }
         return result.combinedPhrases.map(\.text).joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -228,16 +249,182 @@ final class AzureMAITranscriber: @unchecked Sendable {
         if info.mFormatFlags & kAudioFormatFlagIsFloat != 0, info.mBitsPerChannel == 32 {
             var pcm = Data()
             bytes.withUnsafeBytes { raw in
-                for offset in stride(from: 0, to: count - count % 4, by: 4) {
-                    let value = raw.loadUnaligned(fromByteOffset: offset, as: Float.self)
-                    var sample = Int16(max(-1, min(1, value.isFinite ? value : 0)) * Float(Int16.max)).littleEndian
-                    withUnsafeBytes(of: &sample) { pcm.append(contentsOf: $0) }
+                if let base = raw.baseAddress {
+                    appendFloat32AsPCM16LittleEndian(from: base, byteCount: count, to: &pcm)
                 }
             }
             return pcm
         }
         guard info.mBitsPerChannel == 16, info.mFormatFlags & kAudioFormatFlagIsSignedInteger != 0 else { return nil }
         return bytes
+    }
+
+    static func appendFloat32AsPCM16LittleEndian(
+        from source: UnsafeRawPointer,
+        byteCount: Int,
+        to destination: inout Data
+    ) {
+        let sampleCount = byteCount / MemoryLayout<Float>.size
+        guard sampleCount > 0 else { return }
+        let startOffset = destination.count
+        destination.count += sampleCount * MemoryLayout<Int16>.size
+        let samples = source.bindMemory(to: Float.self, capacity: sampleCount)
+        destination.withUnsafeMutableBytes { rawOut in
+            let outPtr = rawOut.baseAddress!.advanced(by: startOffset).assumingMemoryBound(to: Int16.self)
+            let scale = Float(Int16.max)
+            for index in 0..<sampleCount {
+                let value = samples[index]
+                let clamped = value.isFinite ? max(-1, min(1, value)) : 0
+                outPtr[index] = Int16(clamped * scale).littleEndian
+            }
+        }
+    }
+
+    static func pcm16AudioData(from sampleBuffer: CMSampleBuffer) -> Data? {
+        guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer),
+              let streamDescription = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription)
+        else {
+            return nil
+        }
+
+        var listSize = 0
+        CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+            sampleBuffer,
+            bufferListSizeNeededOut: &listSize,
+            bufferListOut: nil,
+            bufferListSize: 0,
+            blockBufferAllocator: nil,
+            blockBufferMemoryAllocator: nil,
+            flags: 0,
+            blockBufferOut: nil
+        )
+        guard listSize > 0 else { return nil }
+
+        return withUnsafeTemporaryAllocation(
+            byteCount: listSize,
+            alignment: MemoryLayout<AudioBufferList>.alignment
+        ) { rawList -> Data? in
+            guard let baseAddress = rawList.baseAddress else { return nil }
+            let audioBufferList = baseAddress.bindMemory(to: AudioBufferList.self, capacity: 1)
+            var blockBuffer: CMBlockBuffer?
+            let status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+                sampleBuffer,
+                bufferListSizeNeededOut: nil,
+                bufferListOut: audioBufferList,
+                bufferListSize: listSize,
+                blockBufferAllocator: kCFAllocatorDefault,
+                blockBufferMemoryAllocator: kCFAllocatorDefault,
+                flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
+                blockBufferOut: &blockBuffer
+            )
+            guard status == noErr else { return nil }
+
+            let buffers = UnsafeMutableAudioBufferListPointer(audioBufferList)
+            let sourceIsFloat = streamDescription.pointee.mFormatFlags & kAudioFormatFlagIsFloat != 0
+            let estimatedBytes = buffers.reduce(0) { total, buffer in
+                let size = Int(buffer.mDataByteSize)
+                return total + (sourceIsFloat ? size / 2 : size)
+            }
+            var audioData = Data()
+            audioData.reserveCapacity(estimatedBytes)
+            for buffer in buffers {
+                guard let data = buffer.mData else { continue }
+                if sourceIsFloat {
+                    appendFloat32AsPCM16LittleEndian(from: data, byteCount: Int(buffer.mDataByteSize), to: &audioData)
+                } else {
+                    audioData.append(data.assumingMemoryBound(to: UInt8.self), count: Int(buffer.mDataByteSize))
+                }
+            }
+            return audioData.isEmpty ? nil : audioData
+        }
+    }
+}
+
+final class LockConditionWaiters: @unchecked Sendable {
+    private var waiters: [(id: UUID, continuation: CheckedContinuation<Void, Error>)] = []
+
+    func takeAllLocked() -> [CheckedContinuation<Void, Error>] {
+        guard !waiters.isEmpty else { return [] }
+        let pending = waiters.map(\.continuation)
+        waiters.removeAll(keepingCapacity: true)
+        return pending
+    }
+
+    static func resume(_ continuations: [CheckedContinuation<Void, Error>]) {
+        for continuation in continuations {
+            continuation.resume()
+        }
+    }
+
+    func wait(
+        lock: NSLock,
+        deadline: ContinuousClock.Instant,
+        timeoutError: Error,
+        nextWakeDeadline: (@Sendable () -> ContinuousClock.Instant?)? = nil,
+        predicate: () throws -> Bool
+    ) async throws {
+        let timerTask = Task { [weak self] in
+            while !Task.isCancelled {
+                let target = lock.withLock {
+                    nextWakeDeadline?().map { min(deadline, $0) } ?? deadline
+                }
+                let now = ContinuousClock.now
+                if now >= target {
+                    let pending = lock.withLock { self?.takeAllLocked() ?? [] }
+                    Self.resume(pending)
+                    if target >= deadline { return }
+                    await Task.yield()
+                    continue
+                }
+                do {
+                    try await Task.sleep(until: target, clock: .continuous)
+                    let pending = lock.withLock { self?.takeAllLocked() ?? [] }
+                    Self.resume(pending)
+                } catch {
+                    return
+                }
+            }
+        }
+        defer { timerTask.cancel() }
+
+        while true {
+            try Task.checkCancellation()
+            let done = try lock.withLock { try predicate() }
+            if done { return }
+            if ContinuousClock.now >= deadline {
+                throw timeoutError
+            }
+            let waiterID = UUID()
+            try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                    lock.lock()
+                    if Task.isCancelled {
+                        lock.unlock()
+                        continuation.resume(throwing: CancellationError())
+                        return
+                    }
+                    do {
+                        if try predicate() || ContinuousClock.now >= deadline {
+                            lock.unlock()
+                            continuation.resume()
+                            return
+                        }
+                    } catch {
+                        lock.unlock()
+                        continuation.resume(throwing: error)
+                        return
+                    }
+                    waiters.append((id: waiterID, continuation: continuation))
+                    lock.unlock()
+                }
+            } onCancel: {
+                let cancelled: CheckedContinuation<Void, Error>? = lock.withLock {
+                    guard let index = self.waiters.firstIndex(where: { $0.id == waiterID }) else { return nil }
+                    return self.waiters.remove(at: index).continuation
+                }
+                cancelled?.resume(throwing: CancellationError())
+            }
+        }
     }
 }
 

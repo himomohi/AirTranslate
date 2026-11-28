@@ -1,6 +1,9 @@
 import Foundation
 
 struct HyMTTranslationOptions: Equatable, Sendable {
+    private static let acronymRegex = try! NSRegularExpression(pattern: "[A-Z]{2,}")
+    private static let wordRegex = try! NSRegularExpression(pattern: "[A-Za-z][A-Za-z0-9]*")
+
     var terminology: [String] = []
     var context: String = ""
 
@@ -25,13 +28,15 @@ struct HyMTTranslationOptions: Equatable, Sendable {
 
     /// 사용자가 지정한 약어 포함 용어만 대상으로 한다. 화면의 인식 원문은 변경하지 않는다.
     func preparedSource(_ source: String) -> String {
-        let terms = normalizedTerminology.filter { $0.range(of: "[A-Z]{2,}", options: .regularExpression) != nil }
+        let terms = normalizedTerminology.filter { term in
+            let range = NSRange(location: 0, length: (term as NSString).length)
+            return Self.acronymRegex.firstMatch(in: term, range: range) != nil
+        }
         let grouped = Dictionary(grouping: terms, by: Self.soundKey)
         let unambiguous = grouped.compactMapValues { values in values.count == 1 ? values.first : nil }
-        guard !unambiguous.isEmpty,
-              let regex = try? NSRegularExpression(pattern: "[A-Za-z][A-Za-z0-9]*") else { return source }
+        guard !unambiguous.isEmpty else { return source }
         let text = source as NSString
-        let words = regex.matches(in: source, range: NSRange(location: 0, length: text.length))
+        let words = Self.wordRegex.matches(in: source, range: NSRange(location: 0, length: text.length))
         var replacements: [(NSRange, String)] = []
         var index = 0
         while index < words.count {

@@ -5,15 +5,79 @@ actor OpenAITranslationService {
 
     private static let maximumRetryAfterDelay: TimeInterval = 10
     private static let retryJitterRange: ClosedRange<TimeInterval> = 0.5...1.5
-    private static let streamProgressPublishInterval: TimeInterval = 0.08
+    private static let streamProgressPublishInterval: Duration = .milliseconds(80)
+    private static let encoder = JSONEncoder()
+    private static let decoder = JSONDecoder()
 
     private static let session: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 10
         configuration.timeoutIntervalForResource = 30
         configuration.waitsForConnectivity = false
-        return URLSession(configuration: configuration)
+        configuration.urlCache = nil
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.urlCredentialStorage = nil
+        return URLSession(
+            configuration: configuration,
+            delegate: OpenAITranslationRejectRedirects(),
+            delegateQueue: nil
+        )
     }()
+
+    private enum StreamAttemptResult {
+        case completed(String)
+        case fallback(allowRetry: Bool)
+    }
+
+    private final class StreamProgressCoalescer: @unchecked Sendable {
+        private let lock = NSLock()
+        private let handler: @MainActor @Sendable (String) -> Void
+        private var latestText: String?
+        private var isScheduled = false
+        private var stopped = false
+
+        init(_ handler: @escaping @MainActor @Sendable (String) -> Void) {
+            self.handler = handler
+        }
+
+        func publish(_ text: String) {
+            let shouldSchedule = lock.withLock {
+                guard !stopped else { return false }
+                latestText = text
+                if isScheduled { return false }
+                isScheduled = true
+                return true
+            }
+            guard shouldSchedule else { return }
+            Task { @MainActor [weak self] in
+                self?.drainOnMainActor()
+            }
+        }
+
+        func stop() {
+            lock.withLock {
+                stopped = true
+                latestText = nil
+            }
+        }
+
+        @MainActor
+        private func drainOnMainActor() {
+            while true {
+                let next: String? = lock.withLock {
+                    guard !stopped, let text = latestText else {
+                        isScheduled = false
+                        return nil
+                    }
+                    latestText = nil
+                    return text
+                }
+                guard let next else { return }
+                handler(next)
+            }
+        }
+    }
 
     func translate(
         _ text: String,
@@ -28,6 +92,7 @@ actor OpenAITranslationService {
             throw OpenAITranslationError.missingAPIKey
         }
 
+        var allowFallbackRetry = true
         if let progress {
             let streamingRequest = try makeRequest(
                 apiKey: apiKey,
@@ -37,8 +102,11 @@ actor OpenAITranslationService {
                 model: selectedModel,
                 streaming: true
             )
-            if let streamedText = try await streamTranslation(streamingRequest, progress: progress) {
+            switch try await streamTranslation(streamingRequest, progress: progress) {
+            case let .completed(streamedText):
                 return streamedText.trimmingCharacters(in: .whitespacesAndNewlines)
+            case let .fallback(allowRetry):
+                allowFallbackRetry = allowRetry
             }
         }
 
@@ -50,16 +118,16 @@ actor OpenAITranslationService {
             model: selectedModel,
             streaming: false
         )
-        let (data, httpResponse) = try await send(request)
+        let (data, httpResponse) = try await send(request, allowRetry: allowFallbackRetry)
         guard (200..<300).contains(httpResponse.statusCode) else {
-            let errorResponse = try? JSONDecoder().decode(OpenAIErrorResponse.self, from: data)
+            let errorResponse = try? Self.decoder.decode(OpenAIErrorResponse.self, from: data)
             throw OpenAITranslationError.requestFailed(
                 statusCode: httpResponse.statusCode,
                 message: errorResponse?.error.message
             )
         }
 
-        let responseBody = try JSONDecoder().decode(OpenAIResponseBody.self, from: data)
+        let responseBody = try Self.decoder.decode(OpenAIResponseBody.self, from: data)
         guard let outputText = responseBody.firstOutputText else {
             throw OpenAITranslationError.emptyOutput
         }
@@ -78,7 +146,7 @@ actor OpenAITranslationService {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.httpBody = try JSONEncoder().encode(
+        request.httpBody = try Self.encoder.encode(
             OpenAIResponseRequest(
                 model: model.apiModelID,
                 instructions: AppText.openAITranslationInstructions(
@@ -93,62 +161,71 @@ actor OpenAITranslationService {
         return request
     }
 
-    // Returns nil whenever the streaming attempt cannot produce usable text, so the
+    // Returns fallback whenever the streaming attempt cannot produce usable text, so the
     // caller falls back to the non-streaming request (which owns error reporting).
     private func streamTranslation(
         _ request: URLRequest,
-        progress: @MainActor @Sendable (String) -> Void
-    ) async throws -> String? {
+        progress: @escaping @MainActor @Sendable (String) -> Void
+    ) async throws -> StreamAttemptResult {
         let bytes: URLSession.AsyncBytes
         let response: URLResponse
         do {
             (bytes, response) = try await Self.session.bytes(for: request)
         } catch {
             if error is CancellationError || Task.isCancelled { throw CancellationError() }
-            return nil
+            return .fallback(allowRetry: true)
         }
 
-        guard let httpResponse = response as? HTTPURLResponse else { return nil }
+        guard let httpResponse = response as? HTTPURLResponse else {
+            return .fallback(allowRetry: true)
+        }
         guard (200..<300).contains(httpResponse.statusCode) else {
             if Self.isRetryableStatusCode(httpResponse.statusCode) {
                 let delay = Self.retryDelay(retryAfterHeader: httpResponse.value(forHTTPHeaderField: "Retry-After"))
                 try await Task.sleep(for: .seconds(delay))
+                return .fallback(allowRetry: false)
             }
-            return nil
+            return .fallback(allowRetry: true)
         }
 
         var parser = OpenAITranslationStreamParser()
-        var lastProgressPublishAt = Date.distantPast
+        var lastProgressPublishAt: ContinuousClock.Instant?
+        let coalescer = StreamProgressCoalescer(progress)
+        defer { coalescer.stop() }
 
         do {
             for try await line in bytes.lines {
+                try Task.checkCancellation()
                 guard let partialText = parser.consume(line: line) else {
-                    if parser.didEncounterFailureEvent { return nil }
+                    if parser.didEncounterFailureEvent { return .fallback(allowRetry: true) }
                     continue
                 }
 
-                let now = Date()
+                let now = ContinuousClock.now
                 let trimmedPartialText = partialText.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmedPartialText.isEmpty,
-                      now.timeIntervalSince(lastProgressPublishAt) >= Self.streamProgressPublishInterval
+                      lastProgressPublishAt.map({ now - $0 >= Self.streamProgressPublishInterval }) ?? true
                 else { continue }
                 lastProgressPublishAt = now
-                await progress(trimmedPartialText)
+                coalescer.publish(trimmedPartialText)
             }
         } catch {
             if error is CancellationError || Task.isCancelled { throw CancellationError() }
-            return nil
+            return .fallback(allowRetry: true)
         }
 
-        return parser.finalText
+        guard let finalText = parser.finalText else {
+            return .fallback(allowRetry: true)
+        }
+        return .completed(finalText)
     }
 
-    private func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+    private func send(_ request: URLRequest, allowRetry: Bool) async throws -> (Data, HTTPURLResponse) {
         let (data, response) = try await Self.session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw OpenAITranslationError.invalidResponse
         }
-        guard Self.isRetryableStatusCode(httpResponse.statusCode) else {
+        guard allowRetry, Self.isRetryableStatusCode(httpResponse.statusCode) else {
             return (data, httpResponse)
         }
 
@@ -218,7 +295,7 @@ struct OpenAITranslationStreamParser {
     private var accumulatedDeltaText = ""
     private var doneText: String?
     private var completedText: String?
-    private let decoder = JSONDecoder()
+    private static let decoder = JSONDecoder()
 
     init() {}
 
@@ -228,7 +305,7 @@ struct OpenAITranslationStreamParser {
         let payload = line.dropFirst("data:".count).trimmingCharacters(in: .whitespaces)
         guard !payload.isEmpty,
               let payloadData = payload.data(using: .utf8),
-              let event = try? decoder.decode(OpenAIStreamEvent.self, from: payloadData)
+              let event = try? Self.decoder.decode(OpenAIStreamEvent.self, from: payloadData)
         else { return nil }
 
         switch event.type {
@@ -293,5 +370,17 @@ enum OpenAITranslationError: LocalizedError {
         case let .requestFailed(statusCode, message):
             AppText.openAIRequestFailed(statusCode: statusCode, message: message)
         }
+    }
+}
+
+private final class OpenAITranslationRejectRedirects: NSObject, URLSessionTaskDelegate {
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping @Sendable (URLRequest?) -> Void
+    ) {
+        completionHandler(nil)
     }
 }

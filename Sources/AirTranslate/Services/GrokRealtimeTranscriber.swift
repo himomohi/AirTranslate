@@ -80,11 +80,14 @@ final class GrokRealtimeTranscriber: @unchecked Sendable {
     private var sendTask: Task<Void, Never>?
     private var receiveTask: Task<Void, Never>?
     private var outbound: [GrokClientMessage] = []
+    private var outboundHead = 0
     private var pcmBuffer = Data()
+    private var pcmBufferReadOffset = 0
     private var paused = false
     private var finishAcknowledged = false
     private var deliveriesInFlight = 0
     private var terminalError: GrokTranscriptionError?
+    private let stateWaiters = LockConditionWaiters()
     private var ledger = GrokTranscriptLedger()
     private var transcriptHandler: TranscriptHandler?
     private var errorHandler: ErrorHandler?
@@ -131,16 +134,10 @@ final class GrokRealtimeTranscriber: @unchecked Sendable {
         try await withTaskCancellationHandler {
             do {
                 let deadline = ContinuousClock.now.advanced(by: setupTimeout)
-                while true {
-                    try Task.checkCancellation()
-                    let ready = try lock.withLock {
-                        guard generation == token else { throw CancellationError() }
-                        if let terminalError { throw terminalError }
-                        return phase == .streaming
-                    }
-                    if ready { return }
-                    guard ContinuousClock.now < deadline else { throw GrokTranscriptionError.setupTimeout }
-                    try await Task.sleep(for: .milliseconds(10))
+                try await stateWaiters.wait(lock: lock, deadline: deadline, timeoutError: GrokTranscriptionError.setupTimeout) {
+                    guard generation == token else { throw CancellationError() }
+                    if let terminalError { throw terminalError }
+                    return phase == .streaming
                 }
             } catch {
                 if error is CancellationError { stop(generation: token) }
@@ -175,10 +172,11 @@ final class GrokRealtimeTranscriber: @unchecked Sendable {
             if phase == .streaming {
                 phase = .draining
                 paused = true
-                if !pcmBuffer.isEmpty {
-                    enqueueLocked(.audio(pcmBuffer), generation: generation)
-                    pcmBuffer.removeAll(keepingCapacity: false)
+                if pcmBufferReadOffset < pcmBuffer.count {
+                    enqueueLocked(.audio(Data(pcmBuffer[pcmBufferReadOffset...])), generation: generation)
                 }
+                pcmBuffer.removeAll(keepingCapacity: false)
+                pcmBufferReadOffset = 0
                 enqueueLocked(.finish, generation: generation)
             }
             return generation
@@ -187,20 +185,12 @@ final class GrokRealtimeTranscriber: @unchecked Sendable {
         try await withTaskCancellationHandler {
             do {
                 let deadline = ContinuousClock.now.advanced(by: finishTimeout)
-                while true {
-                    try Task.checkCancellation()
-                    let done = try lock.withLock {
-                        guard generation == token else { throw CancellationError() }
-                        if let terminalError { throw terminalError }
-                        return finishAcknowledged && deliveriesInFlight == 0
-                    }
-                    if done {
-                        stop(generation: token)
-                        return
-                    }
-                    guard ContinuousClock.now < deadline else { throw GrokTranscriptionError.finishTimeout }
-                    try await Task.sleep(for: .milliseconds(10))
+                try await stateWaiters.wait(lock: lock, deadline: deadline, timeoutError: GrokTranscriptionError.finishTimeout) {
+                    guard generation == token else { throw CancellationError() }
+                    if let terminalError { throw terminalError }
+                    return finishAcknowledged && deliveriesInFlight == 0
                 }
+                stop(generation: token)
             } catch {
                 if error is CancellationError { stop(generation: token) }
                 else { fail(error as? GrokTranscriptionError ?? .connection, generation: token) }
@@ -212,8 +202,8 @@ final class GrokRealtimeTranscriber: @unchecked Sendable {
     func stop() { stop(generation: nil) }
 
     private func stop(generation token: UUID?) {
-        let socket: (any GrokWebSocketConnection)? = lock.withLock {
-            if let token, token != generation { return nil }
+        let (socket, waiters): ((any GrokWebSocketConnection)?, [CheckedContinuation<Void, Error>]) = lock.withLock {
+            if let token, token != generation { return (nil, []) }
             generation = UUID()
             phase = .stopped
             paused = true
@@ -222,30 +212,43 @@ final class GrokRealtimeTranscriber: @unchecked Sendable {
             sendTask = nil
             receiveTask = nil
             outbound.removeAll()
+            outboundHead = 0
             pcmBuffer.removeAll()
+            pcmBufferReadOffset = 0
             ledger = GrokTranscriptLedger()
             finishAcknowledged = false
             deliveriesInFlight = 0
             terminalError = nil
             let socket = connection
             connection = nil
-            return socket
+            return (socket, stateWaiters.takeAllLocked())
         }
+        LockConditionWaiters.resume(waiters)
         socket?.close()
     }
 
     private func appendPCMLocked(_ pcm: Data) -> (GrokTranscriptionError, UUID)? {
         // 한 입력 버퍼가 비정상적으로 커도 큐 한도를 넘는 할당을 하지 않는다.
+        let availablePCM = pcmBuffer.count - pcmBufferReadOffset
+        let pendingOutbound = outbound.count - outboundHead
         guard pcm.count <= Self.chunkBytes * Self.maximumPendingAudioChunks,
-              outbound.count + (pcmBuffer.count + pcm.count) / Self.chunkBytes <= Self.maximumPendingAudioChunks else {
+              pendingOutbound + (availablePCM + pcm.count) / Self.chunkBytes <= Self.maximumPendingAudioChunks else {
             paused = true
             return (.backlog, generation)
         }
         pcmBuffer.append(pcm)
-        while pcmBuffer.count >= Self.chunkBytes {
-            let chunk = Data(pcmBuffer.prefix(Self.chunkBytes))
-            pcmBuffer.removeFirst(Self.chunkBytes)
+        while pcmBuffer.count - pcmBufferReadOffset >= Self.chunkBytes {
+            let end = pcmBufferReadOffset + Self.chunkBytes
+            let chunk = Data(pcmBuffer[pcmBufferReadOffset..<end])
+            pcmBufferReadOffset = end
             enqueueLocked(.audio(chunk), generation: generation)
+        }
+        if pcmBufferReadOffset == pcmBuffer.count {
+            pcmBuffer.removeAll(keepingCapacity: true)
+            pcmBufferReadOffset = 0
+        } else if pcmBufferReadOffset >= 65_536 {
+            pcmBuffer.removeFirst(pcmBufferReadOffset)
+            pcmBufferReadOffset = 0
         }
         return nil
     }
@@ -259,20 +262,35 @@ final class GrokRealtimeTranscriber: @unchecked Sendable {
             while !Task.isCancelled {
                 let next: GrokClientMessage? = self.lock.withLock {
                     guard self.generation == token, self.phase != .stopped, self.phase != .failed else { return nil }
-                    guard !self.outbound.isEmpty else {
+                    guard self.outboundHead < self.outbound.count else {
+                        self.outbound.removeAll(keepingCapacity: true)
+                        self.outboundHead = 0
                         self.sendTask = nil
                         return nil
                     }
-                    return self.outbound.removeFirst()
+                    let item = self.outbound[self.outboundHead]
+                    self.outboundHead += 1
+                    if self.outboundHead == self.outbound.count {
+                        self.outbound.removeAll(keepingCapacity: true)
+                        self.outboundHead = 0
+                    } else if self.outboundHead >= 32 {
+                        self.outbound.removeFirst(self.outboundHead)
+                        self.outboundHead = 0
+                    }
+                    return item
                 }
                 guard let next else { return }
                 do {
                     if case .audio(let data) = next {
-                        try await Task.sleep(until: nextAudioSend, clock: .continuous)
+                        let now = ContinuousClock.now
+                        if nextAudioSend > now {
+                            try await Task.sleep(until: nextAudioSend, clock: .continuous)
+                        }
                         try Task.checkCancellation()
                         guard self.lock.withLock({ self.generation == token && self.phase != .failed && self.phase != .stopped }) else { return }
                         try await socket.send(next)
-                        nextAudioSend = ContinuousClock.now.advanced(by: .seconds(Double(data.count) / 32_000))
+                        let duration = Duration.nanoseconds(Int64(data.count) * 1_000_000_000 / 32_000)
+                        nextAudioSend = max(nextAudioSend + duration, ContinuousClock.now)
                     } else { try await socket.send(next) }
                 }
                 catch {
@@ -288,31 +306,37 @@ final class GrokRealtimeTranscriber: @unchecked Sendable {
             while !Task.isCancelled {
                 let data = try await socket.receive()
                 let event = try GrokServerEvent.parse(data)
-                let delivery: (TranscriptHandler?, [GrokTranscriptUpdate]) = try lock.withLock {
-                    guard generation == token, phase != .stopped, phase != .failed else { return (nil, []) }
+                let (delivery, waiters): ((TranscriptHandler?, [GrokTranscriptUpdate]), [CheckedContinuation<Void, Error>]) = try lock.withLock {
+                    guard generation == token, phase != .stopped, phase != .failed else { return ((nil, []), []) }
                     if case .created = event {
                         guard phase == .configuring else { throw GrokTranscriptionError.invalidResponse }
                         phase = .streaming
-                        return (nil, [])
+                        return ((nil, []), stateWaiters.takeAllLocked())
                     }
                     if case .failure(let error) = event { throw error }
                     guard phase == .streaming || phase == .draining else { throw GrokTranscriptionError.invalidResponse }
                     let updates = try ledger.apply(event)
+                    var shouldWake = false
                     if case .done = event {
                         guard phase == .draining else { throw GrokTranscriptionError.invalidResponse }
                         finishAcknowledged = true
+                        shouldWake = updates.isEmpty
                     }
                     deliveriesInFlight += updates.count
-                    return (transcriptHandler, updates)
+                    return ((transcriptHandler, updates), shouldWake ? stateWaiters.takeAllLocked() : [])
                 }
+                LockConditionWaiters.resume(waiters)
                 for update in delivery.1 {
                     guard lock.withLock({ generation == token && phase != .stopped && phase != .failed }) else { return }
                     let namespaced = GrokTranscriptUpdate(itemID: "\(token.uuidString):\(update.itemID)",
                         text: update.text, isFinal: update.isFinal, languageCode: update.languageCode, revision: update.revision)
                     await delivery.0?(namespaced)
-                    lock.withLock {
-                        if generation == token { deliveriesInFlight -= 1 }
+                    let waiters = lock.withLock { () -> [CheckedContinuation<Void, Error>] in
+                        guard generation == token else { return [] }
+                        deliveriesInFlight -= 1
+                        return stateWaiters.takeAllLocked()
                     }
+                    LockConditionWaiters.resume(waiters)
                 }
                 if case .done = event { return }
             }
@@ -322,20 +346,23 @@ final class GrokRealtimeTranscriber: @unchecked Sendable {
     }
 
     private func fail(_ error: GrokTranscriptionError, generation token: UUID) {
-        let failure: ((any GrokWebSocketConnection)?, ErrorHandler?)? = lock.withLock {
+        let failure: ((any GrokWebSocketConnection)?, ErrorHandler?, [CheckedContinuation<Void, Error>])? = lock.withLock {
             guard generation == token, phase != .stopped, phase != .failed else { return nil }
             phase = .failed
             paused = true
             terminalError = error
             outbound.removeAll()
+            outboundHead = 0
             pcmBuffer.removeAll()
+            pcmBufferReadOffset = 0
             sendTask?.cancel()
             receiveTask?.cancel()
             let socket = connection
             connection = nil
-            return (socket, errorHandler)
+            return (socket, errorHandler, stateWaiters.takeAllLocked())
         }
         guard let failure else { return }
+        LockConditionWaiters.resume(failure.2)
         failure.0?.close()
         Task { [weak self] in
             guard let self, self.lock.withLock({ self.generation == token && self.phase == .failed }) else { return }

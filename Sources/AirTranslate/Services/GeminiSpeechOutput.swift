@@ -9,13 +9,21 @@ final class GeminiSpeechOutput: NSObject, AVAudioPlayerDelegate {
         let key: String
     }
 
+    private struct PrefetchedWave {
+        let key: String
+        let model: SpeechSynthesisModel
+        let task: Task<Data, Error>
+    }
+
     private static let maximumQueuedSegments = 1
-    private static let endpoint = URL(string: "https://generativelanguage.googleapis.com/v1beta/interactions")!
+    nonisolated private static let endpoint = URL(string: "https://generativelanguage.googleapis.com/v1beta/interactions")!
+    nonisolated private static let decoder = JSONDecoder()
 
     private let session: URLSession
     private var speechVolume: Float = 1
     private var queuedSpeech: [QueuedSpeech] = []
     private var queuedSpeechKeys: Set<String> = []
+    private var prefetchedWave: PrefetchedWave?
     private var generation: UInt64 = 0
     private var workerTask: Task<Void, Never>?
     private var player: AVAudioPlayer?
@@ -55,10 +63,18 @@ final class GeminiSpeechOutput: NSObject, AVAudioPlayerDelegate {
         if queuedSpeech.count >= Self.maximumQueuedSegments {
             let staleSpeech = queuedSpeech.removeFirst()
             queuedSpeechKeys.remove(staleSpeech.key)
+            if prefetchedWave?.key == staleSpeech.key {
+                prefetchedWave?.task.cancel()
+                prefetchedWave = nil
+            }
         }
 
-        queuedSpeech.append(QueuedSpeech(text: trimmedText, model: model, key: key))
+        let item = QueuedSpeech(text: trimmedText, model: model, key: key)
+        queuedSpeech.append(item)
         queuedSpeechKeys.insert(key)
+        if player != nil {
+            startPrefetchIfNeeded(for: item)
+        }
         startWorkerIfNeeded()
     }
 
@@ -66,12 +82,27 @@ final class GeminiSpeechOutput: NSObject, AVAudioPlayerDelegate {
         generation &+= 1
         queuedSpeech.removeAll()
         queuedSpeechKeys.removeAll()
+        prefetchedWave?.task.cancel()
+        prefetchedWave = nil
         workerTask?.cancel()
         workerTask = nil
         player?.delegate = nil
         player?.stop()
         player = nil
         finishPlayback()
+    }
+
+    private func startPrefetchIfNeeded(for item: QueuedSpeech) {
+        if let existing = prefetchedWave {
+            if existing.key == item.key, existing.model == item.model { return }
+            existing.task.cancel()
+            prefetchedWave = nil
+        }
+        let session = self.session
+        let task = Task {
+            try await Self.fetchWave(text: item.text, model: item.model, session: session)
+        }
+        prefetchedWave = PrefetchedWave(key: item.key, model: item.model, task: task)
     }
 
     private func startWorkerIfNeeded() {
@@ -98,10 +129,27 @@ final class GeminiSpeechOutput: NSObject, AVAudioPlayerDelegate {
               !queuedSpeech.isEmpty {
             let request = queuedSpeech.removeFirst()
             do {
-                let audioData = try await generateWave(text: request.text, model: request.model)
+                let audioData: Data
+                if let prefetchedWave,
+                   prefetchedWave.key == request.key,
+                   prefetchedWave.model == request.model {
+                    self.prefetchedWave = nil
+                    audioData = try await prefetchedWave.task.value
+                } else {
+                    prefetchedWave?.task.cancel()
+                    prefetchedWave = nil
+                    audioData = try await Self.fetchWave(
+                        text: request.text,
+                        model: request.model,
+                        session: session
+                    )
+                }
                 guard !Task.isCancelled, generation == workerGeneration else {
                     queuedSpeechKeys.remove(request.key)
                     return
+                }
+                if let next = queuedSpeech.first {
+                    startPrefetchIfNeeded(for: next)
                 }
                 try await play(audioData)
             } catch is CancellationError {
@@ -148,21 +196,27 @@ final class GeminiSpeechOutput: NSObject, AVAudioPlayerDelegate {
 
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         Task { @MainActor [weak self] in
+            guard self?.player === player else { return }
             self?.finishPlayback(reportFailure: !flag)
         }
     }
 
     nonisolated func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
         Task { @MainActor [weak self] in
+            guard self?.player === player else { return }
             self?.finishPlayback(reportFailure: true)
         }
     }
 
-    private func generateWave(text: String, model: SpeechSynthesisModel) async throws -> Data {
+    private nonisolated static func fetchWave(
+        text: String,
+        model: SpeechSynthesisModel,
+        session: URLSession
+    ) async throws -> Data {
         guard let apiKey = try GeminiAPIKeyStore.readAPIKey(), !apiKey.isEmpty else {
             throw GeminiSpeechOutputError.missingAPIKey
         }
-        let request = try Self.makeRequest(text: text, model: model, apiKey: apiKey)
+        let request = try makeRequest(text: text, model: model, apiKey: apiKey)
 
         let (responseData, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse,
@@ -170,7 +224,7 @@ final class GeminiSpeechOutput: NSObject, AVAudioPlayerDelegate {
             throw GeminiSpeechOutputError.requestFailed
         }
 
-        let interaction = try JSONDecoder().decode(GeminiSpeechInteractionResponse.self, from: responseData)
+        let interaction = try decoder.decode(GeminiSpeechInteractionResponse.self, from: responseData)
         guard let encodedAudio = interaction.outputAudio?.data,
               let audioData = Data(base64Encoded: encodedAudio),
               audioData.starts(with: Data("RIFF".utf8)),
@@ -180,7 +234,7 @@ final class GeminiSpeechOutput: NSObject, AVAudioPlayerDelegate {
         return audioData
     }
 
-    static func makeRequest(text: String, model: SpeechSynthesisModel, apiKey: String) throws -> URLRequest {
+    nonisolated static func makeRequest(text: String, model: SpeechSynthesisModel, apiKey: String) throws -> URLRequest {
         guard model.isGeminiTTS, let modelID = model.apiModelID else {
             throw GeminiSpeechOutputError.invalidModel
         }
@@ -212,9 +266,22 @@ final class GeminiSpeechOutput: NSObject, AVAudioPlayerDelegate {
     }
 
     private static func speechKey(_ text: String) -> String {
-        text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let foldedText = text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        var result = String()
+        result.reserveCapacity(foldedText.utf8.count)
+        var pendingSpace = false
+        for scalar in foldedText.unicodeScalars {
+            if CharacterSet.whitespacesAndNewlines.contains(scalar) {
+                if !result.isEmpty { pendingSpace = true }
+            } else {
+                if pendingSpace {
+                    result.append(" ")
+                    pendingSpace = false
+                }
+                result.unicodeScalars.append(scalar)
+            }
+        }
+        return result
     }
 }
 

@@ -29,6 +29,13 @@ final class JevTranscriptSelector: Sendable {
     static let maximumAlternatives = 3
     static let maximumBatchSize = 4
 
+    private static let encoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return encoder
+    }()
+    private static let decoder = JSONDecoder()
+
     private let transport: Transport
 
     init() {
@@ -60,7 +67,7 @@ final class JevTranscriptSelector: Sendable {
         switch try await perform(request) {
         case .fallback(let outcome): return fallback(input, outcome)
         case .data(let data):
-            let response = try? JSONDecoder().decode(Response.self, from: data)
+            let response = try? Self.decoder.decode(Response.self, from: data)
             return selection(for: input, candidates: candidates, answer: response?.answers["selection"]?.answer)
         }
     }
@@ -104,7 +111,7 @@ final class JevTranscriptSelector: Sendable {
         case .fallback(let outcome):
             for entry in prepared { results[entry.index] = fallback(inputs[entry.index], outcome) }
         case .data(let data):
-            guard let response = try? JSONDecoder().decode(Response.self, from: data),
+            guard let response = try? Self.decoder.decode(Response.self, from: data),
                   Set(response.answers.keys) == Set(questions.keys) else {
                 for entry in prepared { results[entry.index] = fallback(inputs[entry.index], .invalidResponse) }
                 return completed()
@@ -150,9 +157,7 @@ final class JevTranscriptSelector: Sendable {
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        request.httpBody = try encoder.encode(payload)
+        request.httpBody = try Self.encoder.encode(payload)
         return request
     }
 
@@ -216,11 +221,13 @@ final class JevTranscriptSelector: Sendable {
         let original = input.original.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !original.isEmpty else { return [:] }
         var candidates = ["original": original]
-        var seen = Set([Data(original.utf8)])
+        var seen: [String] = [original]
         for alternative in input.alternatives {
             guard alternative.utf8.count <= maximumCandidateUTF8Bytes else { continue }
             let text = alternative.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty, seen.insert(Data(text.utf8)).inserted else { continue }
+            guard !text.isEmpty,
+                  !seen.contains(where: { $0.utf8.elementsEqual(text.utf8) }) else { continue }
+            seen.append(text)
             candidates["alternative_\(candidates.count)"] = text
             if candidates.count == maximumAlternatives + 1 { break }
         }
