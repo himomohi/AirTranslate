@@ -4654,7 +4654,13 @@ final class TranslationSessionStore {
 
     private func warmTranslationSession() {
         cancelTranslationSessionWarmup()
-        guard !isUsingHyMT, !isUsingQwenTranslation, !openAITranslationModel.isEnabled, !geminiTranslationModel.isEnabled else { return }
+        guard !isUsingQwenTranslation, !openAITranslationModel.isEnabled, !geminiTranslationModel.isEnabled else { return }
+        if isUsingHyMT {
+            guard !isTranscribeOnlyMode, sourceLanguage != targetLanguage else { return }
+#if DEBUG
+            guard hyMTTranslationForTesting == nil else { return }
+#endif
+        }
 
         let warmSourceLanguage = sourceLanguage
         let warmTargetLanguage = targetLanguage
@@ -4666,7 +4672,9 @@ final class TranslationSessionStore {
         translationSessionWarmupTask = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                if let translationSessionPreparer {
+                if warmConfiguration.hyMTEnabled {
+                    try await hyMTTranslator.prepare()
+                } else if let translationSessionPreparer {
                     try await translationSessionPreparer(
                         warmSourceLanguage,
                         warmTargetLanguage,
